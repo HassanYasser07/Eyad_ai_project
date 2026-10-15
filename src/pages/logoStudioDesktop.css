@@ -170,3 +170,15 @@
     .logo-desktop-industry-row{grid-template-columns:repeat(3,1fr)}
   }
 }
+@media (min-width:1024px){
+  .logo-desktop-svg-test-row{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-top:12px;padding:11px 12px;border:1px solid hsl(var(--border));border-radius:11px;background:linear-gradient(100deg,hsl(var(--accent) / .55),hsl(var(--card)))}
+  .logo-desktop-svg-test-row>div{display:flex;align-items:center;gap:8px;color:hsl(var(--muted-foreground));font-size:.65rem;line-height:1.5}
+  .logo-desktop-svg-test-row>div svg{width:16px;height:16px;flex:none;color:hsl(var(--primary))}
+  .logo-desktop-svg-test-row>button{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:38px;padding:0 14px;border:1px solid hsl(var(--primary) / .25);border-radius:9px;background:hsl(var(--card));color:hsl(var(--primary));font-size:.68rem;font-weight:900;white-space:nowrap;cursor:pointer;transition:background .18s,border-color .18s,transform .18s}
+  .logo-desktop-svg-test-row>button:hover{transform:translateY(-1px);border-color:hsl(var(--primary) / .5);background:hsl(var(--accent))}
+  .logo-desktop-svg-test-row>button svg{width:15px;height:15px}
+}
+@media (max-width:1180px) and (min-width:1024px){
+  .logo-desktop-svg-test-row{align-items:flex-start;flex-direction:column}
+  .logo-desktop-svg-test-row>button{width:100%}
+}
