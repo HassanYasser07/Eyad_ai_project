@@ -1,0 +1,169 @@
+/* ── Dot Matrix Energy Wave — generation loading animation ── */
+
+.eyad-generating {
+  align-self: stretch;
+  width: 100%;
+  position: relative;
+  min-height: 340px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 18px;
+  background:
+    radial-gradient(ellipse 80% 60% at 50% 40%, rgba(224, 242, 254, 0.45) 0%, transparent 70%),
+    linear-gradient(180deg, rgba(240, 249, 255, 0.55) 0%, rgba(255, 255, 255, 0.35) 100%);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(186, 230, 253, 0.5);
+  box-shadow: 0 4px 24px rgba(37, 99, 235, 0.06);
+  animation: eyad-generating-in 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform 0.7s cubic-bezier(0.22, 1, 0.36, 1),
+              opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1),
+              filter 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes eyad-generating-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ── Completion transition: scale + blur + fade ── */
+.eyad-generating.is-completing {
+  transform: scale(1.03);
+  filter: blur(3px);
+  opacity: 0;
+}
+
+/* ── Canvas fills the container ── */
+.eyad-generating__canvas-container {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.eyad-generating__canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* ── Progress glass card ── */
+.eyad-generating__progress-glass {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 24px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(186, 230, 253, 0.7);
+  box-shadow:
+    0 4px 20px rgba(37, 99, 235, 0.10),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  transition: opacity 0.5s ease;
+}
+
+.eyad-generating.is-completing .eyad-generating__progress-glass {
+  opacity: 0;
+}
+
+.eyad-generating__progress-number {
+  font-family: var(--font-heading);
+  font-size: 1.6rem;
+  font-weight: 800;
+  color: #2563eb;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  display: inline-flex;
+  align-items: baseline;
+}
+
+.eyad-generating__progress-percent {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #60a5fa;
+  margin-left: 1px;
+}
+
+/* ── Compact variant (text-only, unchanged) ── */
+.eyad-generating--compact {
+  width: auto;
+  min-height: 0;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  background: none;
+  border: none;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  animation: none;
+  transition: none;
+}
+
+.eyad-generating__compact-text {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: #2b8fd4;
+  white-space: nowrap;
+}
+
+.eyad-generating__icon {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(145deg, #eef7ff, #dcefff);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.eyad-generating__icon img {
+  width: 16px !important;
+  height: 16px !important;
+  max-width: 16px !important;
+  max-height: 16px !important;
+  object-fit: contain;
+  display: block;
+  animation: eyad-generating-icon 1.35s ease-in-out infinite;
+}
+
+@keyframes eyad-generating-icon {
+  0%, 100% { transform: scale(1) rotate(0); }
+  50% { transform: scale(1.1) rotate(-8deg); }
+}
+
+.eyad-generating--compact .eyad-generating__icon {
+  width: 20px;
+  height: 20px;
+}
+
+.eyad-generating--compact .eyad-generating__icon img {
+  width: 14px !important;
+  height: 14px !important;
+  max-width: 14px !important;
+  max-height: 14px !important;
+}
+
+/* ── Responsive ── */
+@media (max-width: 480px) {
+  .eyad-generating {
+    min-height: 300px;
+    border-radius: 14px;
+  }
+  .eyad-generating__progress-number {
+    font-size: 1.4rem;
+  }
+}

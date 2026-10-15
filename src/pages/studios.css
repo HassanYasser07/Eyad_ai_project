@@ -1,0 +1,121 @@
+/* EYAD AI Studios — dedicated desktop studios directory. Mobile remains on the existing app shell. */
+.eyad-studios-shell { display: block; min-height: 100vh; background: #f6f8fc; color: #111827; }
+.eyad-studios-sidebar { display: none; }
+.eyad-studios-main { min-height: 100vh; }
+
+@media (min-width: 1024px) {
+  .eyad-studios-shell { position: fixed; inset: 0; z-index: 50; display: flex; overflow: hidden; height: 100vh; }
+  .eyad-studios-sidebar {
+    display: flex; flex: 0 0 220px; width: 220px; height: 100vh;
+    flex-direction: column; padding: 20px 14px 14px; background: #f9fbff;
+    border-inline-end: 1px solid #e5eaf3; overflow-y: auto;
+  }
+  .eyad-studios-sidebar-logo { display:flex; align-items:center; height:54px; padding:0 8px 12px; text-decoration:none; }
+  .eyad-studios-logo-img { width:150px !important; height:42px !important; object-fit:contain !important; object-position:left center; }
+  .eyad-studios-nav { display:flex; flex-direction:column; gap:4px; }
+  .eyad-studios-nav-item { display:flex; align-items:center; gap:12px; min-height:42px; padding:0 13px; border-radius:12px; color:#53627c; text-decoration:none; font-size:.82rem; font-weight:650; }
+  .eyad-studios-nav-item:hover { background:#eef3ff; color:#25345b; }
+  .eyad-studios-nav-item.is-active { background:linear-gradient(100deg,#1768ff,#6230ef); color:#fff; box-shadow:0 8px 18px rgba(62,76,220,.2); }
+  .eyad-studios-nav-item svg { width:19px; height:19px; flex:none; stroke-width:1.9; }
+  .eyad-studios-divider { height:1px; margin:14px 5px; background:#e6eaf2; }
+  .eyad-studios-label { padding:0 13px 8px; color:#8290aa; font-size:.67rem; font-weight:800; text-transform:uppercase; }
+  .eyad-studios-credits { margin-top:14px; padding:14px; border:1px solid #e8ebf2; border-radius:15px; background:#fff; text-decoration:none; box-shadow:0 3px 14px rgba(35,49,80,.04); }
+  .eyad-studios-credits-head { display:flex; align-items:center; gap:7px; color:#6b7280; font-size:.72rem; font-weight:700; }
+  .eyad-studios-credits-head svg { width:16px; height:16px; color:#e7a91a; }
+  .eyad-studios-credits-body { display:flex; justify-content:space-between; align-items:center; margin-top:10px; }
+  .eyad-studios-credits-body strong { font-size:1.35rem; color:#17213a; }
+  .eyad-studios-credits-body span { width:30px; height:30px; display:grid; place-items:center; border-radius:50%; background:#6738ef; color:#fff; }
+  .eyad-studios-credits-body svg { width:15px; height:15px; }
+  .eyad-studios-sidebar-footer { margin-top:auto; }
+  .eyad-studios-support { display:flex; align-items:center; gap:12px; padding:10px 13px; color:#53627c; text-decoration:none; font-size:.82rem; font-weight:650; }
+  .eyad-studios-support svg { width:19px; height:19px; }
+
+  .eyad-studios-main { flex:1; min-width:0; display:flex; flex-direction:column; overflow:hidden; }
+  .eyad-studios-header { height:64px; flex:none; display:flex; align-items:center; justify-content:space-between; gap:18px; padding:0 22px; background:rgba(255,255,255,.96); border-bottom:1px solid #e8edf5; }
+  .eyad-studios-search { width:min(575px,60%); height:40px; display:flex; align-items:center; gap:10px; padding:0 17px; border:1px solid #e3e9f4; border-radius:999px; background:#f3f6fd; color:#71809a; font-size:.8rem; cursor:pointer; text-align:start; }
+  .eyad-studios-search svg { width:18px; height:18px; }
+  .eyad-studios-header-actions { display:flex; align-items:center; gap:8px; }
+  .eyad-studios-header-btn,.eyad-studios-header-icon { height:38px; border:0; background:transparent; color:#4e5d77; display:flex; align-items:center; justify-content:center; cursor:pointer; }
+  .eyad-studios-header-btn { gap:6px; padding:0 8px; font-size:.78rem; font-weight:700; }
+  .eyad-studios-header-btn svg,.eyad-studios-header-icon svg { width:19px; height:19px; }
+  .eyad-studios-profile { display:flex; align-items:center; gap:8px; margin-inline-start:5px; color:#1f2937; text-decoration:none; font-size:.78rem; font-weight:750; }
+  .eyad-studios-profile svg { width:15px; height:15px; color:#7d8799; }
+  .eyad-studios-avatar { width:36px; height:36px; display:grid; place-items:center; border-radius:50%; background:#101b3b; color:#fff; font-weight:800; }
+
+  .eyad-studios-content { overflow-y:auto; padding:22px 26px 42px; }
+  .eyad-studios-intro { display:flex; justify-content:flex-start; margin-bottom:14px; }
+  .eyad-studios-intro h1 { margin:0; font-size:1.8rem; line-height:1.2; font-weight:900; color:#0e1734; }
+  .eyad-studios-intro p { margin:5px 0 0; color:#7a88a4; font-size:.86rem; }
+
+  .eyad-studios-hero { position:relative; min-height:238px; display:flex; align-items:center; gap:24px; overflow:hidden; padding:28px 34px; border-radius:20px; background:linear-gradient(110deg,#10083f 0%,#211064 38%,#4d1594 68%,#2313a5 100%); box-shadow:0 12px 30px rgba(48,25,119,.18); }
+  .eyad-studios-hero:before { content:""; position:absolute; inset:0; background:radial-gradient(circle at 75% 15%,rgba(238,70,255,.38),transparent 32%), radial-gradient(circle at 10% 100%,rgba(24,120,255,.3),transparent 30%); pointer-events:none; }
+  .eyad-studios-hero-copy { position:relative; z-index:2; flex:1; min-width:0; }
+  .eyad-studios-hero-copy h2 { max-width:720px; margin:0 0 10px; color:#fff; font-size:clamp(1.35rem,2.1vw,2.05rem); line-height:1.35; font-weight:900; }
+  .eyad-studios-hero-copy p { max-width:700px; margin:0 0 18px; color:rgba(255,255,255,.76); font-size:.86rem; line-height:1.7; }
+  .eyad-studios-hero-actions { display:flex; gap:10px; flex-wrap:wrap; }
+  .eyad-studios-btn { min-height:40px; display:inline-flex; align-items:center; gap:8px; padding:0 18px; border-radius:10px; font-size:.78rem; font-weight:800; cursor:pointer; }
+  .eyad-studios-btn svg { width:16px; height:16px; }
+  .eyad-studios-btn.primary { border:0; background:#fff; color:#27145f; }
+  .eyad-studios-btn.ghost { border:1px solid rgba(255,255,255,.35); background:rgba(255,255,255,.08); color:#fff; }
+  .eyad-studios-hero-visual { position:relative; z-index:1; flex:0 0 310px; width:310px; height:190px; overflow:hidden; border-radius:15px; box-shadow:0 14px 28px rgba(0,0,0,.3); }
+  .eyad-studios-hero-visual img { width:100%; height:100%; object-fit:cover; display:block; }
+
+  .eyad-studios-section { margin-top:25px; }
+  .eyad-studios-section-head { display:flex; align-items:end; justify-content:space-between; gap:20px; margin-bottom:13px; }
+  .eyad-studios-section-head h2 { margin:0; font-size:1.02rem; font-weight:900; color:#111a35; }
+  .eyad-studios-section-head p { margin:4px 0 0; color:#8793aa; font-size:.73rem; }
+  .eyad-studios-section-head button,.eyad-studios-section-head a { display:inline-flex; align-items:center; gap:5px; border:0; background:transparent; color:#2463ed; text-decoration:none; font-size:.76rem; font-weight:800; cursor:pointer; }
+  .eyad-studios-section-head button svg,.eyad-studios-section-head a svg { width:15px; height:15px; }
+
+  .eyad-studios-grid { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:14px; }
+  .eyad-studio-tile { min-width:0; overflow:hidden; padding:0; border:1px solid #e5eaf3; border-radius:14px; background:#fff; text-align:start; cursor:pointer; box-shadow:0 4px 14px rgba(35,49,80,.035); transition:transform .18s,box-shadow .18s,border-color .18s; }
+  .eyad-studio-tile:hover { transform:translateY(-3px); box-shadow:0 12px 25px rgba(35,49,80,.11); border-color:#d2dbeb; }
+  .eyad-studio-tile-media { position:relative; display:block; aspect-ratio:16/8.8; overflow:hidden; background:#eef2f7; }
+  .eyad-studio-tile-media img { width:100%; height:100%; object-fit:cover; display:block; }
+  .eyad-studio-tile-shade { position:absolute; inset:0; background:linear-gradient(180deg,transparent 45%,rgba(10,20,45,.35)); }
+  .eyad-studio-tile-fallback { width:100%; height:100%; display:grid; place-items:center; color:#4f46e5; }
+  .eyad-studio-tile-body { position:relative; display:block; padding:10px 12px 12px; min-height:78px; }
+  .eyad-studio-tile-icon { width:27px; height:27px; display:grid; place-items:center; border-radius:8px; margin-bottom:7px; }
+  .eyad-studio-tile-icon svg { width:14px; height:14px; }
+  .eyad-studio-tile-body strong { display:block; padding-inline-end:20px; color:#17213a; font-size:.77rem; font-weight:850; }
+  .eyad-studio-tile-body small { display:block; margin-top:3px; color:#8a95a9; font-size:.64rem; line-height:1.35; }
+  .eyad-studio-tile-arrow { position:absolute; inset-inline-end:10px; bottom:10px; color:#7c8aa4; }
+  .eyad-studio-tile-arrow svg { width:14px; height:14px; }
+
+  .eyad-studios-project-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:14px; }
+  .eyad-studio-project { min-width:0; padding:0; border:1px solid #e5eaf3; border-radius:13px; background:#fff; overflow:hidden; text-align:start; cursor:pointer; }
+  .eyad-studio-project-media { display:block; height:108px; background:#eef2f7; }
+  .eyad-studio-project-media img { width:100%; height:100%; object-fit:cover; display:block; }
+  .eyad-studio-project-media > svg { width:100%; height:100%; padding:35px; color:#5368e8; }
+  .eyad-studio-project-body { display:block; padding:9px 11px 11px; }
+  .eyad-studio-project-body strong { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#1a2440; font-size:.76rem; font-weight:800; }
+  .eyad-studio-project-body small { display:flex; align-items:center; gap:5px; margin-top:4px; color:#8a95a9; font-size:.63rem; }
+  .eyad-studio-project-body small svg { width:12px; height:12px; }
+  .eyad-studios-projects-empty { min-height:120px; display:flex; align-items:center; justify-content:center; gap:8px; border:1px dashed #d8dfeb; border-radius:14px; color:#8793aa; font-size:.78rem; background:#fbfcfe; }
+  .eyad-studios-projects-empty svg { width:18px; height:18px; }
+
+  @media (min-width:1280px) {
+    .eyad-studios-sidebar { flex-basis:240px; width:240px; }
+    .eyad-studios-content { padding:24px 30px 44px; }
+    .eyad-studios-hero { min-height:250px; padding:32px 40px; }
+    .eyad-studios-hero-visual { flex-basis:340px; width:340px; height:205px; }
+  }
+  @media (min-width:1500px) {
+    .eyad-studios-sidebar { flex-basis:250px; width:250px; }
+    .eyad-studios-grid { gap:16px; }
+    .eyad-studio-tile-body { min-height:82px; }
+    .eyad-studios-content { padding-inline:36px; }
+  }
+  @media (max-width:1100px) {
+    .eyad-studios-sidebar { flex-basis:205px; width:205px; }
+    .eyad-studios-grid { grid-template-columns:repeat(4,minmax(0,1fr)); }
+    .eyad-studios-hero-visual { flex-basis:230px; width:230px; height:160px; }
+  }
+}
+
+@media (max-width:1023px) {
+  .eyad-studios-shell { min-height:0; background:transparent; }
+  .eyad-studios-sidebar,.eyad-studios-header,.eyad-studios-intro,.eyad-studios-hero,.eyad-studios-projects { display:none; }
+  .eyad-studios-content { padding:0; }
+  .eyad-studios-grid { display:none; }
+}

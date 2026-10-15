@@ -1,0 +1,341 @@
+/* ============================================================
+   EYAD VOICE OVERLAY — Full-screen immersive voice experience
+   ============================================================ */
+
+.eyad-voice-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding: max(24px, env(safe-area-inset-top)) 20px max(24px, env(safe-area-inset-bottom));
+  background:
+    radial-gradient(ellipse 80% 60% at 50% 30%, rgba(224, 242, 254, 0.9) 0%, rgba(240, 248, 255, 0.6) 40%, rgba(248, 252, 255, 0.3) 100%),
+    linear-gradient(180deg, #E6F3FB 0%, #F0F8FF 40%, #F8FBFE 100%);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  animation: eyad-voice-in 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.eyad-voice-overlay.is-closing {
+  animation: eyad-voice-out 0.3s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes eyad-voice-in {
+  from { opacity: 0; transform: scale(1.05); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes eyad-voice-out {
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0; transform: scale(0.95); }
+}
+
+/* --- Top bar --- */
+.eyad-voice__top {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  direction: rtl;
+}
+
+.eyad-voice__close {
+  width: 44px;
+  height: 44px;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  color: #475569;
+  transition: transform 0.2s ease, background 0.2s ease;
+  box-shadow: 0 4px 14px rgba(37, 77, 110, 0.06);
+}
+.eyad-voice__close:active { transform: scale(0.92); }
+.eyad-voice__close svg { width: 20px; height: 20px; }
+
+.eyad-voice__title {
+  text-align: center;
+}
+.eyad-voice__title strong {
+  display: block;
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: #1e293b;
+}
+.eyad-voice__title small {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.68rem;
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+.eyad-voice__spacer {
+  width: 44px;
+}
+
+/* --- Center orb area --- */
+.eyad-voice__center {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 32px;
+  width: 100%;
+  max-width: 400px;
+}
+
+.eyad-voice__orb-wrap {
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+
+/* --- Status text --- */
+.eyad-voice__status {
+  text-align: center;
+  min-height: 60px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.eyad-voice__status-label {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #334155;
+  letter-spacing: -0.01em;
+  transition: opacity 0.3s ease;
+}
+
+.eyad-voice__transcript {
+  font-size: 0.82rem;
+  color: #64748b;
+  font-weight: 500;
+  max-width: 320px;
+  line-height: 1.5;
+  text-align: center;
+  min-height: 24px;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+.eyad-voice__transcript.is-visible {
+  opacity: 1;
+}
+
+/* --- Interactive creative choices --- */
+.eyad-voice__choices {
+  width: 100%;
+  max-width: 430px;
+  max-height: 34vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px 2px;
+  scrollbar-width: thin;
+}
+
+.eyad-voice__choice-group {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.82);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.58);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 8px 24px rgba(37, 77, 110, 0.06);
+}
+
+.eyad-voice__choice-title {
+  margin-bottom: 9px;
+  color: #334155;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.eyad-voice__choice-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.eyad-voice__choice-options button {
+  border: 1px solid rgba(125, 211, 252, 0.45);
+  border-radius: 999px;
+  padding: 9px 13px;
+  background: rgba(239, 248, 255, 0.82);
+  color: #1e4f86;
+  font-size: 0.76rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.18s ease, background 0.18s ease, border-color 0.18s ease;
+}
+
+.eyad-voice__choice-options button:active {
+  transform: scale(0.96);
+}
+
+.eyad-voice__choice-options button.is-active {
+  background: rgba(191, 226, 253, 0.95);
+  border-color: rgba(37, 99, 235, 0.42);
+  color: #174a8b;
+}
+
+.eyad-voice__design-btn {
+  width: min(430px, 100%);
+  border: 0;
+  border-radius: 999px;
+  padding: 13px 22px;
+  background: linear-gradient(135deg, #38BDF8, #2563EB);
+  color: #fff;
+  font-size: 0.84rem;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 10px 28px rgba(37, 99, 235, 0.2);
+}
+
+.eyad-voice__design-btn:active {
+  transform: scale(0.98);
+}
+
+/* --- Bottom controls --- */
+.eyad-voice__bottom {
+  width: 100%;
+  max-width: 400px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding-bottom: 8px;
+}
+
+.eyad-voice__hint {
+  font-size: 0.72rem;
+  color: #94a3b8;
+  font-weight: 500;
+  text-align: center;
+}
+
+.eyad-voice__actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.eyad-voice__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  border-radius: 999px;
+  padding: 12px 20px;
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  color: #334155;
+  font-weight: 700;
+  font-size: 0.78rem;
+  cursor: pointer;
+  box-shadow: 0 6px 18px rgba(37, 77, 110, 0.08);
+  transition: transform 0.2s ease, background 0.2s ease;
+}
+.eyad-voice__btn:active { transform: scale(0.95); }
+.eyad-voice__btn svg { width: 16px; height: 16px; }
+
+.eyad-voice__btn--primary {
+  background: linear-gradient(135deg, #38BDF8, #2563EB);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 8px 24px rgba(56, 189, 248, 0.25);
+}
+
+/* --- Mic button (manual control) --- */
+.eyad-voice__mic-btn {
+  width: 56px;
+  height: 56px;
+  border: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  background: linear-gradient(135deg, #38BDF8, #2563EB);
+  color: #fff;
+  box-shadow: 0 8px 24px rgba(56, 189, 248, 0.3);
+  transition: transform 0.2s ease;
+}
+.eyad-voice__mic-btn:active { transform: scale(0.92); }
+.eyad-voice__mic-btn svg { width: 22px; height: 22px; }
+.eyad-voice__mic-btn.is-recording {
+  background: linear-gradient(135deg, #f87171, #ef4444);
+  box-shadow: 0 8px 24px rgba(239, 68, 68, 0.3);
+  animation: eyad-mic-pulse 1.2s ease-in-out infinite;
+}
+@keyframes eyad-mic-pulse {
+  0%, 100% { box-shadow: 0 8px 24px rgba(239, 68, 68, 0.3), 0 0 0 0 rgba(239, 68, 68, 0.2); }
+  50% { box-shadow: 0 8px 24px rgba(239, 68, 68, 0.3), 0 0 0 10px rgba(239, 68, 68, 0); }
+}
+
+/* --- Live transcript bubble --- */
+.eyad-voice__limit-alert {
+  width: min(100%, 560px);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.eyad-voice__login-button {
+  width: 100%;
+  border: 0;
+  border-radius: 16px;
+  padding: 13px 18px;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  color: #fff;
+  background: linear-gradient(135deg, #35b8e8, #2f68e8);
+  box-shadow: 0 8px 22px rgba(47, 104, 232, 0.18);
+}
+
+.eyad-voice__login-button:active { transform: translateY(1px); }
+
+.eyad-voice__live-transcript {
+  width: 100%;
+  max-width: 340px;
+  padding: 14px 18px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.65);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  box-shadow: 0 8px 24px rgba(37, 77, 110, 0.06);
+  text-align: center;
+  font-size: 0.85rem;
+  color: #334155;
+  line-height: 1.5;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+.eyad-voice__live-transcript.is-visible { opacity: 1; }
+.eyad-voice__live-transcript-placeholder {
+  color: #94a3b8;
+  font-size: 0.78rem;
+}
+
+@media (max-width: 380px) {
+  .eyad-voice__center { gap: 24px; }
+}

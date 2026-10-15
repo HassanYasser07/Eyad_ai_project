@@ -1,0 +1,172 @@
+.logo-desktop-shell{display:none}
+@media (min-width:1024px){
+  .logo-desktop-shell{position:fixed;inset:0;z-index:60;display:flex;height:100vh;overflow:hidden;background:#f8fbff;color:#111b36;font-family:inherit}
+  .logo-desktop-sidebar{flex:0 0 220px;width:220px;height:100vh;display:flex;flex-direction:column;padding:18px 14px 14px;background:#f8fbff;border-inline-end:1px solid #e4eaf4;overflow-y:auto}
+  .logo-desktop-brand{height:66px;display:flex;align-items:flex-start;padding:0 10px 12px;text-decoration:none}
+  .logo-desktop-brand-img{width:148px!important;height:48px!important;object-fit:contain!important}
+  .logo-desktop-nav{display:flex;flex-direction:column;gap:4px}
+  .logo-desktop-nav-item{min-height:43px;padding:0 13px;display:flex;align-items:center;gap:12px;border-radius:12px;color:#58709b;text-decoration:none;font-size:.83rem;font-weight:700}
+  .logo-desktop-nav-item:hover{background:#edf3ff;color:#263a67}
+  .logo-desktop-nav-item.is-active{background:linear-gradient(105deg,#1589ff,#6730ee);color:#fff;box-shadow:0 8px 20px rgba(65,75,220,.22)}
+  .logo-desktop-nav-item svg{width:19px;height:19px;stroke-width:1.9;flex:none}
+  .logo-desktop-divider{height:1px;background:#e5ebf4;margin:14px 5px}
+  .logo-desktop-label{padding:0 13px 8px;color:#8392ad;font-size:.67rem;font-weight:800}
+  .logo-desktop-credits{margin-top:14px;padding:13px 14px;border-radius:14px;border:1px solid #e7ecf3;background:#fff;box-shadow:0 4px 15px rgba(35,50,90,.04);text-decoration:none}
+  .logo-desktop-credits>div{display:flex;align-items:center;gap:7px;color:#67758e;font-size:.72rem;font-weight:750}
+  .logo-desktop-credits svg{width:16px;height:16px;color:#e8ad18}
+  .logo-desktop-credits>strong{display:flex;align-items:center;justify-content:space-between;margin-top:9px;color:#17213b;font-size:1.35rem}
+  .logo-desktop-credits>strong>span{width:30px;height:30px;display:grid;place-items:center;border-radius:50%;background:#6237ed;color:#fff}
+  .logo-desktop-credits>strong>span svg{width:15px;height:15px;color:#fff}
+  .logo-desktop-support{margin-top:auto;display:flex;align-items:center;gap:11px;padding:10px 13px;color:#58709b;font-size:.8rem;font-weight:700}
+  .logo-desktop-support svg{width:19px;height:19px}
+
+  .logo-desktop-main{flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden}
+  .logo-desktop-header{height:68px;flex:none;display:flex;align-items:center;justify-content:space-between;gap:18px;padding:0 22px;background:rgba(255,255,255,.98);border-bottom:1px solid #e8edf5}
+  .logo-desktop-search{width:min(540px,55%);height:40px;border:0;border-radius:999px;background:#f1f5fd;color:#7584a0;display:flex;align-items:center;gap:10px;padding:0 17px;font-size:.8rem;text-align:start;cursor:pointer}
+  .logo-desktop-search svg{width:18px;height:18px}
+  .logo-desktop-actions{display:flex;align-items:center;gap:8px}
+  .logo-desktop-lang,.logo-desktop-icon{height:38px;border:0;background:transparent;color:#3e4e6b;display:flex;align-items:center;justify-content:center;gap:5px;cursor:pointer}
+  .logo-desktop-lang{padding:0 7px;font-size:.78rem}.logo-desktop-lang svg{width:18px;height:18px}.logo-desktop-lang svg:last-child{width:13px;height:13px}
+  .logo-desktop-icon{position:relative;width:38px}.logo-desktop-icon>svg{width:19px;height:19px}.logo-desktop-icon i{position:absolute;top:8px;right:7px;width:6px;height:6px;border-radius:50%;background:#ff4554;border:1px solid #fff}
+  .logo-desktop-user{display:flex;align-items:center;gap:8px;margin-inline-start:5px;color:#18223c;text-decoration:none;font-size:.78rem;font-weight:800}
+  .logo-desktop-user>span{width:38px;height:38px;display:grid;place-items:center;border-radius:50%;background:#111a3b;color:#fff;font-size:1rem}
+  .logo-desktop-user svg{width:14px;height:14px;color:#78849b}
+
+  .logo-desktop-content{overflow-y:auto;padding:24px 28px 64px;background:linear-gradient(180deg,#fbfdff 0%,#f8fbff 100%)}
+  .logo-desktop-breadcrumb{height:31px;display:flex;align-items:center;gap:8px;margin-bottom:10px;color:#6680a9;font-size:.78rem;font-weight:700}
+  .logo-desktop-breadcrumb a{color:#6680a9;text-decoration:none}.logo-desktop-breadcrumb svg{width:14px;height:14px}.logo-desktop-breadcrumb strong{color:#46628f}
+
+  /* Unified hero: one visual surface with a soft image-to-content gradient */
+  .logo-desktop-hero{position:relative;min-height:300px;overflow:hidden;border-radius:16px;background:#071634;box-shadow:0 14px 34px rgba(22,47,95,.16);display:flex;align-items:stretch}
+  .logo-desktop-hero-image{position:absolute;inset:0;overflow:hidden}
+  .logo-desktop-hero-image img{width:100%;height:100%;display:block;object-fit:cover;object-position:left center;filter:saturate(1.05)}
+  .logo-desktop-hero-image:after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(4,13,35,0) 0%,rgba(4,13,35,0) 35%,rgba(5,16,43,.18) 55%,rgba(6,18,49,.42) 75%,rgba(7,22,52,.62) 100%)}
+  .logo-desktop-hero-copy{position:relative;z-index:2;width:54%;margin-inline-end:auto;display:flex;flex-direction:column;justify-content:center;align-items:flex-start;padding-block:30px;padding-inline-start:38px;padding-inline-end:20px;text-align:start;color:#fff;background:transparent}
+  .logo-desktop-hero-copy:before{content:"";position:absolute;inset:0;z-index:-1;background:radial-gradient(ellipse at left center,rgba(43,91,190,.12),transparent 58%);pointer-events:none}
+  /* LTR (English): logo on right, text on left — use dedicated image, no flipping */
+  .logo-desktop-main[dir="ltr"] .logo-desktop-hero-image img{object-position:right center}
+  .logo-desktop-main[dir="ltr"] .logo-desktop-hero-image:after{background:linear-gradient(270deg,rgba(4,13,35,0) 0%,rgba(4,13,35,0) 35%,rgba(5,16,43,.18) 55%,rgba(6,18,49,.42) 75%,rgba(7,22,52,.62) 100%)}
+  .logo-desktop-main[dir="ltr"] .logo-desktop-hero-copy:before{background:radial-gradient(ellipse at right center,rgba(43,91,190,.12),transparent 58%)}
+  .logo-desktop-pill{position:relative;z-index:1;padding:7px 15px;border-radius:999px;background:rgba(89,109,171,.45);font-size:.72rem;font-weight:850;margin-bottom:9px}
+  .logo-desktop-hero-copy h1{position:relative;z-index:1;margin:0 0 9px;font-size:clamp(1.6rem,2.25vw,2.25rem);line-height:1.3;font-weight:950;color:#fff;max-width:680px}
+  .logo-desktop-hero-copy p{position:relative;z-index:1;margin:0 0 17px;color:rgba(255,255,255,.84);font-size:.82rem;line-height:1.8;max-width:640px}
+  .logo-desktop-primary{position:relative;z-index:1;height:43px;padding:0 22px;border:0;border-radius:11px;background:#fff;color:#1737bd;box-shadow:0 9px 24px rgba(0,0,0,.2);font-size:.77rem;font-weight:900;display:inline-flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;transition:.2s ease}
+  .logo-desktop-primary:hover{transform:translateY(-2px);box-shadow:0 13px 28px rgba(0,0,0,.26)}
+  .logo-desktop-primary svg{width:16px;height:16px}
+  .logo-desktop-hero-card{display:none}
+  .logo-desktop-mini-logo{width:72px;height:72px;display:grid;place-items:center;border-radius:10px;background:#fff;margin-bottom:7px;padding:8px;box-shadow:0 8px 20px rgba(0,0,0,.18)}
+  .logo-desktop-mini-logo img{width:100%!important;height:100%!important;object-fit:contain!important}
+  .logo-desktop-hero-card h3{margin:0 0 7px;font-size:.95rem;font-weight:900}
+  .logo-desktop-hero-card ul{margin:0;padding:0;list-style:none;text-align:start;width:100%;font-size:.63rem;line-height:1.9;color:rgba(255,255,255,.9)}
+  .logo-desktop-hero-card li:before{content:"✓";color:#70e1ff;font-weight:900;margin-inline-end:6px}
+
+  .logo-desktop-quick{margin-top:30px}
+  .logo-desktop-section-title{display:flex;justify-content:space-between;align-items:end;margin-bottom:16px}
+  .logo-desktop-section-title h2{margin:0;text-align:right;color:#101a34;font-size:1.15rem;font-weight:950;letter-spacing:-.01em}
+  .logo-desktop-section-title p{margin:5px 0 0;text-align:right;color:#7f8da7;font-size:.72rem}
+  .logo-desktop-industries{display:grid;grid-template-columns:repeat(9,minmax(0,1fr));gap:10px}
+  .logo-desktop-industries button{height:76px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;border:1px solid #e9eef6;border-radius:12px;background:#fff;color:#17213b;cursor:pointer;box-shadow:0 3px 10px rgba(35,49,80,.02);transition:.18s ease}
+  .logo-desktop-industries button:hover,.logo-desktop-industries button.selected{border-color:#9bbdff;background:#f5f9ff;box-shadow:0 8px 18px rgba(48,104,222,.1);transform:translateY(-2px)}
+  .logo-desktop-industries svg{width:19px;height:19px}.logo-desktop-industries button:nth-child(1) svg{color:#3e54ef}.logo-desktop-industries button:nth-child(2) svg{color:#ef9d29}.logo-desktop-industries button:nth-child(3) svg{color:#c143f1}.logo-desktop-industries button:nth-child(4) svg{color:#ef8730}.logo-desktop-industries button:nth-child(5) svg{color:#8b4adf}.logo-desktop-industries button:nth-child(6) svg{color:#d7358e}.logo-desktop-industries button:nth-child(7) svg{color:#7b53d6}.logo-desktop-industries button:nth-child(8) svg{color:#e85b69}.logo-desktop-industries button:nth-child(9) svg{color:#3f65ed}
+  .logo-desktop-industries b{font-size:.58rem;font-weight:850;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+
+  /* Full-width creation area */
+  .logo-desktop-prompt{margin-top:26px;padding:22px 22px;border:1px solid #e8eef7;border-radius:16px;background:#fff;box-shadow:0 7px 22px rgba(35,49,80,.045)}
+  .logo-desktop-prompt-head{display:flex;align-items:center;justify-content:space-between}
+  .logo-desktop-prompt-head h2{margin:0;color:#111a34;font-size:1.15rem;font-weight:950;letter-spacing:-.01em}
+  .logo-desktop-prompt-head span{font-size:.61rem;color:#94a0b6}
+  .logo-desktop-prompt-sub{margin:6px 0 14px;color:#8794aa;font-size:.7rem}
+  .logo-desktop-prompt textarea{width:100%;height:118px;resize:none;border:1px solid #e5ebf4;border-radius:12px;background:#fff;padding:16px;outline:none;color:#26324c;font:inherit;font-size:.74rem;line-height:1.7;box-sizing:border-box}
+  .logo-desktop-prompt textarea:focus{border-color:#8db4ff;box-shadow:0 0 0 3px rgba(56,110,245,.08)}
+  .logo-desktop-prompt-controls{display:grid;grid-template-columns:1.15fr .9fr 1fr;gap:14px;margin-top:16px;align-items:end}
+  .logo-desktop-prompt-controls label{display:flex;flex-direction:column;gap:6px}.logo-desktop-prompt-controls label>span{font-size:.64rem;color:#7888a4;font-weight:800}
+  .logo-desktop-color-options{height:40px;border:1px solid #e7edf5;border-radius:10px;display:flex;align-items:center;padding:0 11px;gap:6px;background:#fff}
+  .color-dot{width:16px;height:16px;flex:none;border:2px solid #fff;border-radius:50%;box-shadow:0 1px 5px rgba(0,0,0,.14);cursor:pointer;padding:0;transition:transform .15s,outline-color .15s}.color-dot:hover{transform:scale(1.15)}.color-dot.is-selected{outline:2px solid #3448e8;outline-offset:2px}.color-dot.blue{background:#217cff}.color-dot.purple{background:#6941ed}.color-dot.pink{background:#ed4b91}.color-dot.orange{background:#ff9e2c}.color-dot.yellow{background:#ffc52e}.color-dot.teal{background:#13b7a1}
+  .color-plus{width:23px;height:23px;flex:none;border:1px solid #dbe3ef;border-radius:50%;background:#fff;color:#4b6387;font-weight:800;cursor:pointer;margin-inline-start:2px}.color-plus.is-open{background:#eef3ff;border-color:#8baaff;color:#273de0}
+  .logo-desktop-extra-colors{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin-top:8px;padding:8px;border:1px solid #e7edf5;border-radius:10px;background:#fff;box-shadow:0 8px 20px rgba(24,43,82,.08)}
+  .logo-desktop-extra-color{min-width:0;display:flex;align-items:center;gap:7px;padding:7px;border:1px solid #e7edf5;border-radius:8px;background:#fff;color:#40506b;text-align:start;cursor:pointer}.logo-desktop-extra-color.is-selected{border-color:#657cf1;background:#f3f6ff}.logo-desktop-extra-color>span{display:flex;gap:2px;flex:none}.logo-desktop-extra-color i{width:8px;height:16px;border-radius:3px}.logo-desktop-extra-color b{font-size:.61rem;font-weight:750;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .logo-desktop-style-select-wrap{position:relative;height:40px}.logo-desktop-style-select{appearance:none;-webkit-appearance:none;width:100%;height:40px;padding:0 34px 0 11px;border:1px solid #e7edf5;border-radius:10px;background:#fff;color:#36445e;font:inherit;font-size:.68rem;font-weight:750;cursor:pointer;outline:none}.logo-desktop-style-select:focus{border-color:#8db4ff;box-shadow:0 0 0 3px rgba(56,110,245,.08)}.logo-desktop-style-select-wrap>svg{position:absolute;right:11px;top:13px;width:14px;height:14px;pointer-events:none;color:#52627f}
+  .logo-desktop-prompt-cta{width:100%;height:40px;border:0;border-radius:10px;background:linear-gradient(100deg,#168dff,#6a26ed);color:#fff;font-size:.77rem;font-weight:900;display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;box-shadow:0 8px 18px rgba(76,52,222,.18)}
+  .logo-desktop-prompt-cta:hover{filter:brightness(1.04);transform:translateY(-1px)}
+  .logo-desktop-prompt-cta:disabled{opacity:.5;cursor:not-allowed}.logo-desktop-prompt-cta svg{width:16px;height:16px}
+  .logo-desktop-note{display:block;margin-top:7px;text-align:center;color:#8a97ae;font-size:.6rem}
+
+  /* Template gallery */
+  .logo-desktop-templates,.logo-desktop-industry-showcase{margin-top:34px}
+  .logo-desktop-gallery-head{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:16px}
+  .logo-desktop-gallery-head h2{margin:0;color:#111a34;font-size:1.15rem;font-weight:950;letter-spacing:-.01em}
+  .logo-desktop-gallery-head p{margin:5px 0 0;color:#8491a7;font-size:.7rem}
+  .logo-desktop-gallery-head button{border:0;background:transparent;color:#2466ec;font-size:.7rem;font-weight:850;display:flex;align-items:center;gap:3px;cursor:pointer}
+  .logo-desktop-gallery-head button svg{width:13px;height:13px}
+  .logo-desktop-logo-row{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px}
+  .logo-reference-card{position:relative;height:152px;border:1px solid #e6ecf5;border-radius:13px;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#fff;text-align:center;overflow:hidden;transition:.22s ease;box-shadow:0 4px 13px rgba(35,49,80,.025)}
+  .logo-reference-card.is-interactive{cursor:pointer}
+  .logo-reference-card.is-interactive:hover{transform:translateY(-6px);border-color:#9bbdff;box-shadow:0 16px 30px rgba(31,86,190,.13)}
+  .logo-reference-card:after{content:"";position:absolute;inset:auto 0 0;height:3px;background:linear-gradient(90deg,#168dff,#6a26ed);transform:scaleX(0);transition:.22s ease}
+  .logo-reference-card.is-interactive:hover:after{transform:scaleX(1)}
+  .logo-reference-mark{height:62px;display:grid;place-items:center}
+  .logo-reference-card strong{font-size:.76rem;font-weight:900}.logo-reference-card small{font-size:.43rem;letter-spacing:.15em;margin-top:2px}
+  .logo-card-arrow{position:absolute;right:9px;bottom:9px;width:25px;height:25px;display:grid;place-items:center;border-radius:50%;background:#fff;border:1px solid #dfe7f3;color:#2466ec;opacity:0;transform:translateY(4px);transition:.2s}
+  .logo-card-arrow svg{width:12px;height:12px}.logo-reference-card.is-interactive:hover .logo-card-arrow{opacity:1;transform:none}
+  .logo-ref-leafy{background:#032d22;color:#e7d6a9}.leaf-mark{font-size:27px}.logo-ref-nur{background:#f6eef5;color:#a16c1b}.arabic-mark{font-family:Georgia,serif;font-size:27px}.logo-ref-techflow{color:#102a84}.tf-mark{font-size:41px;font-weight:950;font-style:italic}.logo-ref-urban{color:#111}.urban-mark{font-size:43px;line-height:1}.logo-ref-vital{color:#5b9e14}.vital-mark{font-size:36px}.logo-ref-aroma{background:#2b140b;color:#e6aa39}.aroma-mark{font-size:31px}.logo-ref-pulse{background:#050505;color:#fff}.pulse-mark{font-size:28px;color:#ff6d18}.logo-ref-bloom{color:#d12d8a}.bloom-mark{font-size:37px}.logo-ref-nexus{background:#06185b;color:#1f92ff}.nexus-mark{font-size:39px;font-weight:950}.logo-ref-sky{color:#a67922}.sky-mark{font-size:41px}
+
+  /* Long-form product storytelling */
+  .logo-desktop-story{margin-top:46px;padding:36px 0}
+  .logo-desktop-story-heading{text-align:center;max-width:760px;margin:0 auto 28px}
+  .logo-desktop-story-heading.centered{text-align:center}
+  .logo-desktop-eyebrow{display:inline-block;color:#5b43e8;font-size:.64rem;font-weight:950;letter-spacing:.14em}
+  .logo-desktop-story-heading h2{margin:8px 0 9px;color:#101a34;font-size:1.5rem;font-weight:950;letter-spacing:-.015em}
+  .logo-desktop-story-heading p{margin:0;color:#7f8da7;font-size:.74rem;line-height:1.75}
+  .logo-desktop-process-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+  .logo-desktop-process-grid article{position:relative;min-height:160px;padding:22px;border:1px solid #e6edf7;border-radius:15px;background:#fff;box-shadow:0 5px 18px rgba(35,49,80,.035);transition:.2s}
+  .logo-desktop-process-grid article:hover{transform:translateY(-3px);box-shadow:0 12px 26px rgba(35,49,80,.08)}
+  .logo-desktop-process-grid article>span{position:absolute;top:12px;right:13px;width:25px;height:25px;display:grid;place-items:center;border-radius:50%;background:#eef4ff;color:#2466ec;font-size:.68rem;font-weight:950}
+  .logo-desktop-process-grid article>svg{width:25px;height:25px;color:#5c40ed;margin-bottom:13px}
+  .logo-desktop-process-grid h3{margin:0 0 6px;font-size:.8rem;color:#17213b;font-weight:900}.logo-desktop-process-grid p{margin:0;color:#8190a8;font-size:.65rem;line-height:1.7}
+
+  .logo-desktop-benefits{margin:16px 0 14px;padding:38px 28px;border-radius:20px;background:linear-gradient(135deg,#eef5ff 0%,#f8f3ff 100%);border:1px solid #e0e8f7}
+  .logo-desktop-benefit-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:14px}
+  .logo-desktop-benefit-grid article{padding:22px 16px;text-align:center;background:rgba(255,255,255,.88);border:1px solid rgba(218,226,241,.95);border-radius:14px;min-height:140px}
+  .logo-desktop-benefit-grid article>span{width:36px;height:36px;margin:0 auto 9px;display:grid;place-items:center;border-radius:10px;background:#eef3ff;color:#4a45e8}.logo-desktop-benefit-grid article svg{width:18px;height:18px}
+  .logo-desktop-benefit-grid h3{margin:0 0 5px;font-size:.73rem;color:#17213b;font-weight:900}.logo-desktop-benefit-grid p{margin:0;color:#8390a7;font-size:.61rem;line-height:1.65}
+
+  .logo-desktop-industry-row{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px}
+  .logo-desktop-industry-row .logo-reference-card{height:162px}
+  .logo-desktop-industry-row .logo-reference-card.is-interactive:hover{transform:translateY(-5px)}
+
+  .logo-desktop-why{margin-top:42px;min-height:280px;display:grid;grid-template-columns:46% 54%;overflow:hidden;border-radius:18px;background:#091838;color:#fff;box-shadow:0 14px 30px rgba(24,45,91,.15)}
+  .logo-desktop-why-image{min-height:280px;position:relative;overflow:hidden}.logo-desktop-why-image img{width:100%;height:100%;object-fit:cover;filter:saturate(.9) contrast(1.04)}.logo-desktop-why-image:after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(5,16,42,.05),#091838)}
+  .logo-desktop-why-copy{position:relative;z-index:2;display:flex;flex-direction:column;justify-content:center;padding:34px 40px}
+  .logo-desktop-why-copy h2{margin:6px 0 8px;font-size:1.4rem;font-weight:950}.logo-desktop-why-copy p{max-width:650px;margin:0;color:rgba(255,255,255,.76);font-size:.72rem;line-height:1.8}
+  .logo-desktop-why-points{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0}.logo-desktop-why-points div{display:flex;align-items:center;gap:6px;padding:7px 10px;border:1px solid rgba(255,255,255,.18);border-radius:999px;color:#fff;font-size:.62rem}.logo-desktop-why-points svg{width:14px;height:14px;color:#66ddff}
+  .logo-desktop-why-cta{align-self:flex-start;height:42px;padding:0 18px;border:0;border-radius:10px;background:#fff;color:#1737bd;font-weight:900;display:flex;align-items:center;gap:7px;cursor:pointer}.logo-desktop-why-cta svg{width:15px;height:15px}
+
+  .logo-desktop-final-cta{margin-top:42px;padding:30px 34px;border-radius:18px;display:flex;align-items:center;justify-content:space-between;gap:28px;background:linear-gradient(100deg,#121d54 0%,#4b1ee7 58%,#8a22ee 100%);color:#fff;box-shadow:0 15px 35px rgba(75,35,220,.18)}
+  .logo-desktop-final-cta h2{margin:6px 0 6px;font-size:1.45rem;font-weight:950;letter-spacing:-.01em}.logo-desktop-final-cta p{margin:0;color:rgba(255,255,255,.75);font-size:.72rem}
+  .logo-desktop-final-cta button{height:46px;padding:0 24px;border:0;border-radius:11px;background:#fff;color:#2439b9;font-size:.78rem;font-weight:900;display:flex;align-items:center;gap:8px;white-space:nowrap;cursor:pointer}.logo-desktop-final-cta button svg{width:16px;height:16px}
+
+  .logo-desktop-advanced{margin-top:30px;padding:18px;border:1px solid #e6edf7;border-radius:14px;background:#fff;box-shadow:0 5px 18px rgba(35,49,80,.035)}
+  .logo-desktop-advanced-head{display:flex;justify-content:space-between;align-items:center}.logo-desktop-advanced-head b{font-size:.82rem}.logo-desktop-advanced-head span{display:block;margin-top:4px;color:#8290a8;font-size:.64rem}.logo-desktop-advanced-head button{border:0;background:#eef4ff;color:#2563eb;border-radius:8px;padding:8px 12px;font-size:.66rem;font-weight:800;cursor:pointer}
+  .logo-desktop-advanced-actions{display:flex;align-items:center;gap:10px;margin-top:14px}.logo-desktop-advanced-actions button{height:42px;padding:0 18px;border:0;border-radius:10px;background:#2563eb;color:#fff;font-weight:850}
+  .logo-desktop-status{margin-top:14px;padding:20px;border-radius:12px;background:#f4f8ff;color:#2455a8;display:flex;align-items:center;gap:9px}
+  .logo-desktop-results{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-top:14px}.logo-desktop-result{position:relative;padding:5px;border:2px solid #e8edf5;border-radius:12px;background:#fff;cursor:pointer}.logo-desktop-result.selected{border-color:#2563eb}.logo-desktop-result img{width:100%;height:180px;object-fit:contain;border-radius:8px;background-color:#fff;background-image:linear-gradient(45deg,#d8dde6 25%,transparent 25%),linear-gradient(-45deg,#d8dde6 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#d8dde6 75%),linear-gradient(-45deg,transparent 75%,#d8dde6 75%);background-size:20px 20px;background-position:0 0,0 10px,10px -10px,-10px 0}.logo-desktop-result span{position:absolute;top:8px;right:8px;width:26px;height:26px;border-radius:50%;background:#2563eb;color:#fff;display:grid;place-items:center}.logo-desktop-result-actions{grid-column:1/-1;display:grid;grid-template-columns:1fr 1fr;gap:12px}.logo-desktop-regenerate,.logo-desktop-approve{height:56px;min-height:56px;border:0;border-radius:13px;font-weight:850;cursor:pointer}.logo-desktop-regenerate{border:2px solid #2563eb;background:#fff;color:#2563eb}.logo-desktop-approve,.logo-desktop-approve-gradient{background:linear-gradient(100deg,#6d28d9 0%,#d946ef 48%,#fb923c 100%);color:#fff;box-shadow:0 9px 22px rgba(217,70,239,.18)}.logo-desktop-regenerate:disabled,.logo-desktop-approve:disabled{opacity:.45}
+  .logo-desktop-error{margin-top:14px;padding:11px 14px;border-radius:10px;border:1px solid #fecaca;background:#fff1f2;color:#b91c1c;font-size:.72rem;font-weight:700}
+
+  @media(min-width:1280px){
+    .logo-desktop-sidebar{flex-basis:230px;width:230px}
+    .logo-desktop-content{padding:18px 22px 50px}
+  }
+  @media(min-width:1500px){
+    .logo-desktop-sidebar{flex-basis:235px;width:235px}
+    .logo-desktop-content{padding-inline:24px 30px}
+  }
+  @media(max-width:1180px){
+    .logo-desktop-sidebar{flex-basis:205px;width:205px}
+    .logo-desktop-hero{min-height:280px}
+    .logo-desktop-hero-copy{width:58%;padding-inline:24px}.logo-desktop-hero-copy h1{font-size:1.35rem}
+    .logo-desktop-industries{grid-template-columns:repeat(5,1fr)}
+    .logo-desktop-prompt-controls{grid-template-columns:1fr 1fr}.logo-desktop-prompt-cta{grid-column:1/-1}
+    .logo-desktop-benefit-grid{grid-template-columns:repeat(3,1fr)}
+    .logo-desktop-industry-row{grid-template-columns:repeat(3,1fr)}
+  }
+}

@@ -1,0 +1,201 @@
+@import url('https://fonts.googleapis.com/css2?family=Alexandria:wght@400;500;600;700;800&family=Almarai:wght@400;700;800&family=Cairo:wght@400;500;600;700;800;900&family=Changa:wght@400;500;600;700;800&family=DM+Sans:wght@400;500;600;700&family=El+Messiri:wght@400;500;600;700&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&family=Lato:wght@400;700;900&family=Manrope:wght@400;500;600;700;800&family=Marhey:wght@400;500;600;700&family=Merriweather:wght@400;700;900&family=Montserrat:wght@400;500;600;700;800&family=Noto+Kufi+Arabic:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Poppins:wght@400;500;600;700;800&family=Playfair+Display:wght@400;500;600;700;800;900&family=Raleway:wght@400;500;600;700;800&family=Readex+Pro:wght@400;500;600;700&family=Reem+Kufi:wght@400;500;600;700&family=Roboto:wght@400;500;700;900&family=Rubik+Arabic:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=Tajawal:wght@400;500;700;800&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+  EYAD AI — Design System Foundation (Phase 0)
+  Light-first, premium, soft-glass / Apple-inspired visual language.
+  Tokens are framework-agnostic CSS variables so the design system can travel
+  outside Base44 (GitHub → Cloudflare → Android) without Tailwind coupling.
+*/
+
+@layer base {
+  :root {
+    /* Surface & structure */
+    --background: 213 46% 97%;            /* #f4f7fb surface */
+    --foreground: 222 47% 11%;           /* #0f172a dark text */
+    --card: 0 0% 100%;                   /* #ffffff card base */
+    --card-foreground: 222 47% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    /* Brand accent */
+    --primary: 222 83% 53%;               /* #2563eb */
+    --primary-foreground: 0 0% 100%;
+
+    /* Neutrals */
+    --secondary: 210 40% 96%;            /* #f1f5f9 */
+    --secondary-foreground: 222 47% 11%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;     /* #64748b */
+    --accent: 204 94% 94%;               /* #e0f2fe pastel highlight */
+    --accent-foreground: 222 47% 11%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 214 32% 91%;               /* #e2e8f0 */
+    --input: 214 32% 91%;
+    --ring: 222 83% 53%;
+
+    /* Pastel highlight tokens */
+    --highlight-sky: 204 94% 94%;        /* #e0f2fe */
+    --highlight-mist: 210 40% 96%;       /* #f1f5f9 */
+
+    /* Radii */
+    --radius: 0.75rem;                   /* 12px base */
+    --radius-card: 1rem;                 /* 16px cards */
+    --radius-xl: 1.5rem;                 /* 24px large cards */
+
+    /* Soft ambient shadow */
+    --shadow-soft: 0 4px 20px -2px rgba(15, 23, 42, 0.05);
+    --shadow-float: 0 8px 30px -6px rgba(15, 23, 42, 0.08);
+
+    /* Typography */
+    --font-heading: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+    --font-body: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+    --font-display: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+    --font-arabic: "Cairo", "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+    --chart-1: 222 83% 53%;
+    --chart-2: 204 94% 94%;
+    --chart-3: 199 89% 48%;
+    --chart-4: 210 40% 96%;
+    --chart-5: 215 16% 47%;
+
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 222 47% 11%;
+    --sidebar-primary: 222 83% 53%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 204 94% 94%;
+    --sidebar-accent-foreground: 222 47% 11%;
+    --sidebar-border: 214 32% 91%;
+    --sidebar-ring: 222 83% 53%;
+  }
+
+  .dark {
+    --background: 222 47% 11%;
+    --foreground: 213 46% 97%;
+    --card: 222 40% 14%;
+    --card-foreground: 213 46% 97%;
+    --popover: 222 40% 14%;
+    --popover-foreground: 213 46% 97%;
+    --primary: 217 91% 60%;
+    --primary-foreground: 222 47% 11%;
+    --secondary: 222 30% 20%;
+    --secondary-foreground: 213 46% 97%;
+    --muted: 222 30% 20%;
+    --muted-foreground: 215 20% 65%;
+    --accent: 204 60% 30%;
+    --accent-foreground: 213 46% 97%;
+    --destructive: 0 62% 40%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 222 30% 22%;
+    --input: 222 30% 22%;
+    --ring: 217 91% 60%;
+    --highlight-sky: 204 50% 25%;
+    --highlight-mist: 222 30% 20%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-body);
+    font-size: 0.875rem;
+    line-height: 1.5;
+  }
+
+  /* Arabic typography + direction — Cairo is the single Arabic UI font. */
+  [dir="rtl"] body,
+  [dir="rtl"] {
+    font-family: "Cairo", ui-sans-serif, system-ui, sans-serif;
+    font-weight: 400;
+  }
+
+  [dir="rtl"] h1,
+  [dir="rtl"] h2,
+  [dir="rtl"] h3,
+  [dir="rtl"] h4,
+  [dir="rtl"] .text-title,
+  [dir="rtl"] .text-hero {
+    font-family: "Cairo", ui-sans-serif, system-ui, sans-serif;
+    font-weight: 700;
+    line-height: 1.25;
+  }
+
+  /* Keep explicit Arabic typography classes consistent across every page/component. */
+  [dir="rtl"] .font-normal {
+    font-family: "Cairo", ui-sans-serif, system-ui, sans-serif;
+    font-weight: 400;
+  }
+
+  [dir="rtl"] .font-medium,
+  [dir="rtl"] .font-semibold,
+  [dir="rtl"] .font-bold,
+  [dir="rtl"] .font-extrabold,
+  [dir="rtl"] .font-black {
+    font-family: "Cairo", ui-sans-serif, system-ui, sans-serif;
+  }
+}
+
+@layer components {
+  /* Frosted glass surface — the signature move of the design system. */
+  .glass {
+    background: rgba(255, 255, 255, 0.72);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(226, 232, 240, 0.9);
+  }
+
+  .glass-strong {
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(226, 232, 240, 0.9);
+  }
+
+  /* Atmospheric pale-blue halo used behind hero / top of canvas. */
+  .atmosphere-halo {
+    background:
+      radial-gradient(120% 80% at 50% -10%, rgba(224, 242, 254, 0.9) 0%, rgba(244, 247, 251, 0) 60%),
+      radial-gradient(80% 60% at 90% 0%, rgba(204, 94% 94%, 0.5) 0%, rgba(244, 247, 251, 0) 55%);
+  }
+
+  .card-soft {
+    @apply bg-card border border-border;
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-soft);
+  }
+
+  .card-glass {
+    background: rgba(255, 255, 255, 0.72);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(226, 232, 240, 0.9);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-soft);
+  }
+
+  .text-hero {
+    font-size: clamp(2.5rem, 6vw, 4rem);
+    font-weight: 800;
+    letter-spacing: -0.02em;
+  }
+
+  .text-title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+}

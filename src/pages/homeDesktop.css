@@ -1,0 +1,668 @@
+/* ═══════════════════════════════════════════════════════════
+   EYAD AI — Desktop Home shell (>=1024px only).
+   Three-column: left sidebar | central workspace | right smart panel.
+   Mobile and tablet (<1024px) are completely untouched.
+   ═══════════════════════════════════════════════════════════ */
+
+.eyad-dt-shell { display: none; }
+
+@media (min-width: 1024px) {
+  .eyad-home--mobile { display: none !important; }
+
+  .eyad-dt-shell {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    display: flex;
+    align-items: stretch;
+    background: #f3f4f6;
+    overflow: hidden;
+  }
+
+  /* ── Sidebar (always left) ── */
+  .eyad-dt-sidebar {
+    width: 248px;
+    flex: 0 0 248px;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    padding: 20px 14px 14px;
+    background: #f9fafb;
+    border-inline-end: 1px solid #e5e7eb;
+    overflow-y: auto;
+  }
+  .eyad-dt-sidebar-logo {
+    display: flex;
+    align-items: center;
+    height: 44px;
+    padding: 0 6px 18px;
+    flex-shrink: 0;
+    text-decoration: none;
+  }
+  .eyad-dt-logo-img {
+    display: block;
+    height: 38px !important;
+    width: 150px !important;
+    object-fit: contain !important;
+    object-position: left center;
+  }
+
+  .eyad-dt-nav { display: flex; flex-direction: column; gap: 3px; }
+  .eyad-dt-nav-item {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    padding: 10px 14px;
+    border-radius: 12px;
+    font-size: 0.83rem;
+    font-weight: 600;
+    color: #4b5563;
+    text-decoration: none;
+    transition: background 0.18s, color 0.18s;
+  }
+  .eyad-dt-nav-item:hover { background: #f3f4f6; color: #111827; }
+  .eyad-dt-nav-item.is-active {
+    background: #4f46e5;
+    color: #ffffff;
+    box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
+  }
+  .eyad-dt-nav-icon { width: 18px; height: 18px; stroke-width: 1.9; flex-shrink: 0; }
+
+  .eyad-dt-separator { height: 1px; margin: 14px 6px; background: #e5e7eb; }
+  .eyad-dt-section-label {
+    padding: 0 14px 8px;
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    color: #9ca3af;
+    text-transform: uppercase;
+  }
+
+  /* ── Credits block ── */
+  .eyad-dt-credits {
+    margin: 14px 0 6px;
+    padding: 14px 16px;
+    border-radius: 16px;
+    background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+    text-decoration: none;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    transition: transform 0.18s, box-shadow 0.18s;
+  }
+  .eyad-dt-credits:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(245, 158, 11, 0.3); }
+  .eyad-dt-credits-head { display: flex; align-items: center; gap: 8px; color: #78350f; font-size: 0.72rem; font-weight: 700; }
+  .eyad-dt-credits-icon { width: 16px; height: 16px; color: #92400e; }
+  .eyad-dt-credits-body { display: flex; align-items: center; justify-content: space-between; }
+  .eyad-dt-credits-body strong { font-size: 1.4rem; font-weight: 900; color: #78350f; }
+  .eyad-dt-credits-add {
+    width: 28px; height: 28px;
+    display: grid; place-items: center;
+    border-radius: 50%;
+    background: #4f46e5;
+    color: #ffffff;
+  }
+  .eyad-dt-credits-add svg { width: 15px; height: 15px; }
+
+  .eyad-dt-sidebar-footer { margin-top: auto; padding-top: 12px; }
+  .eyad-dt-foot-btn {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    padding: 10px 14px;
+    border-radius: 12px;
+    color: #4b5563;
+    font-size: 0.83rem;
+    font-weight: 600;
+    text-decoration: none;
+    transition: background 0.18s, color 0.18s;
+  }
+  .eyad-dt-foot-btn:hover { background: #f3f4f6; color: #111827; }
+  .eyad-dt-foot-icon { width: 18px; height: 18px; stroke-width: 1.9; flex-shrink: 0; }
+
+  /* ── Main area ── */
+  .eyad-dt-main {
+    flex: 1 1 0%;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  /* ── Header ── */
+  .eyad-dt-header {
+    height: 64px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 0 24px;
+    background: #ffffff;
+    border-bottom: 1px solid #e5e7eb;
+  }
+  .eyad-dt-search {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 42px;
+    padding: 0 18px;
+    flex: 1 1 0%;
+    max-width: 440px;
+    border: 1px solid #e5e7eb;
+    border-radius: 999px;
+    background: #f9fafb;
+    color: #9ca3af;
+    font-size: 0.83rem;
+    font-weight: 500;
+    cursor: pointer;
+    text-align: start;
+    transition: border-color 0.18s, box-shadow 0.18s, background 0.18s;
+  }
+  .eyad-dt-search:hover { border-color: #4f46e5; background: #ffffff; box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.08); }
+  .eyad-dt-search-icon { width: 17px; height: 17px; stroke-width: 1.9; flex-shrink: 0; }
+
+  .eyad-dt-header-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+  .eyad-dt-header-btn {
+    width: 40px; height: 40px;
+    display: grid; place-items: center;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    background: #ffffff;
+    color: #6b7280;
+    cursor: pointer;
+    transition: background 0.18s, color 0.18s, border-color 0.18s;
+  }
+  .eyad-dt-header-btn:hover { background: #f3f4f6; color: #111827; border-color: #d1d5db; }
+  .eyad-dt-header-btn svg { width: 18px; height: 18px; stroke-width: 1.9; }
+
+  .eyad-dt-profile-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 10px 4px 4px;
+    border: 1px solid #e5e7eb;
+    border-radius: 999px;
+    background: #ffffff;
+    text-decoration: none;
+    cursor: pointer;
+    transition: background 0.18s, border-color 0.18s;
+  }
+  .eyad-dt-profile-btn:hover { background: #f3f4f6; border-color: #d1d5db; }
+  .eyad-dt-profile-avatar {
+    width: 32px; height: 32px;
+    display: grid; place-items: center;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #4f46e5, #7c3aed);
+    color: #ffffff;
+    font-size: 0.8rem;
+    font-weight: 800;
+    flex-shrink: 0;
+  }
+  .eyad-dt-profile-name {
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: #111827;
+    max-width: 100px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .eyad-dt-profile-chevron { width: 16px; height: 16px; color: #9ca3af; flex-shrink: 0; }
+
+  /* ── Content area: workspace + right rail ── */
+  .eyad-dt-content {
+    flex: 1 1 0%;
+    min-height: 0;
+    display: flex;
+    overflow: hidden;
+  }
+  .eyad-dt-workspace {
+    flex: 1 1 0%;
+    min-width: 0;
+    overflow-y: auto;
+    padding: 22px 24px 40px;
+  }
+  .eyad-dt-rail {
+    flex: 0 0 260px;
+    overflow-y: auto;
+    padding: 22px 16px 40px 0;
+  }
+  .eyad-dt-home { width: 100%; }
+
+  /* ── Hero banner ── */
+  .eyad-dt-hero-banner {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    padding: 32px 32px;
+    border-radius: 20px;
+    overflow: hidden;
+    background: linear-gradient(135deg, #1e1b4b 0%, #312e81 30%, #4338ca 60%, #7c3aed 100%);
+    box-shadow: 0 10px 30px rgba(30, 27, 75, 0.3);
+    margin-bottom: 24px;
+  }
+  .eyad-dt-hero-banner::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at 85% 15%, rgba(255, 255, 255, 0.1), transparent 50%);
+    pointer-events: none;
+  }
+  .eyad-dt-hero-banner-content { position: relative; z-index: 1; flex: 1 1 0%; min-width: 0; }
+  .eyad-dt-hero-banner-content h1 {
+    margin: 0 0 8px;
+    font-size: 1.6rem;
+    font-weight: 900;
+    line-height: 1.2;
+    color: #ffffff;
+    letter-spacing: -0.01em;
+  }
+  .eyad-dt-hero-banner-content p {
+    margin: 0 0 20px;
+    font-size: 0.88rem;
+    color: rgba(255, 255, 255, 0.8);
+    line-height: 1.6;
+    max-width: 460px;
+  }
+  .eyad-dt-hero-banner-ctas { display: flex; gap: 10px; flex-wrap: wrap; }
+  .eyad-dt-hero-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: 40px;
+    padding: 0 18px;
+    border: 0;
+    border-radius: 10px;
+    font-size: 0.82rem;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: transform 0.15s, box-shadow 0.15s, background 0.15s;
+  }
+  .eyad-dt-hero-btn svg { width: 16px; height: 16px; }
+  .eyad-dt-hero-btn.is-primary {
+    background: #ffffff;
+    color: #312e81;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15);
+  }
+  .eyad-dt-hero-btn.is-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2); }
+  .eyad-dt-hero-btn.is-ghost {
+    background: rgba(255, 255, 255, 0.12);
+    color: #ffffff;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+  }
+  .eyad-dt-hero-btn.is-ghost:hover { background: rgba(255, 255, 255, 0.2); }
+  .eyad-dt-hero-banner-visual {
+    position: relative;
+    z-index: 1;
+    flex: 0 0 180px;
+    width: 180px;
+    height: 130px;
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.3);
+    background: rgba(255, 255, 255, 0.06);
+  }
+  .eyad-dt-hero-banner-visual img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+  /* ── Sections ── */
+  .eyad-dt-section { margin-top: 28px; }
+  .eyad-dt-section-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .eyad-dt-section-head h2 { margin: 0; font-size: 1.05rem; font-weight: 800; color: #111827; letter-spacing: -0.01em; }
+  .eyad-dt-section-head a { color: #4f46e5; font-size: 0.8rem; font-weight: 700; text-decoration: none; }
+  .eyad-dt-section-head a:hover { text-decoration: underline; }
+
+  /* ── Quick Create — image-led square cards ── */
+  .eyad-dt-quick-row { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
+  .eyad-dt-quick-card {
+    position: relative;
+    aspect-ratio: 1 / 1;
+    border: 1px solid #e5e7eb;
+    border-radius: 16px;
+    overflow: hidden;
+    background: #f3f4f6;
+    cursor: pointer;
+    padding: 0;
+    transition: transform 0.18s, box-shadow 0.18s, border-color 0.18s;
+  }
+  .eyad-dt-quick-card:hover { transform: translateY(-3px); box-shadow: 0 10px 24px rgba(0, 0, 0, 0.12); border-color: #d1d5db; }
+  .eyad-dt-quick-card img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .eyad-dt-quick-shade {
+    position: absolute; inset: 0;
+    background: linear-gradient(180deg, rgba(8, 23, 41, 0) 40%, rgba(8, 23, 41, 0.72) 100%);
+    pointer-events: none;
+  }
+  .eyad-dt-quick-iconchip {
+    position: absolute;
+    top: 10px;
+    inset-inline-start: 10px;
+    width: 34px; height: 34px;
+    display: grid; place-items: center;
+    border-radius: 10px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  }
+  .eyad-dt-quick-iconchip svg { width: 18px; height: 18px; stroke-width: 1.9; }
+  .eyad-dt-quick-card strong {
+    position: absolute;
+    bottom: 10px;
+    inset-inline: 0;
+    text-align: center;
+    padding: 0 8px;
+    font-size: 0.78rem;
+    font-weight: 800;
+    color: #ffffff;
+    line-height: 1.3;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+  }
+  .eyad-dt-quick-fallback {
+    width: 100%; height: 100%;
+    display: grid; place-items: center;
+  }
+  .eyad-dt-quick-fallback svg { width: 28px; height: 28px; }
+
+  /* ── Projects grid ── */
+  .eyad-dt-projects-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .eyad-dt-project-card {
+    border: 1px solid #e5e7eb;
+    border-radius: 14px;
+    overflow: hidden;
+    background: #ffffff;
+    cursor: pointer;
+    transition: transform 0.18s, box-shadow 0.18s;
+  }
+  .eyad-dt-project-card:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08); }
+  .eyad-dt-project-media { position: relative; height: 120px; overflow: hidden; background: #f3f4f6; }
+  .eyad-dt-project-media img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .eyad-dt-project-fallback {
+    width: 100%; height: 100%;
+    display: grid; place-items: center;
+    color: #4f46e5;
+    background: linear-gradient(145deg, #eef2ff, #e0e7ff);
+  }
+  .eyad-dt-project-fallback svg { width: 26px; height: 26px; }
+  .eyad-dt-project-body {
+    position: relative;
+    padding: 10px 12px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .eyad-dt-project-body strong { font-size: 0.82rem; font-weight: 800; color: #111827; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-inline-end: 28px; }
+  .eyad-dt-project-body span { font-size: 0.7rem; color: #9ca3af; font-weight: 600; }
+  .eyad-dt-project-more {
+    position: absolute;
+    top: 8px;
+    inset-inline-end: 8px;
+    width: 26px; height: 26px;
+    display: grid; place-items: center;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: #9ca3af;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+  .eyad-dt-project-more:hover { background: #f3f4f6; color: #111827; }
+  .eyad-dt-project-more svg { width: 16px; height: 16px; }
+  .eyad-dt-projects-empty {
+    padding: 32px 18px;
+    border-radius: 14px;
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    text-align: center;
+    color: #6b7280;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+  }
+  .eyad-dt-projects-empty svg { width: 24px; height: 24px; color: #4f46e5; }
+  .eyad-dt-projects-empty p { margin: 0; font-size: 0.82rem; }
+  .eyad-dt-projects-empty button {
+    margin-top: 4px;
+    padding: 8px 16px;
+    border: 0;
+    border-radius: 999px;
+    background: #4f46e5;
+    color: #ffffff;
+    font-size: 0.78rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .eyad-dt-projects-empty button:hover { background: #4338ca; }
+
+  /* ── Studio Types — image-led cards ── */
+  .eyad-dt-studio-types { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+  .eyad-dt-studio-type {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid #e5e7eb;
+    border-radius: 16px;
+    overflow: hidden;
+    background: #ffffff;
+    cursor: pointer;
+    padding: 0;
+    transition: transform 0.18s, box-shadow 0.18s, border-color 0.18s;
+  }
+  .eyad-dt-studio-type:hover { transform: translateY(-3px); box-shadow: 0 10px 24px rgba(0, 0, 0, 0.12); border-color: #d1d5db; }
+  .eyad-dt-studio-type-media {
+    position: relative;
+    display: block;
+    width: 100%;
+    aspect-ratio: 16 / 10;
+    overflow: hidden;
+    background: #f3f4f6;
+  }
+  .eyad-dt-studio-type-media img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .eyad-dt-studio-type-shade {
+    position: absolute; inset: 0;
+    background: linear-gradient(180deg, rgba(8, 23, 41, 0) 45%, rgba(8, 23, 41, 0.55) 100%);
+    pointer-events: none;
+  }
+  .eyad-dt-studio-type-iconchip {
+    position: absolute;
+    top: 10px;
+    inset-inline-start: 10px;
+    width: 34px; height: 34px;
+    display: grid; place-items: center;
+    border-radius: 10px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  }
+  .eyad-dt-studio-type-iconchip svg { width: 18px; height: 18px; stroke-width: 1.9; }
+  .eyad-dt-studio-type-name {
+    padding: 12px 12px 14px;
+    font-size: 0.82rem;
+    font-weight: 800;
+    color: #111827;
+    text-align: start;
+    line-height: 1.3;
+  }
+  .eyad-dt-studio-type-icon {
+    width: 44px; height: 44px;
+    display: grid; place-items: center;
+    border-radius: 12px;
+    margin: 16px auto 0;
+  }
+  .eyad-dt-studio-type-icon svg { width: 22px; height: 22px; stroke-width: 1.9; }
+
+  /* ── Right rail ── */
+  .eyad-dt-rail-content { display: flex; flex-direction: column; gap: 14px; }
+  .eyad-dt-rail-card {
+    padding: 16px;
+    border: 1px solid #e5e7eb;
+    border-radius: 16px;
+    background: #ffffff;
+  }
+  .eyad-dt-rail-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .eyad-dt-rail-card-head strong { font-size: 0.85rem; font-weight: 800; color: #111827; }
+  .eyad-dt-rail-card-head button {
+    border: 0;
+    background: transparent;
+    color: #4f46e5;
+    font-size: 0.72rem;
+    font-weight: 700;
+    cursor: pointer;
+    padding: 0;
+  }
+  .eyad-dt-rail-card-head button:hover { text-decoration: underline; }
+
+  /* Smart Chat card */
+  .eyad-dt-rail-chat {
+    background: linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%);
+    border-color: #c7d2fe;
+  }
+  .eyad-dt-rail-chat-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+  .eyad-dt-rail-chat-icon {
+    width: 42px; height: 42px;
+    display: grid; place-items: center;
+    border-radius: 12px;
+    background: #ffffff;
+    flex-shrink: 0;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  }
+  .eyad-dt-rail-chat-logo { width: 26px !important; height: 26px !important; object-fit: contain !important; }
+  .eyad-dt-rail-chat-head strong { display: block; font-size: 0.85rem; font-weight: 800; color: #111827; }
+  .eyad-dt-rail-chat-head small { display: block; font-size: 0.7rem; color: #6b7280; line-height: 1.4; margin-top: 2px; }
+  .eyad-dt-rail-chat-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    height: 40px;
+    border: 0;
+    border-radius: 10px;
+    background: #4f46e5;
+    color: #ffffff;
+    font-size: 0.82rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.15s, transform 0.15s;
+  }
+  .eyad-dt-rail-chat-btn:hover { background: #4338ca; transform: translateY(-1px); }
+  .eyad-dt-rail-chat-btn svg { width: 16px; height: 16px; }
+
+  /* Templates thumbnails */
+  .eyad-dt-rail-templates { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .eyad-dt-rail-template-thumb {
+    aspect-ratio: 3 / 4;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    overflow: hidden;
+    padding: 0;
+    background: #f3f4f6;
+    cursor: pointer;
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .eyad-dt-rail-template-thumb:hover { transform: scale(1.04); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); }
+  .eyad-dt-rail-template-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+  /* Useful Tools list */
+  .eyad-dt-rail-tools { display: flex; flex-direction: column; gap: 2px; }
+  .eyad-dt-rail-tool {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 6px;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    color: #374151;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    text-align: start;
+    transition: background 0.15s;
+  }
+  .eyad-dt-rail-tool:hover { background: #f3f4f6; }
+  .eyad-dt-rail-tool-icon {
+    width: 32px; height: 32px;
+    display: grid; place-items: center;
+    border-radius: 10px;
+    background: #eef2ff;
+    color: #4f46e5;
+    flex-shrink: 0;
+  }
+  .eyad-dt-rail-tool-icon svg { width: 16px; height: 16px; stroke-width: 1.9; }
+  .eyad-dt-rail-tool > span:not(.eyad-dt-rail-tool-icon) { flex: 1; min-width: 0; }
+  .eyad-dt-rail-tool-arrow { width: 16px; height: 16px; color: #9ca3af; flex-shrink: 0; }
+
+  /* ── Extra home sections (shared with mobile) ── */
+  .eyad-dt-extra {
+    margin-top: 36px;
+    padding-bottom: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+  }
+  .eyad-dt-extra .eyad-home__market,
+  .eyad-dt-extra .eyad-home__feature,
+  .eyad-dt-extra .eyad-home__create,
+  .eyad-dt-extra .eyad-home__ideas,
+  .eyad-dt-extra .eyad-home__compare {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+  }
+  .eyad-dt-extra .eyad-home__ideas {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+  }
+  .eyad-dt-extra .eyad-home__idea-card { width: 100%; }
+  .eyad-dt-extra .eyad-home__feature-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 14px;
+  }
+
+  /* ── Responsive within desktop ── */
+  @media (min-width: 1280px) {
+    .eyad-dt-sidebar { width: 260px; flex-basis: 260px; }
+    .eyad-dt-rail { flex-basis: 300px; padding: 24px 20px 40px 0; }
+    .eyad-dt-workspace { padding: 24px 28px 40px; }
+    .eyad-dt-quick-row { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+    .eyad-dt-projects-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .eyad-dt-studio-types { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+    .eyad-dt-hero-banner { padding: 36px 36px; }
+    .eyad-dt-hero-banner-content h1 { font-size: 1.75rem; }
+    .eyad-dt-hero-banner-visual { flex-basis: 200px; width: 200px; height: 140px; }
+    .eyad-dt-search { max-width: 520px; }
+  }
+  @media (min-width: 1440px) {
+    .eyad-dt-sidebar { width: 264px; flex-basis: 264px; }
+    .eyad-dt-rail { flex-basis: 320px; }
+    .eyad-dt-hero-banner { padding: 40px 40px; }
+    .eyad-dt-hero-banner-content h1 { font-size: 1.9rem; }
+    .eyad-dt-hero-banner-visual { flex-basis: 220px; width: 220px; height: 160px; }
+  }
+  @media (min-width: 1600px) {
+    .eyad-dt-workspace { padding: 28px 36px 44px; }
+    .eyad-dt-rail { flex-basis: 340px; padding: 28px 24px 44px 0; }
+    .eyad-dt-hero-banner { padding: 44px 44px; }
+    .eyad-dt-hero-banner-content h1 { font-size: 2rem; }
+  }
+  @media (max-width: 1100px) {
+    .eyad-dt-sidebar { width: 220px; flex-basis: 220px; padding: 16px 10px 10px; }
+    .eyad-dt-workspace { padding: 18px 16px 36px; }
+    .eyad-dt-rail { flex-basis: 240px; padding: 18px 12px 36px 0; }
+    .eyad-dt-header { padding: 0 16px; }
+    .eyad-dt-hero-banner { padding: 24px 22px; }
+    .eyad-dt-hero-banner-visual { flex-basis: 140px; width: 140px; height: 100px; }
+    .eyad-dt-hero-banner-content h1 { font-size: 1.35rem; }
+    .eyad-dt-profile-name { display: none; }
+  }
+}

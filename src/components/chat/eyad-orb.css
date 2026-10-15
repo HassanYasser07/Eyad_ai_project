@@ -1,0 +1,317 @@
+/* ============================================================
+   EYAD ORB — The living AI entity at the heart of Voice UI
+   States: idle | listening | thinking | speaking
+   ============================================================ */
+
+.eyad-orb {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: var(--orb-size, 180px);
+  height: var(--orb-size, 180px);
+}
+
+/* --- Outer glow halo --- */
+.eyad-orb__halo {
+  position: absolute;
+  inset: -30%;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(108, 211, 255, 0.18) 0%,
+    rgba(129, 140, 248, 0.10) 40%,
+    transparent 70%
+  );
+  filter: blur(8px);
+  opacity: 0.7;
+  transition: opacity 0.6s ease, transform 0.6s ease;
+}
+
+/* --- Iridescent ring (pink/purple/cyan sheen) --- */
+.eyad-orb__ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 0deg,
+    rgba(232, 121, 249, 0.15),
+    rgba(129, 140, 248, 0.20),
+    rgba(34, 211, 238, 0.25),
+    rgba(232, 121, 249, 0.15)
+  );
+  filter: blur(2px);
+  opacity: 0.5;
+  animation: eyad-orb-rotate 12s linear infinite;
+}
+
+/* --- Glass core --- */
+.eyad-orb__core {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.95) 0%, rgba(240, 248, 255, 0.80) 30%, rgba(224, 242, 254, 0.60) 60%, rgba(186, 230, 253, 0.40) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  box-shadow:
+    inset 0 2px 8px rgba(255, 255, 255, 0.9),
+    inset 0 -4px 12px rgba(108, 211, 255, 0.12),
+    0 8px 32px rgba(56, 189, 248, 0.15),
+    0 0 0 6px rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  overflow: hidden;
+  transition: box-shadow 0.5s ease, transform 0.5s ease;
+}
+
+/* --- Inner light shimmer --- */
+.eyad-orb__shimmer {
+  position: absolute;
+  top: 15%;
+  left: 20%;
+  width: 50%;
+  height: 35%;
+  border-radius: 50%;
+  background: radial-gradient(ellipse, rgba(255, 255, 255, 0.6) 0%, transparent 70%);
+  filter: blur(4px);
+  opacity: 0.7;
+  animation: eyad-orb-shimmer 4s ease-in-out infinite;
+}
+
+/* --- EYAD logo mark inside orb --- */
+.eyad-orb__logo {
+  position: relative;
+  z-index: 2;
+  width: 42%;
+  height: 42%;
+  display: grid;
+  place-items: center;
+}
+.eyad-orb__logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  opacity: 0.85;
+  filter: drop-shadow(0 2px 6px rgba(56, 189, 248, 0.2));
+}
+
+/* --- Sound wave rings (listening / speaking) --- */
+.eyad-orb__wave {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid rgba(56, 189, 248, 0.3);
+  opacity: 0;
+  pointer-events: none;
+}
+.eyad-orb__wave--1 { animation: eyad-orb-wave 2s ease-out infinite; }
+.eyad-orb__wave--2 { animation: eyad-orb-wave 2s ease-out infinite 0.6s; }
+.eyad-orb__wave--3 { animation: eyad-orb-wave 2s ease-out infinite 1.2s; }
+
+/* --- Energy bars (thinking) --- */
+.eyad-orb__energy {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+.eyad-orb__energy-bar {
+  position: absolute;
+  width: 3px;
+  border-radius: 99px;
+  background: linear-gradient(to bottom, rgba(56, 189, 248, 0.6), rgba(129, 140, 248, 0.3));
+  animation: eyad-orb-energy 1.2s ease-in-out infinite;
+}
+
+/* ===================== STATES ===================== */
+
+/* IDLE — gentle breathing */
+.eyad-orb.is-idle .eyad-orb__core {
+  animation: eyad-orb-breathe 4s ease-in-out infinite;
+}
+.eyad-orb.is-idle .eyad-orb__halo {
+  animation: eyad-orb-halo-breathe 4s ease-in-out infinite;
+}
+
+/* LISTENING — pulsing, waves, stronger glow */
+.eyad-orb.is-listening .eyad-orb__core {
+  animation: eyad-orb-pulse 1.5s ease-in-out infinite;
+  box-shadow:
+    inset 0 2px 8px rgba(255, 255, 255, 0.9),
+    inset 0 -4px 12px rgba(56, 189, 248, 0.2),
+    0 8px 40px rgba(56, 189, 248, 0.3),
+    0 0 0 8px rgba(56, 189, 248, 0.08);
+}
+.eyad-orb.is-listening .eyad-orb__halo {
+  opacity: 1;
+  transform: scale(1.15);
+}
+.eyad-orb.is-listening .eyad-orb__wave { opacity: 1; }
+.eyad-orb.is-listening .eyad-orb__ring {
+  animation-duration: 6s;
+  opacity: 0.7;
+}
+
+/* THINKING — inner light movement, energy bars */
+.eyad-orb.is-thinking .eyad-orb__core {
+  animation: eyad-orb-think 2s ease-in-out infinite;
+}
+.eyad-orb.is-thinking .eyad-orb__shimmer {
+  animation: eyad-orb-shimmer-fast 1.5s ease-in-out infinite;
+}
+.eyad-orb.is-thinking .eyad-orb__energy { opacity: 1; }
+.eyad-orb.is-thinking .eyad-orb__ring {
+  animation-duration: 4s;
+  opacity: 0.6;
+}
+
+/* SPEAKING — pulsing with audio, waves */
+.eyad-orb.is-speaking .eyad-orb__core {
+  animation: eyad-orb-speak 0.8s ease-in-out infinite;
+  box-shadow:
+    inset 0 2px 8px rgba(255, 255, 255, 0.9),
+    inset 0 -4px 12px rgba(56, 189, 248, 0.15),
+    0 8px 36px rgba(56, 189, 248, 0.25),
+    0 0 0 6px rgba(56, 189, 248, 0.06);
+}
+.eyad-orb.is-speaking .eyad-orb__halo {
+  opacity: 0.9;
+  animation: eyad-orb-halo-breathe 1.2s ease-in-out infinite;
+}
+.eyad-orb.is-speaking .eyad-orb__wave--1,
+.eyad-orb.is-speaking .eyad-orb__wave--2 { opacity: 0.6; }
+
+/* ===================== ANIMATIONS ===================== */
+
+@keyframes eyad-orb-breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.03); }
+}
+@keyframes eyad-orb-halo-breathe {
+  0%, 100% { opacity: 0.5; transform: scale(1); }
+  50% { opacity: 0.8; transform: scale(1.08); }
+}
+@keyframes eyad-orb-rotate {
+  to { transform: rotate(360deg); }
+}
+@keyframes eyad-orb-shimmer {
+  0%, 100% { opacity: 0.5; transform: translate(0, 0) scale(1); }
+  50% { opacity: 0.8; transform: translate(10%, 5%) scale(1.1); }
+}
+@keyframes eyad-orb-shimmer-fast {
+  0%, 100% { opacity: 0.4; transform: translate(-5%, 0) scale(1); }
+  50% { opacity: 0.9; transform: translate(15%, 8%) scale(1.15); }
+}
+@keyframes eyad-orb-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.06); }
+}
+@keyframes eyad-orb-think {
+  0%, 100% { transform: scale(1) rotate(0deg); }
+  25% { transform: scale(1.02) rotate(-1deg); }
+  75% { transform: scale(1.02) rotate(1deg); }
+}
+@keyframes eyad-orb-speak {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.04); }
+}
+@keyframes eyad-orb-wave {
+  0% { transform: scale(1); opacity: 0.5; }
+  100% { transform: scale(1.5); opacity: 0; }
+}
+@keyframes eyad-orb-energy {
+  0%, 100% { transform: scaleY(0.5); opacity: 0.3; }
+  50% { transform: scaleY(1); opacity: 0.8; }
+}
+
+/* ===================== MINI ORB (composer) ===================== */
+
+.eyad-mini-orb {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+  background: transparent;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  transition: transform 0.2s ease;
+}
+.eyad-mini-orb:active { transform: scale(0.92); }
+
+.eyad-mini-orb__halo {
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(232, 121, 249, 0.12) 0%,
+    rgba(129, 140, 248, 0.10) 40%,
+    rgba(34, 211, 238, 0.15) 70%,
+    transparent 100%
+  );
+  filter: blur(3px);
+  animation: eyad-mini-halo 3s ease-in-out infinite;
+}
+
+.eyad-mini-orb__core {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.95) 0%, rgba(240, 248, 255, 0.80) 40%, rgba(186, 230, 253, 0.50) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  box-shadow:
+    inset 0 1px 3px rgba(255, 255, 255, 0.9),
+    0 4px 14px rgba(56, 189, 248, 0.15);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  animation: eyad-mini-breathe 3s ease-in-out infinite;
+  overflow: hidden;
+}
+
+.eyad-mini-orb__logo {
+  width: 60%;
+  height: 60%;
+  display: grid;
+  place-items: center;
+}
+.eyad-mini-orb__logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  opacity: 0.8;
+}
+
+@keyframes eyad-mini-breathe {
+  0%, 100% { transform: scale(1); box-shadow: inset 0 1px 3px rgba(255,255,255,0.9), 0 4px 14px rgba(56,189,248,0.12); }
+  50% { transform: scale(1.05); box-shadow: inset 0 1px 3px rgba(255,255,255,0.9), 0 6px 20px rgba(56,189,248,0.20); }
+}
+@keyframes eyad-mini-halo {
+  0%, 100% { opacity: 0.5; transform: scale(1); }
+  50% { opacity: 0.8; transform: scale(1.1); }
+}
+
+/* Mini orb active state (voice open) */
+.eyad-mini-orb.is-active .eyad-mini-orb__core {
+  animation: eyad-mini-pulse 1s ease-in-out infinite;
+  box-shadow:
+    inset 0 1px 3px rgba(255, 255, 255, 0.9),
+    0 0 0 4px rgba(56, 189, 248, 0.12),
+    0 6px 20px rgba(56, 189, 248, 0.25);
+}
+@keyframes eyad-mini-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.08); }
+}
