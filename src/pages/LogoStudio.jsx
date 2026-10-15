@@ -1,5 +1,5 @@
 import React from "react";
-import { ArrowLeft, Check, ChevronRight, Loader2, Sparkles, Shapes, Minus, Crown, Landmark, Zap, Type, Badge, ShieldCheck, TextCursorInput, Palette } from "lucide-react";
+import { ArrowLeft, Check, ChevronRight, Loader2, Sparkles, Shapes, Minus, Crown, Landmark, Zap, Type, Badge, ShieldCheck, TextCursorInput, Palette, FileCode2 } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useI18n } from "@/i18n/I18nContext";
 import { useAuth } from "@/lib/AuthContext";
@@ -12,6 +12,7 @@ import { storePendingAction, getPendingAction, clearPendingAction } from "@/serv
 import StudioNextActions from "@/components/studios/StudioNextActions";
 import "./logoStudio.css";
 import LogoStudioDesktop from "@/pages/LogoStudioDesktop";
+import SvgEditorDialog from "@/components/svgEditor/SvgEditorDialog";
 
 const OPTIONS = {
   style: [
@@ -107,7 +108,7 @@ function ChoiceGroup({ title, items, value, onChange, ar, type }) {
 }
 
 export default function LogoStudio() {
-  const { loc, direction } = useI18n();
+  const { loc, direction, t } = useI18n();
   const { isAnonymous, requireAccount } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -130,6 +131,7 @@ export default function LogoStudio() {
     if (id !== selectedImage) setApproved(false);
   }, [selectedImage]);
   const [previewImage, setPreviewImage] = React.useState(null);
+  const [svgEditorOpen, setSvgEditorOpen] = React.useState(false);
 
   const ar = direction === "rtl";
 
@@ -429,6 +431,7 @@ export default function LogoStudio() {
         previewImage={previewImage}
         setPreviewImage={setPreviewImage}
         back={back}
+        onOpenSvgEditor={() => setSvgEditorOpen(true)}
       />
       <div className="logo-lab-page min-h-[calc(100dvh-8rem)] flex flex-col gap-5">
       <header className="flex items-center justify-between gap-3">
@@ -436,9 +439,15 @@ export default function LogoStudio() {
           <ArrowLeft className="w-4 h-4" />
           {ar ? "الاستوديوهات" : "Studios"}
         </button>
-        <div className="flex items-center gap-2 rounded-full bg-white/70 border border-white/90 px-3 py-1.5">
-          <Sparkles className="w-3.5 h-3.5 text-primary" />
-          <span className="text-xs font-extrabold text-slate-700">{ar ? "ستوديو الشعارات" : "Logo Studio"}</span>
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={() => setSvgEditorOpen(true)} className="inline-flex items-center gap-1.5 rounded-full border border-primary/20 bg-white px-3 py-2 text-xs font-extrabold text-primary shadow-sm hover:bg-primary/5">
+            <FileCode2 className="h-4 w-4" />
+            <span>{t("svgEditor.testEnvironment")}</span>
+          </button>
+          <div className="flex items-center gap-2 rounded-full bg-white/70 border border-white/90 px-3 py-1.5">
+            <Sparkles className="w-3.5 h-3.5 text-primary" />
+            <span className="text-xs font-extrabold text-slate-700">{ar ? "ستوديو الشعارات" : "Logo Studio"}</span>
+          </div>
         </div>
       </header>
 
@@ -558,6 +567,7 @@ export default function LogoStudio() {
         )}
       </main>
     </div>
+      {svgEditorOpen && <SvgEditorDialog onClose={() => setSvgEditorOpen(false)} direction={direction} />}
     </>
   );
 }

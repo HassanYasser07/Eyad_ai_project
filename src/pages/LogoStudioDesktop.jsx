@@ -6,7 +6,7 @@ import {
   ChevronLeft, Sparkles, FileText, Palette, Wand2, HeartPulse, Building2,
   Gem, Dumbbell, ShoppingBag, Utensils, Cpu, Store, MoreVertical, Check,
   ArrowRight, Download, Layers3, CircleCheck, Clock3, BadgeCheck, Lightbulb,
-  Workflow, FileCheck2, Boxes
+  Workflow, FileCheck2, Boxes, FileCode2
 } from "lucide-react";
 import Logo from "@/components/Logo";
 import { useI18n } from "@/i18n/I18nContext";
@@ -100,7 +100,7 @@ function LogoMock({ item, interactive = false }) {
 export default function LogoStudioDesktop({
   step, setStep, name, setName, activity, setActivity, selections, updateSelection,
   generate, loading, canGenerate, isAnonymous, images, selectedImage, setSelectedImage,
-  approve, approved, error, back, onSelectImage,
+  approve, approved, error, back, onSelectImage, onOpenSvgEditor,
 }) {
   const { t, direction, toggleLanguage } = useI18n();
   const { user } = useAuth();
@@ -244,6 +244,10 @@ export default function LogoStudioDesktop({
                 <div className="logo-desktop-style-select-wrap"><select aria-label={ar ? "أسلوب التصميم" : "Design style"} className="logo-desktop-style-select" value={selections.style || "modern"} onChange={event => updateSelection("style", event.target.value)}>{styleOptions.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select><ChevronDown aria-hidden="true"/></div>
               </label>
               <button className="logo-desktop-generate logo-desktop-prompt-cta" disabled={loading} onClick={createFromBrief}><Sparkles/>{ar ? "إنشاء الشعارات" : "Create logos"}</button>
+            </div>
+            <div className="logo-desktop-svg-test-row">
+              <div><FileCode2 aria-hidden="true"/><span>{t("svgEditor.entryHint")}</span></div>
+              <button type="button" onClick={onOpenSvgEditor}><FileCode2 aria-hidden="true"/>{t("svgEditor.testEnvironment")}</button>
             </div>
             {isAnonymous && <small className="logo-desktop-note">{ar ? "سيطلب منك تسجيل الدخول عند بدء التوليد." : "Sign in will be required when generation starts."}</small>}
           </section>
