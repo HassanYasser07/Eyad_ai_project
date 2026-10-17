@@ -3,6 +3,7 @@ import {
   SlidersHorizontal, FlipHorizontal, FlipVertical, Copy, Trash2,
   Group, Ungroup, ArrowUp, ArrowRight, ArrowDown, ArrowLeft, Bold, Italic,
   ChevronLeft, ChevronRight, MoveHorizontal, RotateCcw, Palette, Type,
+  RotateCw, Blend, Paintbrush, Maximize2, Image, Sparkles, Upload,
 } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 
@@ -10,6 +11,24 @@ const COLOR_PRESETS = [
   "#111827", "#334155", "#64748b", "#ffffff", "#ef4444", "#f97316",
   "#f59e0b", "#eab308", "#22c55e", "#14b8a6", "#06b6d4", "#3b82f6",
   "#6366f1", "#8b5cf6", "#d946ef", "#ec4899",
+];
+
+const SOLID_BG_PRESETS = [
+  "#ffffff", "#f8fafc", "#f1f5f9", "#e2e8f0", "#94a3b8", "#475569", "#1e293b", "#0f172a", "#000000",
+  "#ef4444", "#f97316", "#f59e0b", "#10b981", "#06b6d4", "#3b82f6", "#6366f1", "#8b5cf6", "#ec4899",
+];
+
+const GRADIENT_PRESETS = [
+  { name: "Sunset", color1: "#ff5e62", color2: "#ff9966", angle: 45 },
+  { name: "Ocean", color1: "#2b5876", color2: "#4e4376", angle: 90 },
+  { name: "Emerald", color1: "#11998e", color2: "#38ef7d", angle: 45 },
+  { name: "Royal", color1: "#141e30", color2: "#243b55", angle: 90 },
+  { name: "Violet", color1: "#8e2de2", color2: "#4a00e0", angle: 135 },
+  { name: "Neon", color1: "#00c6ff", color2: "#0072ff", angle: 90 },
+  { name: "Amber", color1: "#f12711", color2: "#f5af19", angle: 45 },
+  { name: "Candy", color1: "#d946ef", color2: "#06b6d4", angle: 90 },
+  { name: "Dark Slate", color1: "#0f172a", color2: "#334155", angle: 90 },
+  { name: "Clean Gray", color1: "#f1f5f9", color2: "#cbd5e1", angle: 90 },
 ];
 const FONT_PRESETS = [
   ["Arial, Helvetica, sans-serif", "Arial"],
@@ -204,6 +223,34 @@ function NudgeButton({ icon: Icon, label, onClick, disabled }) {
   return <button type="button" className="svg-editor-nudge-button" aria-label={label} title={label} onClick={onClick} disabled={disabled}><Icon size={16} /></button>;
 }
 
+function BgToolbarButton({ icon: Icon, label, isActive, onClick, isDanger }) {
+  const [showTooltip, setShowTooltip] = React.useState(false);
+
+  return (
+    <div
+      className="svg-editor-bg-tool-wrapper"
+      onMouseEnter={() => setShowTooltip(true)}
+      onMouseLeave={() => setShowTooltip(false)}
+      onFocus={() => setShowTooltip(true)}
+      onBlur={() => setShowTooltip(false)}
+    >
+      <button
+        type="button"
+        className={`svg-editor-bg-tool-btn ${isActive ? "is-active" : ""} ${isDanger ? "is-danger" : ""}`}
+        onClick={onClick}
+        aria-label={label}
+      >
+        <Icon size={18} />
+      </button>
+      {showTooltip && (
+        <div className="svg-editor-bg-tooltip" role="tooltip">
+          {label}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function SvgPropertiesPanel({
   selectedCount,
   details,
@@ -220,6 +267,16 @@ export default function SvgPropertiesPanel({
   onDelete,
   onGroup,
   onUngroup,
+  onAddText,
+  activeMobileTab,
+  onSetSolidBackground,
+  onSetGradientBackground,
+  onSetImageBackground,
+  onRotateBackground,
+  onRemoveBackground,
+  backgroundInfo,
+  backgroundSubTab = "solid",
+  onSelectBackgroundSubTab,
   locked,
   error,
   t,
@@ -228,6 +285,28 @@ export default function SvgPropertiesPanel({
 }) {
   const [nudgeStep, setNudgeStep] = React.useState(1);
   const [activeColorTarget, setActiveColorTarget] = React.useState("fill");
+  const [desktopTab, setDesktopTab] = React.useState(selectedCount > 0 ? "element" : "background");
+  const [customColor1, setCustomColor1] = React.useState(backgroundInfo?.color1 || "#ff5e62");
+  const [customColor2, setCustomColor2] = React.useState(backgroundInfo?.color2 || "#ff9966");
+  const [customAngle, setCustomAngle] = React.useState(backgroundInfo?.angle || 45);
+  const [customBgOpacity, setCustomBgOpacity] = React.useState(backgroundInfo?.opacity !== undefined ? Math.round(backgroundInfo.opacity * 100) : 100);
+  const bgImageInputRef = React.useRef(null);
+
+  React.useEffect(() => {
+    if (selectedCount > 0) {
+      setDesktopTab("element");
+    } else {
+      setDesktopTab("background");
+    }
+  }, [selectedCount]);
+
+  React.useEffect(() => {
+    if (backgroundInfo?.color1) setCustomColor1(backgroundInfo.color1);
+    if (backgroundInfo?.color2) setCustomColor2(backgroundInfo.color2);
+    if (backgroundInfo?.angle !== undefined) setCustomAngle(backgroundInfo.angle);
+    if (backgroundInfo?.opacity !== undefined) setCustomBgOpacity(Math.round(backgroundInfo.opacity * 100));
+  }, [backgroundInfo]);
+
   const attrs = details?.attributes || {};
   const tag = details?.tag || "";
   const supportsPosition = !!details && !details.definition && tag !== "style";
@@ -248,6 +327,24 @@ export default function SvgPropertiesPanel({
   const fontFamily = attrs["font-family"] || FONT_PRESETS[0][0];
   const colorValue = attrs[activeColorTarget] || (activeColorTarget === "fill" ? "#000000" : "none");
 
+  const isBackgroundView = activeMobileTab === "background" || (!activeMobileTab && (desktopTab === "background" || selectedCount === 0));
+
+  const isRotationEnabled = (backgroundSubTab === "gradient" || backgroundSubTab === "image") && backgroundSubTab !== "solid" && backgroundSubTab !== "clear";
+
+  const currentBgRotation = backgroundSubTab === "gradient"
+    ? (backgroundInfo?.angle !== undefined ? Number(backgroundInfo.angle) : Number(customAngle))
+    : Number(backgroundInfo?.rotation || 0);
+
+  const handleBgRotationCommit = React.useCallback((newAngle) => {
+    if (!isRotationEnabled) return;
+    if (backgroundSubTab === "gradient") {
+      setCustomAngle(newAngle);
+      onSetGradientBackground?.(customColor1, customColor2, newAngle);
+    } else if (backgroundSubTab === "image") {
+      onRotateBackground?.(newAngle);
+    }
+  }, [isRotationEnabled, backgroundSubTab, customColor1, customColor2, onSetGradientBackground, onRotateBackground]);
+
   return (
     <section className={`svg-editor-panel svg-editor-properties-panel ${collapsed ? "is-collapsed" : ""}`} aria-label={t("svgEditor.propertiesTitle")}>
       <div className="svg-editor-panel-heading">
@@ -259,8 +356,371 @@ export default function SvgPropertiesPanel({
           </button>
         </div>
       </div>
+      {!activeMobileTab && (
+        <div className="svg-editor-panel-tabs" role="tablist">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={!isBackgroundView}
+            className={`svg-editor-panel-tab ${!isBackgroundView ? "is-active" : ""}`}
+            onClick={() => {
+              if (selectedCount > 0) setDesktopTab("element");
+            }}
+            disabled={selectedCount === 0}
+            title={selectedCount === 0 ? (t("svgEditor.selectElement") || "Select an element to edit properties") : (t("svgEditor.element") || "Element Properties")}
+          >
+            <SlidersHorizontal size={13} />
+            <span>{t("svgEditor.element") || "Element"}</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={isBackgroundView}
+            className={`svg-editor-panel-tab ${isBackgroundView ? "is-active" : ""}`}
+            onClick={() => setDesktopTab("background")}
+            title={t("svgEditor.background") || "Background"}
+          >
+            <Image size={13} />
+            <span>{t("svgEditor.background") || "Background"}</span>
+          </button>
+        </div>
+      )}
       <div className="svg-editor-panel-content">
-        {!details || selectedCount !== 1 ? (
+        {isBackgroundView ? (
+          <div className="svg-editor-properties-scroll">
+            <div className="svg-editor-property-section" data-section="background">
+              <div className="svg-editor-bg-toolbar" role="toolbar" aria-label={t("svgEditor.background") || "Background options"}>
+                <BgToolbarButton
+                  icon={Palette}
+                  label={t("svgEditor.solidColor") || "Solid Color"}
+                  isActive={backgroundSubTab === "solid"}
+                  onClick={() => onSelectBackgroundSubTab?.("solid")}
+                />
+                <BgToolbarButton
+                  icon={Sparkles}
+                  label={t("svgEditor.gradientColor") || "Gradient"}
+                  isActive={backgroundSubTab === "gradient"}
+                  onClick={() => onSelectBackgroundSubTab?.("gradient")}
+                />
+                <BgToolbarButton
+                  icon={Image}
+                  label={t("svgEditor.imageBackground") || "Image"}
+                  isActive={backgroundSubTab === "image"}
+                  onClick={() => onSelectBackgroundSubTab?.("image")}
+                />
+                <BgToolbarButton
+                  icon={Trash2}
+                  label={t("svgEditor.clearBackground") || "Clear"}
+                  isActive={backgroundSubTab === "clear" || (!backgroundInfo && backgroundSubTab !== "solid" && backgroundSubTab !== "gradient" && backgroundSubTab !== "image")}
+                  isDanger={true}
+                  onClick={() => {
+                    onRemoveBackground?.();
+                    onSelectBackgroundSubTab?.("clear");
+                  }}
+                />
+              </div>
+              {backgroundSubTab === "solid" && (
+                <div>
+                  <h3><Palette size={14} /> {t("svgEditor.solidColor") || "Solid Color"}</h3>
+                  <label className="svg-editor-color-picker-card">
+                    <span className="svg-editor-large-color-swatch" style={{ background: normalizeColor(backgroundInfo?.color || "#ffffff") }}>
+                      <input
+                        aria-label={t("svgEditor.solidColor") || "Solid Color"}
+                        type="color"
+                        value={normalizeColor(backgroundInfo?.color || "#ffffff")}
+                        onChange={(event) => onSetSolidBackground?.(event.target.value)}
+                      />
+                    </span>
+                    <span className="svg-editor-color-value-copy">
+                      <strong>{t("svgEditor.solidColor") || "Solid Color"}</strong>
+                      <code>{backgroundInfo?.color || "#ffffff"}</code>
+                    </span>
+                    <span className="svg-editor-color-picker-edit">{t("svgEditor.chooseColor")}</span>
+                  </label>
+                  <div className="svg-editor-swatches-label" style={{ marginTop: 12 }}>{t("svgEditor.colorSwatches")}</div>
+                  <div className="svg-editor-color-swatches">
+                    {SOLID_BG_PRESETS.map((color) => (
+                      <button
+                        key={color}
+                        type="button"
+                        className={`svg-editor-color-swatch ${(backgroundInfo?.color || "").toLowerCase() === color.toLowerCase() ? "is-selected" : ""}`}
+                        style={{ "--swatch-color": color }}
+                        title={color}
+                        onClick={() => onSetSolidBackground?.(color)}
+                      >
+                        <span />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {backgroundSubTab === "gradient" && (
+                <div>
+                  <h3><Sparkles size={14} /> {t("svgEditor.gradientColor") || "Gradient Color"}</h3>
+                  <div className="svg-editor-swatches-label">{t("svgEditor.gradientHelp") || "Preset Gradients"}</div>
+                  <div className="svg-editor-gradient-presets">
+                    {GRADIENT_PRESETS.map((preset) => (
+                      <button
+                        key={preset.name}
+                        type="button"
+                        className={`svg-editor-gradient-preset-card ${backgroundInfo?.color1 === preset.color1 && backgroundInfo?.color2 === preset.color2 ? "is-selected" : ""}`}
+                        style={{ background: `linear-gradient(${preset.angle}deg, ${preset.color1}, ${preset.color2})` }}
+                        title={preset.name}
+                        onClick={() => {
+                          setCustomColor1(preset.color1);
+                          setCustomColor2(preset.color2);
+                          setCustomAngle(preset.angle);
+                          onSetGradientBackground?.(preset.color1, preset.color2, preset.angle);
+                        }}
+                      />
+                    ))}
+                  </div>
+
+                  <div className="svg-editor-custom-gradient-box">
+                    <strong>{t("svgEditor.customGradient") || "Custom Gradient"}</strong>
+                    <div
+                      className="svg-editor-gradient-preview"
+                      style={{ background: `linear-gradient(${customAngle}deg, ${customColor1}, ${customColor2})` }}
+                    />
+                    <div className="svg-editor-gradient-color-pickers">
+                      <label className="svg-editor-color-picker-card">
+                        <span className="svg-editor-large-color-swatch" style={{ background: normalizeColor(customColor1) }}>
+                          <input
+                            type="color"
+                            value={normalizeColor(customColor1)}
+                            onChange={(e) => {
+                              setCustomColor1(e.target.value);
+                              onSetGradientBackground?.(e.target.value, customColor2, customAngle);
+                            }}
+                          />
+                        </span>
+                        <span className="svg-editor-color-value-copy">
+                          <strong>{t("svgEditor.color1") || "Color 1"}</strong>
+                          <code>{customColor1}</code>
+                        </span>
+                      </label>
+                      <label className="svg-editor-color-picker-card">
+                        <span className="svg-editor-large-color-swatch" style={{ background: normalizeColor(customColor2) }}>
+                          <input
+                            type="color"
+                            value={normalizeColor(customColor2)}
+                            onChange={(e) => {
+                              setCustomColor2(e.target.value);
+                              onSetGradientBackground?.(customColor1, e.target.value, customAngle);
+                            }}
+                          />
+                        </span>
+                        <span className="svg-editor-color-value-copy">
+                          <strong>{t("svgEditor.color2") || "Color 2"}</strong>
+                          <code>{customColor2}</code>
+                        </span>
+                      </label>
+                    </div>
+
+                    <div style={{ marginTop: 6 }}>
+                      <span className="text-xs font-semibold">{t("svgEditor.angle") || "Direction"}:</span>
+                      <div className="svg-editor-quick-pills" style={{ marginTop: 6 }}>
+                        {[
+                          { label: "0° (H)", angle: 0 },
+                          { label: "90° (V)", angle: 90 },
+                          { label: "45°", angle: 45 },
+                          { label: "135°", angle: 135 },
+                        ].map(({ label, angle }) => (
+                          <button
+                            key={angle}
+                            type="button"
+                            className={`svg-editor-preset-pill ${customAngle === angle ? "is-active" : ""}`}
+                            onClick={() => {
+                              setCustomAngle(angle);
+                              onSetGradientBackground?.(customColor1, customColor2, angle);
+                            }}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {backgroundSubTab === "image" && (
+                <div>
+                  <h3><Image size={14} /> {t("svgEditor.imageBackground") || "Image Background"}</h3>
+                  <input
+                    ref={bgImageInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                    hidden
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (!file) return;
+                      const reader = new FileReader();
+                      reader.onload = (loadEvent) => {
+                        const dataUrl = loadEvent.target?.result;
+                        if (dataUrl) onSetImageBackground?.(dataUrl, customBgOpacity / 100);
+                      };
+                      reader.readAsDataURL(file);
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="svg-editor-primary-btn svg-editor-add-text-action"
+                    onClick={() => bgImageInputRef.current?.click()}
+                  >
+                    <Upload size={16} />
+                    <span>{t("svgEditor.uploadBackgroundImage") || "Upload background photo"}</span>
+                  </button>
+
+                  {backgroundInfo?.type === "image" && (
+                    <div style={{ marginTop: 14 }}>
+                      <RangeControl
+                        label={t("svgEditor.opacityPercent") || "Opacity"}
+                        value={customBgOpacity}
+                        min={0}
+                        max={100}
+                        step={1}
+                        suffix="%"
+                        onCommit={(value) => {
+                          setCustomBgOpacity(value);
+                          if (backgroundInfo.imageHref) {
+                            onSetImageBackground?.(backgroundInfo.imageHref, value / 100);
+                          }
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {backgroundSubTab === "clear" && (
+                <div className="svg-editor-bg-clear-panel">
+                  <div className="svg-editor-bg-clear-icon">
+                    <Trash2 size={24} />
+                  </div>
+                  <h4>{t("svgEditor.noBackgroundApplied") || "Transparent Background"}</h4>
+                  <p>{t("svgEditor.clearBackgroundDesc") || "The background has been removed. Artwork has a transparent background."}</p>
+                  <div className="svg-editor-bg-quick-presets">
+                    <button
+                      type="button"
+                      className="svg-editor-secondary-button"
+                      onClick={() => {
+                        onSetSolidBackground?.("#ffffff");
+                        onSelectBackgroundSubTab?.("solid");
+                      }}
+                    >
+                      <Palette size={14} />
+                      <span>{t("svgEditor.solidColor") || "Solid"}</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="svg-editor-secondary-button"
+                      onClick={() => {
+                        onSetGradientBackground?.("#ff5e62", "#ff9966", 45);
+                        onSelectBackgroundSubTab?.("gradient");
+                      }}
+                    >
+                      <Sparkles size={14} />
+                      <span>{t("svgEditor.gradientColor") || "Gradient"}</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Background Rotation Section: enabled for non-solid backgrounds, disabled/appearance-only for solid color */}
+              <div className={`svg-editor-bg-rotation-box ${isRotationEnabled ? "is-enabled" : "is-disabled"}`}>
+                <div className="svg-editor-bg-rotation-header">
+                  <h3><RotateCw size={13} /> {t("svgEditor.backgroundRotation") || "Background Rotation"}</h3>
+                  <span className="svg-editor-bg-rotation-badge">
+                    {isRotationEnabled ? `${currentBgRotation}°` : "0°"}
+                  </span>
+                </div>
+                <div className="svg-editor-quick-pills" style={{ marginTop: 8 }}>
+                  {[0, 90, 180, 270].map((deg) => (
+                    <button
+                      key={deg}
+                      type="button"
+                      disabled={!isRotationEnabled}
+                      className={`svg-editor-preset-pill ${isRotationEnabled && currentBgRotation === deg ? "is-active" : ""}`}
+                      onClick={() => handleBgRotationCommit(deg)}
+                    >
+                      {deg}°
+                    </button>
+                  ))}
+                </div>
+                <div style={{ marginTop: 12 }}>
+                  <RangeControl
+                    label={t("svgEditor.rotation") || "Rotation"}
+                    value={currentBgRotation}
+                    min={0}
+                    max={360}
+                    step={5}
+                    suffix="°"
+                    disabled={!isRotationEnabled}
+                    onCommit={(value) => handleBgRotationCommit(value)}
+                  />
+                </div>
+                {!isRotationEnabled && (
+                  <p className="svg-editor-rotation-disabled-hint">
+                    {t("svgEditor.rotationDisabledForSolid") || "Rotation is only available for gradients and images."}
+                  </p>
+                )}
+              </div>
+            </div>
+            {error && <p className="svg-editor-inline-error" role="alert">{error}</p>}
+          </div>
+        ) : activeMobileTab === "text" ? (
+          <div className="svg-editor-properties-scroll">
+            <div className="svg-editor-property-section" data-section="text">
+              <h3><Type size={14} /> {t("svgEditor.text") || "Text"}</h3>
+              <button
+                type="button"
+                className="svg-editor-primary-btn svg-editor-add-text-action"
+                onClick={onAddText}
+              >
+                <Type size={16} />
+                <span>{t("svgEditor.addTextToLogo") || "Add text to logo"}</span>
+              </button>
+
+              {details?.textEditable || isTextElement ? (
+                <>
+                  <label className="svg-editor-field svg-editor-text-field" style={{ marginTop: 12 }}>
+                    <span>{t("svgEditor.textContent")}</span>
+                    <textarea
+                      key={`${details.id}-${details.textContent}`}
+                      defaultValue={details.textContent}
+                      rows={3}
+                      maxLength={1000}
+                      disabled={locked}
+                      onBlur={(event) => { if (event.target.value !== details.textContent) onText(event.target.value); }}
+                    />
+                  </label>
+                  <label className="svg-editor-field svg-editor-font-family-field" style={{ marginTop: 8 }}>
+                    <span>{t("svgEditor.fontFamily")}</span>
+                    <select value={fontFamily} disabled={locked} onChange={(event) => onAttribute("font-family", event.target.value)}>
+                      {!FONT_PRESETS.some(([font]) => font === fontFamily) && <option value={fontFamily}>{fontFamily}</option>}
+                      {FONT_PRESETS.map(([font, label]) => <option key={font} value={font}>{label}</option>)}
+                    </select>
+                  </label>
+                  <RangeControl label={t("svgEditor.fontSize")} value={fontSize} min={1} max={Math.max(200, Math.min(2000, Math.ceil(fontSize * 2)))} step={1} suffix=" px" onCommit={(value) => onAttribute("font-size", value)} disabled={locked} icon={Type} />
+                  <RangeControl label={t("svgEditor.fontWeight")} value={fontWeight} min={100} max={900} step={100} onCommit={(value) => onAttribute("font-weight", String(value))} disabled={locked} />
+                  <RangeControl label={t("svgEditor.letterSpacing")} value={letterSpacing} min={-40} max={Math.max(40, Math.min(400, Math.ceil(Math.abs(letterSpacing) * 2)))} step={0.5} suffix=" px" onCommit={(value) => onAttribute("letter-spacing", value)} disabled={locked} />
+                  <div className="svg-editor-text-style-actions">
+                    <button type="button" className={`svg-editor-style-toggle ${bold ? "is-active" : ""}`} onClick={() => onAttribute("font-weight", bold ? "400" : "700")} disabled={locked} aria-pressed={bold} title={t("svgEditor.bold")}><Bold size={15} /><span>{t("svgEditor.bold")}</span></button>
+                    <button type="button" className={`svg-editor-style-toggle ${italic ? "is-active" : ""}`} onClick={() => onAttribute("font-style", italic ? "normal" : "italic")} disabled={locked} aria-pressed={italic} title={t("svgEditor.italic")}><Italic size={15} /><span>{t("svgEditor.italic")}</span></button>
+                    <label className="svg-editor-field svg-editor-text-align-field"><span>{t("svgEditor.textAlign")}</span><select value={attrs["text-anchor"] || "start"} disabled={locked} onChange={(event) => onAttribute("text-anchor", event.target.value)}><option value="start">{t("svgEditor.alignStart")}</option><option value="middle">{t("svgEditor.alignCenter")}</option><option value="end">{t("svgEditor.alignEnd")}</option></select></label>
+                  </div>
+                </>
+              ) : (
+                <p className="svg-editor-help" style={{ marginTop: 10 }}>
+                  {t("svgEditor.addTextHelp")}
+                </p>
+              )}
+            </div>
+            {error && <p className="svg-editor-inline-error" role="alert">{error}</p>}
+          </div>
+        ) : !details || selectedCount !== 1 ? (
           <div className="svg-editor-property-empty">
             <span className="svg-editor-property-empty-icon"><SlidersHorizontal size={20} /></span>
             <strong>{selectedCount > 1 ? t("svgEditor.selectedCount", { count: selectedCount }) : t("svgEditor.selectElement")}</strong>
@@ -279,56 +739,136 @@ export default function SvgPropertiesPanel({
               <input key={details.id} defaultValue={details.label} disabled={locked} onBlur={(event) => { if (event.target.value !== details.label) onRename(event.target.value); }} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} maxLength={80} />
             </label>
 
-            {supportsPosition && <div className="svg-editor-property-section">
-              <h3>{t("svgEditor.positionSize")}</h3>
-              {supportsSize && <div className="svg-editor-dimensions-card">
-                <RangeControl
-                  key={`uniform-scale-${details.id}-${Math.round(width * 100) / 100}-${Math.round(height * 100) / 100}`}
-                  label={t("svgEditor.scale")}
-                  value={100}
-                  min={10}
-                  max={300}
-                  step={1}
-                  suffix="%"
-                  onCommit={(value) => onSize("scale", value / 100, bounds)}
-                  disabled={locked}
-                />
-                <div className="svg-editor-fields-2 svg-editor-size-number-fields">
-                  <NumberField label={t("svgEditor.width")} value={width} min={0} onCommit={(value) => onSize("width", value, bounds)} disabled={locked} />
-                  <NumberField label={t("svgEditor.height")} value={height} min={0} onCommit={(value) => onSize("height", value, bounds)} disabled={locked} />
-                </div>
-                <div className="svg-editor-size-sliders">
-                  <RangeControl label={t("svgEditor.width")} value={width} min={0} max={Math.max(200, Math.min(10000, Math.ceil(Math.max(1, width) * 2)))} step={1} onCommit={(value) => onSize("width", value, bounds)} disabled={locked} />
-                  <RangeControl label={t("svgEditor.height")} value={height} min={0} max={Math.max(200, Math.min(10000, Math.ceil(Math.max(1, height) * 2)))} step={1} onCommit={(value) => onSize("height", value, bounds)} disabled={locked} />
-                </div>
-              </div>}
-              <div className="svg-editor-nudge-wrap">
-                <div className="svg-editor-nudge-heading">
-                  <strong>{t("svgEditor.preciseMove")}</strong>
-                  <label className="svg-editor-nudge-step"><span>{t("svgEditor.moveStep")}</span><input type="number" min="0.1" step="0.1" value={nudgeStep} disabled={locked} onChange={(event) => setNudgeStep(Math.max(0.1, Math.min(1000, Number(event.target.value) || 1)))} /></label>
-                </div>
-                <div className="svg-editor-nudge-grid">
-                  <span />
-                  <NudgeButton icon={ArrowUp} label={t("svgEditor.moveUp")} onClick={() => onNudge(0, -nudgeStep)} disabled={locked} />
-                  <span />
-                  <NudgeButton icon={ArrowLeft} label={t("svgEditor.moveLeft")} onClick={() => onNudge(-nudgeStep, 0)} disabled={locked} />
-                  <NudgeButton icon={ArrowDown} label={t("svgEditor.moveDown")} onClick={() => onNudge(0, nudgeStep)} disabled={locked} />
-                  <NudgeButton icon={ArrowRight} label={t("svgEditor.moveRight")} onClick={() => onNudge(nudgeStep, 0)} disabled={locked} />
-                </div>
-                <div className="svg-editor-fields-2 svg-editor-position-number-fields">
-                  <NumberField label={t("svgEditor.x")} value={positionX} onCommit={(value) => onPosition("x", value, bounds)} disabled={locked} />
-                  <NumberField label={t("svgEditor.y")} value={positionY} onCommit={(value) => onPosition("y", value, bounds)} disabled={locked} />
-                </div>
-              </div>
-              <div className="svg-editor-inline-actions">
+            {/* 1. CONTROLS: delete, duplicate, flip and 4 icons of moving */}
+            <div className="svg-editor-property-section" data-section="controls">
+              <h3><SlidersHorizontal size={13} />{t("svgEditor.controls") || "Controls"}</h3>
+              <div className="svg-editor-action-grid">
+                <QuickAction icon={Copy} label={t("svgEditor.duplicate")} onClick={onDuplicate} disabled={locked} />
+                {tag === "g" ? <QuickAction icon={Ungroup} label={t("svgEditor.ungroup")} onClick={onUngroup} disabled={locked} /> : <QuickAction icon={Group} label={t("svgEditor.groupSelection")} onClick={onGroup} disabled={locked || selectedCount < 2} />}
                 <QuickAction icon={FlipHorizontal} label={t("svgEditor.flipHorizontal")} onClick={() => onFlip("x", bounds)} disabled={locked} />
                 <QuickAction icon={FlipVertical} label={t("svgEditor.flipVertical")} onClick={() => onFlip("y", bounds)} disabled={locked} />
+                <QuickAction icon={Trash2} label={t("svgEditor.delete")} onClick={onDelete} disabled={locked} danger />
               </div>
-              <RotationWheel value={rotation} onCommit={(value) => onRotate(value, bounds)} disabled={locked} label={t("svgEditor.rotation")} hint={t("svgEditor.rotationWheelHint")} />
-              <NumberField label={t("svgEditor.rotation")} value={rotation} min={-180} max={180} step={1} suffix="°" onCommit={(value) => onRotate(value, bounds)} disabled={locked} />
-            </div>}
+              {supportsPosition && (
+                <div className="svg-editor-nudge-wrap">
+                  <div className="svg-editor-nudge-heading">
+                    <strong>{t("svgEditor.preciseMove")}</strong>
+                    <label className="svg-editor-nudge-step">
+                      <span>{t("svgEditor.moveStep")}</span>
+                      <input type="number" min="0.1" step="0.1" value={nudgeStep} disabled={locked} onChange={(event) => setNudgeStep(Math.max(0.1, Math.min(1000, Number(event.target.value) || 1)))} />
+                    </label>
+                  </div>
+                  <div className="svg-editor-nudge-grid">
+                    <span />
+                    <NudgeButton icon={ArrowUp} label={t("svgEditor.moveUp")} onClick={() => onNudge(0, -nudgeStep)} disabled={locked} />
+                    <span />
+                    <NudgeButton icon={ArrowLeft} label={t("svgEditor.moveLeft")} onClick={() => onNudge(-nudgeStep, 0)} disabled={locked} />
+                    <NudgeButton icon={ArrowDown} label={t("svgEditor.moveDown")} onClick={() => onNudge(0, nudgeStep)} disabled={locked} />
+                    <NudgeButton icon={ArrowRight} label={t("svgEditor.moveRight")} onClick={() => onNudge(nudgeStep, 0)} disabled={locked} />
+                  </div>
+                  <div className="svg-editor-fields-2 svg-editor-position-number-fields">
+                    <NumberField label={t("svgEditor.x")} value={positionX} onCommit={(value) => onPosition("x", value, bounds)} disabled={locked} />
+                    <NumberField label={t("svgEditor.y")} value={positionY} onCommit={(value) => onPosition("y", value, bounds)} disabled={locked} />
+                  </div>
+                </div>
+              )}
+            </div>
 
-            {details.textEditable && <div className="svg-editor-property-section">
+            {/* 2. SIZE: scale, width, height */}
+            {supportsPosition && supportsSize && (
+              <div className="svg-editor-property-section" data-section="size">
+                <h3><Maximize2 size={13} />{t("svgEditor.size") || "Size"}</h3>
+                <div className="svg-editor-dimensions-card">
+                  <RangeControl
+                    key={`uniform-scale-${details.id}-${Math.round(width * 100) / 100}-${Math.round(height * 100) / 100}`}
+                    label={t("svgEditor.scale")}
+                    value={100}
+                    min={10}
+                    max={300}
+                    step={1}
+                    suffix="%"
+                    onCommit={(value) => onSize("scale", value / 100, bounds)}
+                    disabled={locked}
+                  />
+                  <div className="svg-editor-fields-2 svg-editor-size-number-fields">
+                    <NumberField label={t("svgEditor.width")} value={width} min={0} onCommit={(value) => onSize("width", value, bounds)} disabled={locked} />
+                    <NumberField label={t("svgEditor.height")} value={height} min={0} onCommit={(value) => onSize("height", value, bounds)} disabled={locked} />
+                  </div>
+                  <div className="svg-editor-size-sliders">
+                    <RangeControl label={t("svgEditor.width")} value={width} min={0} max={Math.max(200, Math.min(10000, Math.ceil(Math.max(1, width) * 2)))} step={1} onCommit={(value) => onSize("width", value, bounds)} disabled={locked} />
+                    <RangeControl label={t("svgEditor.height")} value={height} min={0} max={Math.max(200, Math.min(10000, Math.ceil(Math.max(1, height) * 2)))} step={1} onCommit={(value) => onSize("height", value, bounds)} disabled={locked} />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 3. COLORS: appearance, fill, stroke target, palette */}
+            <div className="svg-editor-property-section" data-section="colors">
+              <h3><Palette size={13} />{t("svgEditor.colors") || t("svgEditor.appearance")}</h3>
+              <div className="svg-editor-color-targets" role="group" aria-label={t("svgEditor.colorTarget")}>
+                <button type="button" className={activeColorTarget === "fill" ? "is-active" : ""} onClick={() => setActiveColorTarget("fill")}><span className="svg-editor-color-target-dot is-fill" />{t("svgEditor.fill")}</button>
+                <button type="button" className={activeColorTarget === "stroke" ? "is-active" : ""} onClick={() => setActiveColorTarget("stroke")}><span className="svg-editor-color-target-dot is-stroke" />{t("svgEditor.stroke")}</button>
+              </div>
+              <label className="svg-editor-color-picker-card">
+                <span className="svg-editor-large-color-swatch" style={{ background: normalizeColor(colorValue) }}><input aria-label={t(activeColorTarget === "fill" ? "svgEditor.fill" : "svgEditor.stroke")} type="color" value={normalizeColor(colorValue)} onChange={(event) => onAttribute(activeColorTarget, event.target.value)} disabled={locked} /></span>
+                <span className="svg-editor-color-value-copy"><strong>{t(activeColorTarget === "fill" ? "svgEditor.fill" : "svgEditor.stroke")}</strong><code>{colorValue}</code></span>
+                <span className="svg-editor-color-picker-edit">{t("svgEditor.chooseColor")}</span>
+              </label>
+              <div className="svg-editor-swatches-label">{t("svgEditor.colorSwatches")}</div>
+              <div className="svg-editor-color-swatches">
+                {COLOR_PRESETS.map((color) => <button key={color} type="button" className={`svg-editor-color-swatch ${normalizeColor(colorValue).toLowerCase() === color.toLowerCase() ? "is-selected" : ""}`} style={{ "--swatch-color": color }} aria-label={`${t(activeColorTarget === "fill" ? "svgEditor.fill" : "svgEditor.stroke")} ${color}`} title={color} onClick={() => onAttribute(activeColorTarget, color)} disabled={locked}><span /></button>)}
+              </div>
+              <p className="svg-editor-help">{t("svgEditor.gradientHelp")}</p>
+            </div>
+
+            {/* 4. OPACITY */}
+            <div className="svg-editor-property-section" data-section="opacity">
+              <h3><Blend size={13} />{t("svgEditor.opacity") || t("svgEditor.opacityPercent")}</h3>
+              <RangeControl label={t("svgEditor.opacityPercent")} value={opacity} min={0} max={100} step={1} suffix="%" onCommit={(value) => onAttribute("opacity", Math.max(0, Math.min(100, value)) / 100)} disabled={locked} />
+              <div className="svg-editor-quick-pills">
+                {[25, 50, 75, 100].map((pct) => (
+                  <button key={pct} type="button" className={`svg-editor-preset-pill ${Math.round(opacity) === pct ? "is-active" : ""}`} onClick={() => onAttribute("opacity", pct / 100)} disabled={locked}>
+                    {pct}%
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 5. ROTATION */}
+            {supportsPosition && (
+              <div className="svg-editor-property-section" data-section="rotation">
+                <h3><RotateCw size={13} />{t("svgEditor.rotation")}</h3>
+                <RotationWheel value={rotation} onCommit={(value) => onRotate(value, bounds)} disabled={locked} label={t("svgEditor.rotation")} hint={t("svgEditor.rotationWheelHint")} />
+                <NumberField label={t("svgEditor.rotation")} value={rotation} min={-180} max={180} step={1} suffix="°" onCommit={(value) => onRotate(value, bounds)} disabled={locked} />
+                <div className="svg-editor-inline-actions" style={{ marginTop: 8 }}>
+                  <QuickAction icon={RotateCcw} label={t("svgEditor.resetRotation")} onClick={() => onRotate(0, bounds)} disabled={locked || Number(rotation) === 0} />
+                  <QuickAction icon={RotateCw} label="+90°" onClick={() => onRotate(((Number(rotation) || 0) + 90 + 180) % 360 - 180, bounds)} disabled={locked} />
+                  <QuickAction icon={RotateCcw} label="-90°" onClick={() => onRotate(((Number(rotation) || 0) - 90 + 180) % 360 - 180, bounds)} disabled={locked} />
+                </div>
+              </div>
+            )}
+
+            {/* 6. STROKE */}
+            <div className="svg-editor-property-section" data-section="stroke">
+              <h3><Paintbrush size={13} />{t("svgEditor.stroke")}</h3>
+              <RangeControl label={t("svgEditor.strokeWidth")} value={strokeWidth} min={0} max={Math.max(20, Math.min(1000, Math.ceil(strokeWidth * 2)))} step={0.5} suffix=" px" onCommit={(value) => onAttribute("stroke-width", value)} disabled={locked} />
+              <div className="svg-editor-stroke-color-wrap" style={{ marginTop: 10 }}>
+                <label className="svg-editor-color-picker-card">
+                  <span className="svg-editor-large-color-swatch" style={{ background: normalizeColor(attrs.stroke || "#000000") }}>
+                    <input aria-label={t("svgEditor.stroke")} type="color" value={normalizeColor(attrs.stroke || "#000000")} onChange={(event) => onAttribute("stroke", event.target.value)} disabled={locked} />
+                  </span>
+                  <span className="svg-editor-color-value-copy"><strong>{t("svgEditor.stroke")}</strong><code>{attrs.stroke || "none"}</code></span>
+                  <span className="svg-editor-color-picker-edit">{t("svgEditor.chooseColor")}</span>
+                </label>
+                <div className="svg-editor-swatches-label">{t("svgEditor.colorSwatches")}</div>
+                <div className="svg-editor-color-swatches">
+                  {COLOR_PRESETS.map((color) => <button key={color} type="button" className={`svg-editor-color-swatch ${normalizeColor(attrs.stroke || "").toLowerCase() === color.toLowerCase() ? "is-selected" : ""}`} style={{ "--swatch-color": color }} aria-label={`${t("svgEditor.stroke")} ${color}`} title={color} onClick={() => onAttribute("stroke", color)} disabled={locked}><span /></button>)}
+                </div>
+              </div>
+            </div>
+
+            {/* TEXT SECTIONS */}
+            {details.textEditable && <div className="svg-editor-property-section" data-section="text">
               <h3>{t("svgEditor.textContent")}</h3>
               <label className="svg-editor-field svg-editor-text-field">
                 <span>{t("svgEditor.textContent")}</span>
@@ -336,7 +876,7 @@ export default function SvgPropertiesPanel({
               </label>
             </div>}
 
-            {isTextElement && <div className="svg-editor-property-section">
+            {isTextElement && <div className="svg-editor-property-section" data-section="typography">
               <h3><Type size={13} />{t("svgEditor.typography")}</h3>
               <label className="svg-editor-field svg-editor-font-family-field">
                 <span>{t("svgEditor.fontFamily")}</span>
@@ -354,36 +894,6 @@ export default function SvgPropertiesPanel({
                 <label className="svg-editor-field svg-editor-text-align-field"><span>{t("svgEditor.textAlign")}</span><select value={attrs["text-anchor"] || "start"} disabled={locked} onChange={(event) => onAttribute("text-anchor", event.target.value)}><option value="start">{t("svgEditor.alignStart")}</option><option value="middle">{t("svgEditor.alignCenter")}</option><option value="end">{t("svgEditor.alignEnd")}</option></select></label>
               </div>
             </div>}
-
-            <div className="svg-editor-property-section">
-              <h3><Palette size={13} />{t("svgEditor.appearance")}</h3>
-              <div className="svg-editor-color-targets" role="group" aria-label={t("svgEditor.colorTarget")}>
-                <button type="button" className={activeColorTarget === "fill" ? "is-active" : ""} onClick={() => setActiveColorTarget("fill")}><span className="svg-editor-color-target-dot is-fill" />{t("svgEditor.fill")}</button>
-                <button type="button" className={activeColorTarget === "stroke" ? "is-active" : ""} onClick={() => setActiveColorTarget("stroke")}><span className="svg-editor-color-target-dot is-stroke" />{t("svgEditor.stroke")}</button>
-              </div>
-              <label className="svg-editor-color-picker-card">
-                <span className="svg-editor-large-color-swatch" style={{ background: normalizeColor(colorValue) }}><input aria-label={t(activeColorTarget === "fill" ? "svgEditor.fill" : "svgEditor.stroke")} type="color" value={normalizeColor(colorValue)} onChange={(event) => onAttribute(activeColorTarget, event.target.value)} disabled={locked} /></span>
-                <span className="svg-editor-color-value-copy"><strong>{t(activeColorTarget === "fill" ? "svgEditor.fill" : "svgEditor.stroke")}</strong><code>{colorValue}</code></span>
-                <span className="svg-editor-color-picker-edit">{t("svgEditor.chooseColor")}</span>
-              </label>
-              <div className="svg-editor-swatches-label">{t("svgEditor.colorSwatches")}</div>
-              <div className="svg-editor-color-swatches">
-                {COLOR_PRESETS.map((color) => <button key={color} type="button" className={`svg-editor-color-swatch ${normalizeColor(colorValue).toLowerCase() === color.toLowerCase() ? "is-selected" : ""}`} style={{ "--swatch-color": color }} aria-label={`${t(activeColorTarget === "fill" ? "svgEditor.fill" : "svgEditor.stroke")} ${color}`} title={color} onClick={() => onAttribute(activeColorTarget, color)} disabled={locked}><span /></button>)}
-              </div>
-              <RangeControl label={t("svgEditor.opacityPercent")} value={opacity} min={0} max={100} step={1} suffix="%" onCommit={(value) => onAttribute("opacity", Math.max(0, Math.min(100, value)) / 100)} disabled={locked} />
-              <RangeControl label={t("svgEditor.strokeWidth")} value={strokeWidth} min={0} max={Math.max(20, Math.min(1000, Math.ceil(strokeWidth * 2)))} step={0.5} suffix=" px" onCommit={(value) => onAttribute("stroke-width", value)} disabled={locked} />
-              <p className="svg-editor-help">{t("svgEditor.gradientHelp")}</p>
-            </div>
-
-            <div className="svg-editor-property-section">
-              <h3>{t("svgEditor.arrange")}</h3>
-              <div className="svg-editor-action-grid">
-                <QuickAction icon={Copy} label={t("svgEditor.duplicate")} onClick={onDuplicate} disabled={locked} />
-                {tag === "g" ? <QuickAction icon={Ungroup} label={t("svgEditor.ungroup")} onClick={onUngroup} disabled={locked} /> : <QuickAction icon={Group} label={t("svgEditor.groupSelection")} onClick={onGroup} disabled={locked || selectedCount < 2} />}
-                <QuickAction icon={Trash2} label={t("svgEditor.delete")} onClick={onDelete} disabled={locked} danger />
-                <QuickAction icon={RotateCcw} label={t("svgEditor.resetRotation")} onClick={() => onRotate(0, bounds)} disabled={locked || Number(rotation) === 0} />
-              </div>
-            </div>
             {error && <p className="svg-editor-inline-error" role="alert">{error}</p>}
           </div>
         )}
