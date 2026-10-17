@@ -730,6 +730,10 @@ export default function SvgEditorDialog({ onClose, direction = "ltr" }) {
       return;
     }
     // Empty canvas space is intentionally not draggable: the artboard stays fixed.
+    // Deselect any currently selected elements when clicking empty canvas space.
+    if (selectedIds.length > 0) {
+      setSelectedIds([]);
+    }
   };
 
   const handleCanvasClick = (event) => {
@@ -738,11 +742,16 @@ export default function SvgEditorDialog({ onClose, direction = "ltr" }) {
       if (handle.getAttribute("data-editor-handle") === "delete") deleteSelection();
       return;
     }
+    const target = event.target.closest?.("[data-editor-id]");
+    if (!target) {
+      if (selectedIds.length > 0) {
+        setSelectedIds([]);
+      }
+      return;
+    }
     // SVG element selection is performed during pointer-down; this click fallback
     // is only for keyboard-generated activation events.
     if (event.detail !== 0) return;
-    const target = event.target.closest?.("[data-editor-id]");
-    if (!target) return;
     selectElement(target.getAttribute("data-editor-id"), event.shiftKey || event.metaKey || event.ctrlKey);
   };
 
@@ -908,7 +917,14 @@ export default function SvgEditorDialog({ onClose, direction = "ltr" }) {
     const onKeyDown = (event) => {
       const target = event.target;
       const editingText = target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
-      if (event.key === "Escape") { onClose(); return; }
+      if (event.key === "Escape") {
+        if (selectedIds.length > 0) {
+          setSelectedIds([]);
+          return;
+        }
+        onClose();
+        return;
+      }
       if (editingText) return;
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
         event.preventDefault();
@@ -1020,6 +1036,15 @@ export default function SvgEditorDialog({ onClose, direction = "ltr" }) {
           </div>
           <div className="svg-editor-tool-group svg-editor-arrange-tools">
             <ToolbarButton icon={Type} label={t("svgEditor.addText")} onClick={createTextSelection} disabled={!svgMarkup} />
+            <ToolbarButton
+              icon={Image}
+              label={t("svgEditor.background") || "Background"}
+              onClick={() => {
+                setSelectedIds([]);
+                setPropertiesCollapsed(false);
+              }}
+              disabled={!svgMarkup}
+            />
             <ToolbarButton icon={Copy} label={t("svgEditor.duplicate")} onClick={duplicateSelection} disabled={!selectedIds.length || locked} />
             <ToolbarButton icon={Group} label={t("svgEditor.group")} onClick={groupSelection} disabled={selectedIds.length < 2 || locked} />
             <ToolbarButton icon={Ungroup} label={t("svgEditor.ungroup")} onClick={ungroupSelection} disabled={!details || details.tag !== "g" || locked} />
@@ -1031,7 +1056,25 @@ export default function SvgEditorDialog({ onClose, direction = "ltr" }) {
 
         <div className={`svg-editor-workspace ${layersCollapsed ? "layers-collapsed" : ""} ${propertiesCollapsed ? "properties-collapsed" : ""}`} data-mobile-tab={mobileEditorTab || ""}>
           <SvgLayersPanel tree={tree} selectedIds={selectedIds} onSelect={selectElement} onHide={hideElement} onLock={lockElement} onReorder={reorderBetween} t={t} collapsed={layersCollapsed} onToggleCollapsed={() => setLayersCollapsed((value) => !value)} />
-          <main className="svg-editor-center-panel">
+          <main
+            className="svg-editor-center-panel"
+            onPointerDown={(event) => {
+              // Clicking anywhere on the workspace backdrop deselects any active element
+              if (
+                !event.target.closest("[data-editor-id]") &&
+                !event.target.closest("[data-editor-handle]") &&
+                !event.target.closest(".svg-editor-panel") &&
+                !event.target.closest("button") &&
+                !event.target.closest("input") &&
+                !event.target.closest("textarea") &&
+                !event.target.closest(".svg-editor-toolbar")
+              ) {
+                if (selectedIds.length > 0) {
+                  setSelectedIds([]);
+                }
+              }
+            }}
+          >
             <div className="svg-editor-canvas-heading"><div><strong>{t("svgEditor.canvas")}</strong><span>{svgMarkup ? t("svgEditor.vectorArtwork") : t("svgEditor.awaitingFile")}</span></div><span className="svg-editor-document-chip">{svgMarkup ? `${tree.reduce((sum, node) => sum + countTreeNodes(node), 0)} ${t("svgEditor.nodes")}` : t("svgEditor.noDocument")}</span></div>
             {renderCanvas()}
           </main>
@@ -1105,20 +1148,15 @@ export default function SvgEditorDialog({ onClose, direction = "ltr" }) {
             </button>
             <button
               type="button"
-              className={`svg-editor-bg-tab ${backgroundSubTab === "rotation" ? "is-active" : ""}`}
-              onClick={() => setBackgroundSubTab("rotation")}
-            >
-              <RotateCw size={20} />
-              <span>{t("svgEditor.rotateBackground") || "Rotation"}</span>
-            </button>
-            <button
-              type="button"
-              className="svg-editor-bg-tab svg-editor-bg-reset-btn"
-              onClick={handleRemoveBackground}
-              title={t("svgEditor.resetBackground") || "Reset"}
+              className={`svg-editor-bg-tab svg-editor-bg-reset-btn ${backgroundSubTab === "clear" ? "is-active" : ""}`}
+              onClick={() => {
+                handleRemoveBackground();
+                setBackgroundSubTab("clear");
+              }}
+              title={t("svgEditor.clearBackground") || "Clear"}
             >
               <Trash2 size={20} />
-              <span>{t("svgEditor.resetBackground") || "Reset"}</span>
+              <span>{t("svgEditor.clearBackground") || "Clear"}</span>
             </button>
           </nav>
         ) : (

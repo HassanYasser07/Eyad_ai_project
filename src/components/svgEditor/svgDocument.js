@@ -788,10 +788,14 @@ export function setGradientBackground(root, color1, color2, angle = 90) {
     grad.setAttribute("id", "svg-editor-bg-gradient");
     defs.appendChild(grad);
   }
-  grad.innerHTML = "";
+  while (grad.firstChild) {
+    grad.removeChild(grad.firstChild);
+  }
   const rad = ((angle % 360) * Math.PI) / 180;
-  const x1 = Math.round(50 + Math.sin(rad - Math.PI) * 50);
-  const y1 = Math.round(50 - Math.cos(rad - Math.PI) * 50);
+  // Standard CSS linear-gradient angle convention:
+  // 0 deg: bottom to top, 90 deg: left to right, 180 deg: top to bottom
+  const x1 = Math.round(50 - Math.sin(rad) * 50);
+  const y1 = Math.round(50 + Math.cos(rad) * 50);
   const x2 = Math.round(50 + Math.sin(rad) * 50);
   const y2 = Math.round(50 - Math.cos(rad) * 50);
   grad.setAttribute("x1", `${x1}%`);
@@ -802,9 +806,13 @@ export function setGradientBackground(root, color1, color2, angle = 90) {
   const stop1 = root.ownerDocument.createElementNS(SVG_NAMESPACE, "stop");
   stop1.setAttribute("offset", "0%");
   stop1.setAttribute("stop-color", color1);
+  stop1.setAttribute("stop-opacity", "1");
+  stop1.setAttribute("style", `stop-color:${color1};stop-opacity:1;`);
   const stop2 = root.ownerDocument.createElementNS(SVG_NAMESPACE, "stop");
   stop2.setAttribute("offset", "100%");
   stop2.setAttribute("stop-color", color2);
+  stop2.setAttribute("stop-opacity", "1");
+  stop2.setAttribute("style", `stop-color:${color2};stop-opacity:1;`);
   grad.appendChild(stop1);
   grad.appendChild(stop2);
 

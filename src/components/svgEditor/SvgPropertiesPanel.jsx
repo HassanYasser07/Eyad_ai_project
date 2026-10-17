@@ -223,6 +223,34 @@ function NudgeButton({ icon: Icon, label, onClick, disabled }) {
   return <button type="button" className="svg-editor-nudge-button" aria-label={label} title={label} onClick={onClick} disabled={disabled}><Icon size={16} /></button>;
 }
 
+function BgToolbarButton({ icon: Icon, label, isActive, onClick, isDanger }) {
+  const [showTooltip, setShowTooltip] = React.useState(false);
+
+  return (
+    <div
+      className="svg-editor-bg-tool-wrapper"
+      onMouseEnter={() => setShowTooltip(true)}
+      onMouseLeave={() => setShowTooltip(false)}
+      onFocus={() => setShowTooltip(true)}
+      onBlur={() => setShowTooltip(false)}
+    >
+      <button
+        type="button"
+        className={`svg-editor-bg-tool-btn ${isActive ? "is-active" : ""} ${isDanger ? "is-danger" : ""}`}
+        onClick={onClick}
+        aria-label={label}
+      >
+        <Icon size={18} />
+      </button>
+      {showTooltip && (
+        <div className="svg-editor-bg-tooltip" role="tooltip">
+          {label}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function SvgPropertiesPanel({
   selectedCount,
   details,
@@ -248,6 +276,7 @@ export default function SvgPropertiesPanel({
   onRemoveBackground,
   backgroundInfo,
   backgroundSubTab = "solid",
+  onSelectBackgroundSubTab,
   locked,
   error,
   t,
@@ -256,11 +285,20 @@ export default function SvgPropertiesPanel({
 }) {
   const [nudgeStep, setNudgeStep] = React.useState(1);
   const [activeColorTarget, setActiveColorTarget] = React.useState("fill");
+  const [desktopTab, setDesktopTab] = React.useState(selectedCount > 0 ? "element" : "background");
   const [customColor1, setCustomColor1] = React.useState(backgroundInfo?.color1 || "#ff5e62");
   const [customColor2, setCustomColor2] = React.useState(backgroundInfo?.color2 || "#ff9966");
   const [customAngle, setCustomAngle] = React.useState(backgroundInfo?.angle || 45);
   const [customBgOpacity, setCustomBgOpacity] = React.useState(backgroundInfo?.opacity !== undefined ? Math.round(backgroundInfo.opacity * 100) : 100);
   const bgImageInputRef = React.useRef(null);
+
+  React.useEffect(() => {
+    if (selectedCount > 0) {
+      setDesktopTab("element");
+    } else {
+      setDesktopTab("background");
+    }
+  }, [selectedCount]);
 
   React.useEffect(() => {
     if (backgroundInfo?.color1) setCustomColor1(backgroundInfo.color1);
@@ -289,6 +327,24 @@ export default function SvgPropertiesPanel({
   const fontFamily = attrs["font-family"] || FONT_PRESETS[0][0];
   const colorValue = attrs[activeColorTarget] || (activeColorTarget === "fill" ? "#000000" : "none");
 
+  const isBackgroundView = activeMobileTab === "background" || (!activeMobileTab && (desktopTab === "background" || selectedCount === 0));
+
+  const isRotationEnabled = (backgroundSubTab === "gradient" || backgroundSubTab === "image") && backgroundSubTab !== "solid" && backgroundSubTab !== "clear";
+
+  const currentBgRotation = backgroundSubTab === "gradient"
+    ? (backgroundInfo?.angle !== undefined ? Number(backgroundInfo.angle) : Number(customAngle))
+    : Number(backgroundInfo?.rotation || 0);
+
+  const handleBgRotationCommit = React.useCallback((newAngle) => {
+    if (!isRotationEnabled) return;
+    if (backgroundSubTab === "gradient") {
+      setCustomAngle(newAngle);
+      onSetGradientBackground?.(customColor1, customColor2, newAngle);
+    } else if (backgroundSubTab === "image") {
+      onRotateBackground?.(newAngle);
+    }
+  }, [isRotationEnabled, backgroundSubTab, customColor1, customColor2, onSetGradientBackground, onRotateBackground]);
+
   return (
     <section className={`svg-editor-panel svg-editor-properties-panel ${collapsed ? "is-collapsed" : ""}`} aria-label={t("svgEditor.propertiesTitle")}>
       <div className="svg-editor-panel-heading">
@@ -300,10 +356,69 @@ export default function SvgPropertiesPanel({
           </button>
         </div>
       </div>
+      {!activeMobileTab && (
+        <div className="svg-editor-panel-tabs" role="tablist">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={!isBackgroundView}
+            className={`svg-editor-panel-tab ${!isBackgroundView ? "is-active" : ""}`}
+            onClick={() => {
+              if (selectedCount > 0) setDesktopTab("element");
+            }}
+            disabled={selectedCount === 0}
+            title={selectedCount === 0 ? (t("svgEditor.selectElement") || "Select an element to edit properties") : (t("svgEditor.element") || "Element Properties")}
+          >
+            <SlidersHorizontal size={13} />
+            <span>{t("svgEditor.element") || "Element"}</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={isBackgroundView}
+            className={`svg-editor-panel-tab ${isBackgroundView ? "is-active" : ""}`}
+            onClick={() => setDesktopTab("background")}
+            title={t("svgEditor.background") || "Background"}
+          >
+            <Image size={13} />
+            <span>{t("svgEditor.background") || "Background"}</span>
+          </button>
+        </div>
+      )}
       <div className="svg-editor-panel-content">
-        {activeMobileTab === "background" ? (
+        {isBackgroundView ? (
           <div className="svg-editor-properties-scroll">
             <div className="svg-editor-property-section" data-section="background">
+              <div className="svg-editor-bg-toolbar" role="toolbar" aria-label={t("svgEditor.background") || "Background options"}>
+                <BgToolbarButton
+                  icon={Palette}
+                  label={t("svgEditor.solidColor") || "Solid Color"}
+                  isActive={backgroundSubTab === "solid"}
+                  onClick={() => onSelectBackgroundSubTab?.("solid")}
+                />
+                <BgToolbarButton
+                  icon={Sparkles}
+                  label={t("svgEditor.gradientColor") || "Gradient"}
+                  isActive={backgroundSubTab === "gradient"}
+                  onClick={() => onSelectBackgroundSubTab?.("gradient")}
+                />
+                <BgToolbarButton
+                  icon={Image}
+                  label={t("svgEditor.imageBackground") || "Image"}
+                  isActive={backgroundSubTab === "image"}
+                  onClick={() => onSelectBackgroundSubTab?.("image")}
+                />
+                <BgToolbarButton
+                  icon={Trash2}
+                  label={t("svgEditor.clearBackground") || "Clear"}
+                  isActive={backgroundSubTab === "clear" || (!backgroundInfo && backgroundSubTab !== "solid" && backgroundSubTab !== "gradient" && backgroundSubTab !== "image")}
+                  isDanger={true}
+                  onClick={() => {
+                    onRemoveBackground?.();
+                    onSelectBackgroundSubTab?.("clear");
+                  }}
+                />
+              </div>
               {backgroundSubTab === "solid" && (
                 <div>
                   <h3><Palette size={14} /> {t("svgEditor.solidColor") || "Solid Color"}</h3>
@@ -479,45 +594,78 @@ export default function SvgPropertiesPanel({
                 </div>
               )}
 
-              {backgroundSubTab === "rotation" && (
-                <div>
-                  <h3><RotateCw size={14} /> {t("svgEditor.rotateBackground") || "Rotate Background"}</h3>
-                  <div className="svg-editor-quick-pills" style={{ marginTop: 8 }}>
-                    {[0, 90, 180, 270].map((deg) => (
-                      <button
-                        key={deg}
-                        type="button"
-                        className={`svg-editor-preset-pill ${Number(backgroundInfo?.rotation || 0) === deg ? "is-active" : ""}`}
-                        onClick={() => onRotateBackground?.(deg)}
-                      >
-                        {deg}°
-                      </button>
-                    ))}
+              {backgroundSubTab === "clear" && (
+                <div className="svg-editor-bg-clear-panel">
+                  <div className="svg-editor-bg-clear-icon">
+                    <Trash2 size={24} />
                   </div>
-                  <div style={{ marginTop: 14 }}>
-                    <RangeControl
-                      label={t("svgEditor.rotation") || "Rotation"}
-                      value={Number(backgroundInfo?.rotation || 0)}
-                      min={0}
-                      max={360}
-                      step={5}
-                      suffix="°"
-                      onCommit={(value) => onRotateBackground?.(value)}
-                    />
+                  <h4>{t("svgEditor.noBackgroundApplied") || "Transparent Background"}</h4>
+                  <p>{t("svgEditor.clearBackgroundDesc") || "The background has been removed. Artwork has a transparent background."}</p>
+                  <div className="svg-editor-bg-quick-presets">
+                    <button
+                      type="button"
+                      className="svg-editor-secondary-button"
+                      onClick={() => {
+                        onSetSolidBackground?.("#ffffff");
+                        onSelectBackgroundSubTab?.("solid");
+                      }}
+                    >
+                      <Palette size={14} />
+                      <span>{t("svgEditor.solidColor") || "Solid"}</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="svg-editor-secondary-button"
+                      onClick={() => {
+                        onSetGradientBackground?.("#ff5e62", "#ff9966", 45);
+                        onSelectBackgroundSubTab?.("gradient");
+                      }}
+                    >
+                      <Sparkles size={14} />
+                      <span>{t("svgEditor.gradientColor") || "Gradient"}</span>
+                    </button>
                   </div>
                 </div>
               )}
 
-              <div style={{ marginTop: 16, paddingTop: 12, borderTop: "1px solid hsl(var(--border))" }}>
-                <button
-                  type="button"
-                  className="svg-editor-quick-action"
-                  style={{ width: "100%", justifyContent: "center", color: "hsl(var(--destructive, #ef4444))" }}
-                  onClick={onRemoveBackground}
-                >
-                  <Trash2 size={16} />
-                  <span>{t("svgEditor.resetBackground") || "Remove Background"}</span>
-                </button>
+              {/* Background Rotation Section: enabled for non-solid backgrounds, disabled/appearance-only for solid color */}
+              <div className={`svg-editor-bg-rotation-box ${isRotationEnabled ? "is-enabled" : "is-disabled"}`}>
+                <div className="svg-editor-bg-rotation-header">
+                  <h3><RotateCw size={13} /> {t("svgEditor.backgroundRotation") || "Background Rotation"}</h3>
+                  <span className="svg-editor-bg-rotation-badge">
+                    {isRotationEnabled ? `${currentBgRotation}°` : "0°"}
+                  </span>
+                </div>
+                <div className="svg-editor-quick-pills" style={{ marginTop: 8 }}>
+                  {[0, 90, 180, 270].map((deg) => (
+                    <button
+                      key={deg}
+                      type="button"
+                      disabled={!isRotationEnabled}
+                      className={`svg-editor-preset-pill ${isRotationEnabled && currentBgRotation === deg ? "is-active" : ""}`}
+                      onClick={() => handleBgRotationCommit(deg)}
+                    >
+                      {deg}°
+                    </button>
+                  ))}
+                </div>
+                <div style={{ marginTop: 12 }}>
+                  <RangeControl
+                    label={t("svgEditor.rotation") || "Rotation"}
+                    value={currentBgRotation}
+                    min={0}
+                    max={360}
+                    step={5}
+                    suffix="°"
+                    disabled={!isRotationEnabled}
+                    onCommit={(value) => handleBgRotationCommit(value)}
+                  />
+                </div>
+                {!isRotationEnabled && (
+                  <p className="svg-editor-rotation-disabled-hint">
+                    {t("svgEditor.rotationDisabledForSolid") || "Rotation is only available for gradients and images."}
+                  </p>
+                )}
               </div>
             </div>
             {error && <p className="svg-editor-inline-error" role="alert">{error}</p>}
