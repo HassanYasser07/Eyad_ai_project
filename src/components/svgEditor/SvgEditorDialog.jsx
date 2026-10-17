@@ -6,6 +6,8 @@ import {
   X, Upload, Download, Undo2, Redo2, ZoomIn, ZoomOut, RotateCcw,
   Copy, Trash2, Group, Ungroup, FileCode2,
   MousePointer2, Type, CircleAlert, CheckCircle2, FileUp,
+  SlidersHorizontal, Maximize2, Layers, Palette,
+  Blend, RotateCw, Paintbrush, Image, Sparkles, ChevronLeft,
 } from "lucide-react";
 import SvgLayersPanel from "@/components/svgEditor/SvgLayersPanel";
 import SvgPropertiesPanel from "@/components/svgEditor/SvgPropertiesPanel";
@@ -31,6 +33,12 @@ import {
   updateElementSize,
   updateElementText,
   reorderElementRelative,
+  getBackgroundInfo,
+  setSolidBackground,
+  setGradientBackground,
+  setImageBackground,
+  rotateBackground,
+  removeBackground,
 } from "@/components/svgEditor/svgDocument";
 import "@/components/svgEditor/svgEditor.css";
 
@@ -284,6 +292,8 @@ export default function SvgEditorDialog({ onClose, direction = "ltr" }) {
   const [isDraggingFile, setIsDraggingFile] = React.useState(false);
   const [layersCollapsed, setLayersCollapsed] = React.useState(false);
   const [propertiesCollapsed, setPropertiesCollapsed] = React.useState(false);
+  const [mobileEditorTab, setMobileEditorTab] = React.useState(null);
+  const [backgroundSubTab, setBackgroundSubTab] = React.useState("solid");
   const fileInputRef = React.useRef(null);
   const stageRef = React.useRef(null);
   const markupRef = React.useRef("");
@@ -572,6 +582,46 @@ export default function SvgEditorDialog({ onClose, direction = "ltr" }) {
     if (!sourceId || !targetId || sourceId === targetId) return;
     performEdit(t("svgEditor.reordered"), (root) => reorderElementRelative(root, sourceId, targetId, after));
   };
+
+  const handleSetSolidBackground = React.useCallback((color) => {
+    performEdit(t("svgEditor.backgroundUpdated"), (root) => {
+      setSolidBackground(root, color);
+    });
+  }, [performEdit, t]);
+
+  const handleSetGradientBackground = React.useCallback((color1, color2, angle = 90) => {
+    performEdit(t("svgEditor.backgroundUpdated"), (root) => {
+      setGradientBackground(root, color1, color2, angle);
+    });
+  }, [performEdit, t]);
+
+  const handleSetImageBackground = React.useCallback((dataUrl, opacity = 1) => {
+    performEdit(t("svgEditor.backgroundUpdated"), (root) => {
+      setImageBackground(root, dataUrl, opacity);
+    });
+  }, [performEdit, t]);
+
+  const handleRotateBackground = React.useCallback((angle) => {
+    performEdit(t("svgEditor.backgroundUpdated"), (root) => {
+      rotateBackground(root, angle);
+    });
+  }, [performEdit, t]);
+
+  const handleRemoveBackground = React.useCallback(() => {
+    performEdit(t("svgEditor.backgroundRemoved"), (root) => {
+      removeBackground(root);
+    });
+  }, [performEdit, t]);
+
+  const backgroundInfo = React.useMemo(() => {
+    if (!svgMarkup) return null;
+    try {
+      const root = parseSvgDocument(svgMarkup).documentElement;
+      return getBackgroundInfo(root);
+    } catch {
+      return null;
+    }
+  }, [svgMarkup]);
 
   const resetEditor = () => {
     if (!originalMarkup) return;
@@ -932,6 +982,7 @@ export default function SvgEditorDialog({ onClose, direction = "ltr" }) {
           </div>
           <div className="svg-editor-header-actions">
             <input ref={fileInputRef} type="file" accept=".svg,image/svg+xml" onChange={(event) => loadFile(event.target.files?.[0])} hidden />
+            <button type="button" className={`svg-editor-secondary-button svg-editor-layers-header-btn ${mobileEditorTab === "layers" ? "is-active" : ""}`} onClick={() => setMobileEditorTab(prev => prev === "layers" ? null : "layers")} title={t("svgEditor.layersTitle") || "Layers"}><Layers size={15} /><span>{t("svgEditor.layersTitle") || "Layers"}</span></button>
             <button type="button" className="svg-editor-secondary-button" onClick={() => fileInputRef.current?.click()}><Upload size={15} />{t("svgEditor.open")}</button>
             <button type="button" className="svg-editor-export-button" onClick={downloadSvg} disabled={!svgMarkup}><Download size={15} />{t("svgEditor.export")}</button>
             <button type="button" className="svg-editor-close-button" onClick={onClose} aria-label={t("svgEditor.close")}><X size={19} /></button>
@@ -978,7 +1029,7 @@ export default function SvgEditorDialog({ onClose, direction = "ltr" }) {
 
         {(error || notice) && <div className={`svg-editor-feedback ${error ? "is-error" : "is-success"}`} role={error ? "alert" : "status"}>{error ? <CircleAlert size={15} /> : <CheckCircle2 size={15} />}{error || notice}</div>}
 
-        <div className={`svg-editor-workspace ${layersCollapsed ? "layers-collapsed" : ""} ${propertiesCollapsed ? "properties-collapsed" : ""}`}>
+        <div className={`svg-editor-workspace ${layersCollapsed ? "layers-collapsed" : ""} ${propertiesCollapsed ? "properties-collapsed" : ""}`} data-mobile-tab={mobileEditorTab || ""}>
           <SvgLayersPanel tree={tree} selectedIds={selectedIds} onSelect={selectElement} onHide={hideElement} onLock={lockElement} onReorder={reorderBetween} t={t} collapsed={layersCollapsed} onToggleCollapsed={() => setLayersCollapsed((value) => !value)} />
           <main className="svg-editor-center-panel">
             <div className="svg-editor-canvas-heading"><div><strong>{t("svgEditor.canvas")}</strong><span>{svgMarkup ? t("svgEditor.vectorArtwork") : t("svgEditor.awaitingFile")}</span></div><span className="svg-editor-document-chip">{svgMarkup ? `${tree.reduce((sum, node) => sum + countTreeNodes(node), 0)} ${t("svgEditor.nodes")}` : t("svgEditor.noDocument")}</span></div>
@@ -1004,9 +1055,108 @@ export default function SvgEditorDialog({ onClose, direction = "ltr" }) {
             onDelete={deleteSelection}
             onGroup={groupSelection}
             onUngroup={ungroupSelection}
+            onAddText={createTextSelection}
+            activeMobileTab={mobileEditorTab}
+            onSetSolidBackground={handleSetSolidBackground}
+            onSetGradientBackground={handleSetGradientBackground}
+            onSetImageBackground={handleSetImageBackground}
+            onRotateBackground={handleRotateBackground}
+            onRemoveBackground={handleRemoveBackground}
+            backgroundInfo={backgroundInfo}
+            backgroundSubTab={backgroundSubTab}
+            onSelectBackgroundSubTab={setBackgroundSubTab}
             t={t}
           />
         </div>
+        {mobileEditorTab === "background" ? (
+          <nav className="svg-editor-background-tabbar" aria-label="Background options">
+            <button
+              type="button"
+              className="svg-editor-bg-tab svg-editor-bg-back-btn"
+              onClick={() => setMobileEditorTab(null)}
+              title={t("svgEditor.backToTabs") || "Back"}
+            >
+              <ChevronLeft size={20} />
+              <span>{t("svgEditor.backToTabs") || "Back"}</span>
+            </button>
+            <button
+              type="button"
+              className={`svg-editor-bg-tab ${backgroundSubTab === "solid" ? "is-active" : ""}`}
+              onClick={() => setBackgroundSubTab("solid")}
+            >
+              <Palette size={20} />
+              <span>{t("svgEditor.solidColor") || "Solid"}</span>
+            </button>
+            <button
+              type="button"
+              className={`svg-editor-bg-tab ${backgroundSubTab === "gradient" ? "is-active" : ""}`}
+              onClick={() => setBackgroundSubTab("gradient")}
+            >
+              <Sparkles size={20} />
+              <span>{t("svgEditor.gradientColor") || "Gradient"}</span>
+            </button>
+            <button
+              type="button"
+              className={`svg-editor-bg-tab ${backgroundSubTab === "image" ? "is-active" : ""}`}
+              onClick={() => setBackgroundSubTab("image")}
+            >
+              <Image size={20} />
+              <span>{t("svgEditor.imageBackground") || "Image"}</span>
+            </button>
+            <button
+              type="button"
+              className={`svg-editor-bg-tab ${backgroundSubTab === "rotation" ? "is-active" : ""}`}
+              onClick={() => setBackgroundSubTab("rotation")}
+            >
+              <RotateCw size={20} />
+              <span>{t("svgEditor.rotateBackground") || "Rotation"}</span>
+            </button>
+            <button
+              type="button"
+              className="svg-editor-bg-tab svg-editor-bg-reset-btn"
+              onClick={handleRemoveBackground}
+              title={t("svgEditor.resetBackground") || "Reset"}
+            >
+              <Trash2 size={20} />
+              <span>{t("svgEditor.resetBackground") || "Reset"}</span>
+            </button>
+          </nav>
+        ) : (
+          <nav className="svg-editor-mobile-tabbar" aria-label="Editor tabs">
+            <button type="button" className={`svg-editor-mobile-tab ${mobileEditorTab === "controls" ? "is-active" : ""}`} onClick={() => setMobileEditorTab(prev => prev === "controls" ? null : "controls")}>
+              <SlidersHorizontal size={20} />
+              <span>{t("svgEditor.controls") || "Controls"}</span>
+            </button>
+            <button type="button" className={`svg-editor-mobile-tab ${mobileEditorTab === "text" ? "is-active" : ""}`} onClick={() => setMobileEditorTab(prev => prev === "text" ? null : "text")}>
+              <Type size={20} />
+              <span>{t("svgEditor.text") || "Text"}</span>
+            </button>
+            <button type="button" className={`svg-editor-mobile-tab ${mobileEditorTab === "size" ? "is-active" : ""}`} onClick={() => setMobileEditorTab(prev => prev === "size" ? null : "size")}>
+              <Maximize2 size={20} />
+              <span>{t("svgEditor.size") || "Size"}</span>
+            </button>
+            <button type="button" className={`svg-editor-mobile-tab ${mobileEditorTab === "colors" ? "is-active" : ""}`} onClick={() => setMobileEditorTab(prev => prev === "colors" ? null : "colors")}>
+              <Palette size={20} />
+              <span>{t("svgEditor.colors") || "Colors"}</span>
+            </button>
+            <button type="button" className={`svg-editor-mobile-tab ${mobileEditorTab === "background" ? "is-active" : ""}`} onClick={() => { setMobileEditorTab("background"); setBackgroundSubTab("solid"); }}>
+              <Image size={20} />
+              <span>{t("svgEditor.background") || "Background"}</span>
+            </button>
+            <button type="button" className={`svg-editor-mobile-tab ${mobileEditorTab === "opacity" ? "is-active" : ""}`} onClick={() => setMobileEditorTab(prev => prev === "opacity" ? null : "opacity")}>
+              <Blend size={20} />
+              <span>{t("svgEditor.opacity") || "Opacity"}</span>
+            </button>
+            <button type="button" className={`svg-editor-mobile-tab ${mobileEditorTab === "rotation" ? "is-active" : ""}`} onClick={() => setMobileEditorTab(prev => prev === "rotation" ? null : "rotation")}>
+              <RotateCw size={20} />
+              <span>{t("svgEditor.rotation")?.replace(/\(.*\)/, "").trim() || "Rotation"}</span>
+            </button>
+            <button type="button" className={`svg-editor-mobile-tab ${mobileEditorTab === "stroke" ? "is-active" : ""}`} onClick={() => setMobileEditorTab(prev => prev === "stroke" ? null : "stroke")}>
+              <Paintbrush size={20} />
+              <span>{t("svgEditor.stroke") || "Stroke"}</span>
+            </button>
+          </nav>
+        )}
         <footer className="svg-editor-footer"><span><CheckCircle2 size={13} /> {t("svgEditor.localOnly")}</span><span>{t("svgEditor.shortcuts")}</span></footer>
       </section>
     </div>

@@ -67,7 +67,7 @@ function ChoiceGroup({ title, items, value, onChange, ar, type }) {
   const isStyle = type === "style";
   const SectionIcon = isColors ? Palette : isStyle ? Sparkles : Badge;
   return (
-    <section className="logo-choice-section">
+    <section className={`logo-choice-section logo-tab-${type}`}>
       <div className="logo-section-head">
         <div className="logo-section-title">
           <span className="logo-section-icon"><SectionIcon /></span>
@@ -132,6 +132,7 @@ export default function LogoStudio() {
   }, [selectedImage]);
   const [previewImage, setPreviewImage] = React.useState(null);
   const [svgEditorOpen, setSvgEditorOpen] = React.useState(false);
+  const [mobileTab, setMobileTab] = React.useState("style");
 
   const ar = direction === "rtl";
 
@@ -433,7 +434,7 @@ export default function LogoStudio() {
         back={back}
         onOpenSvgEditor={() => setSvgEditorOpen(true)}
       />
-      <div className="logo-lab-page min-h-[calc(100dvh-8rem)] flex flex-col gap-5">
+      <div className="logo-lab-page min-h-[calc(100dvh-8rem)] flex flex-col gap-5" data-step={step}>
       <header className="flex items-center justify-between gap-3">
         <button type="button" onClick={back} className="inline-flex items-center gap-2 text-sm font-bold text-slate-600 hover:text-slate-900">
           <ArrowLeft className="w-4 h-4" />
@@ -451,7 +452,7 @@ export default function LogoStudio() {
         </div>
       </header>
 
-      <main className="logo-lab-main flex-1 max-w-6xl w-full mx-auto">
+      <main className="logo-lab-main flex-1 max-w-6xl w-full mx-auto" data-step={step}>
         {step === "brief" && (
           <div className="card-glass rounded-[28px] p-5 sm:p-8 flex flex-col gap-6">
             <div>
@@ -476,7 +477,7 @@ export default function LogoStudio() {
         )}
 
         {step === "choices" && (
-          <div className="logo-studio-panel card-glass rounded-[30px] p-4 sm:p-7 flex flex-col gap-6">
+          <div className="logo-studio-panel card-glass rounded-[30px] p-4 sm:p-7 flex flex-col gap-6" data-mobile-tab={mobileTab}>
             <div>
               <p className="text-xs font-bold text-primary mb-2">{ar ? "الخطوة 2 من 2" : "STEP 2 OF 2"}</p>
               <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900">{ar ? "اختر اتجاه الشعار" : "Choose the logo direction"}</h1>
@@ -566,6 +567,25 @@ export default function LogoStudio() {
           <div className="mt-4 rounded-2xl border border-red-200 bg-red-50/80 p-4 text-sm font-semibold text-red-700">{error}</div>
         )}
       </main>
+      {step === "choices" && (
+        <nav className="logo-mobile-tabbar" aria-label={ar ? "تبويبات التصميم" : "Design tabs"}>
+          <button type="button" className={`logo-mobile-tab ${mobileTab === "style" ? "is-active" : ""}`} onClick={() => setMobileTab("style")}>
+            <Sparkles className="w-5 h-5" />
+            <span>{ar ? "الأسلوب" : "Style"}</span>
+            {selections.style && <i className="logo-mobile-tab-dot" />}
+          </button>
+          <button type="button" className={`logo-mobile-tab ${mobileTab === "colors" ? "is-active" : ""}`} onClick={() => setMobileTab("colors")}>
+            <Palette className="w-5 h-5" />
+            <span>{ar ? "الألوان" : "Colors"}</span>
+            {selections.colors && <i className="logo-mobile-tab-dot" />}
+          </button>
+          <button type="button" className={`logo-mobile-tab ${mobileTab === "logo-type" ? "is-active" : ""}`} onClick={() => setMobileTab("logo-type")}>
+            <Badge className="w-5 h-5" />
+            <span>{ar ? "النوع" : "Type"}</span>
+            {selections.logo_type && <i className="logo-mobile-tab-dot" />}
+          </button>
+        </nav>
+      )}
     </div>
       {svgEditorOpen && <SvgEditorDialog onClose={() => setSvgEditorOpen(false)} direction={direction} />}
     </>

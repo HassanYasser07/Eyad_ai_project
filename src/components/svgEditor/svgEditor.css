@@ -839,3 +839,405 @@
   .svg-editor-range-slider [data-radix-slider-thumb] { width: 23px; height: 23px; }
   .svg-editor-position-number-fields { gap: 8px; }
 }
+
+/* =============================================
+   MOBILE BOTTOM-TAB LAYOUT
+   Applies at ≤660px where the SVG editor is
+   already full-screen. Converts the stacked
+   side-panels into tab-switched bottom panels.
+   ============================================= */
+
+/* Default: hide mobile tab bar on larger screens */
+.svg-editor-mobile-tabbar,
+.svg-editor-background-tabbar { display: none; }
+
+@media (max-width: 660px) {
+
+  /* ── 1. Workspace: hide side panels by default, show via tabs ── */
+  .svg-editor-workspace {
+    overflow: hidden !important;          /* no page-level scroll */
+  }
+  .svg-editor-center-panel {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+  }
+  .svg-editor-canvas {
+    min-height: 0 !important;
+    max-height: none !important;
+    flex: 1 1 auto;
+  }
+
+  /* Hide canvas heading to save space */
+  .svg-editor-canvas-heading { display: none; }
+
+  /* Side panels: hidden by default */
+  .svg-editor-layers-panel,
+  .svg-editor-properties-panel {
+    display: none !important;
+    order: 2;
+    flex: 0 0 auto !important;
+    max-height: 38vh !important;
+    min-height: 0 !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+    border-top: 1px solid hsl(var(--border)) !important;
+    border-inline: none !important;
+  }
+
+  /* Override collapsed state on mobile — tabs handle visibility */
+  .svg-editor-panel.is-collapsed { max-height: none !important; min-height: 0 !important; overflow: visible !important; }
+  .svg-editor-panel.is-collapsed .svg-editor-panel-content { max-height: 10000px !important; opacity: 1 !important; transform: none !important; pointer-events: auto !important; }
+
+  /* Hide panel headings — the tab bar replaces them */
+  .svg-editor-workspace .svg-editor-panel-heading { display: none !important; }
+
+  /* ── 2. Show panels based on active tab ── */
+  .svg-editor-workspace[data-mobile-tab="layers"] .svg-editor-layers-panel {
+    display: flex !important;
+  }
+  .svg-editor-workspace[data-mobile-tab="controls"] .svg-editor-properties-panel,
+  .svg-editor-workspace[data-mobile-tab="text"] .svg-editor-properties-panel,
+  .svg-editor-workspace[data-mobile-tab="size"] .svg-editor-properties-panel,
+  .svg-editor-workspace[data-mobile-tab="colors"] .svg-editor-properties-panel,
+  .svg-editor-workspace[data-mobile-tab="background"] .svg-editor-properties-panel,
+  .svg-editor-workspace[data-mobile-tab="opacity"] .svg-editor-properties-panel,
+  .svg-editor-workspace[data-mobile-tab="rotation"] .svg-editor-properties-panel,
+  .svg-editor-workspace[data-mobile-tab="stroke"] .svg-editor-properties-panel {
+    display: flex !important;
+  }
+
+  /* ── 3. Section filtering per active tab ── */
+
+  /* Controls tab: shows arrange/move/duplicate/flip/delete */
+  .svg-editor-workspace[data-mobile-tab="controls"] .svg-editor-selected-heading,
+  .svg-editor-workspace[data-mobile-tab="controls"] .svg-editor-properties-scroll > .svg-editor-field:first-of-type,
+  .svg-editor-workspace[data-mobile-tab="controls"] [data-section]:not([data-section="controls"]) {
+    display: none !important;
+  }
+
+  /* Text tab: show only text & typography section */
+  .svg-editor-workspace[data-mobile-tab="text"] .svg-editor-selected-heading,
+  .svg-editor-workspace[data-mobile-tab="text"] .svg-editor-properties-scroll > .svg-editor-field:first-of-type,
+  .svg-editor-workspace[data-mobile-tab="text"] [data-section]:not([data-section="text"]):not([data-section="typography"]) {
+    display: none !important;
+  }
+
+  /* Background tab: show only background section */
+  .svg-editor-workspace[data-mobile-tab="background"] .svg-editor-selected-heading,
+  .svg-editor-workspace[data-mobile-tab="background"] .svg-editor-properties-scroll > .svg-editor-field:first-of-type,
+  .svg-editor-workspace[data-mobile-tab="background"] [data-section]:not([data-section="background"]) {
+    display: none !important;
+  }
+
+  /* Size tab: show only size section */
+  .svg-editor-workspace[data-mobile-tab="size"] .svg-editor-selected-heading,
+  .svg-editor-workspace[data-mobile-tab="size"] .svg-editor-properties-scroll > .svg-editor-field:first-of-type,
+  .svg-editor-workspace[data-mobile-tab="size"] [data-section]:not([data-section="size"]) {
+    display: none !important;
+  }
+
+  /* Colors tab: show only colors appearance section */
+  .svg-editor-workspace[data-mobile-tab="colors"] .svg-editor-selected-heading,
+  .svg-editor-workspace[data-mobile-tab="colors"] .svg-editor-properties-scroll > .svg-editor-field:first-of-type,
+  .svg-editor-workspace[data-mobile-tab="colors"] [data-section]:not([data-section="colors"]) {
+    display: none !important;
+  }
+
+  /* Opacity tab: show only opacity section */
+  .svg-editor-workspace[data-mobile-tab="opacity"] .svg-editor-selected-heading,
+  .svg-editor-workspace[data-mobile-tab="opacity"] .svg-editor-properties-scroll > .svg-editor-field:first-of-type,
+  .svg-editor-workspace[data-mobile-tab="opacity"] [data-section]:not([data-section="opacity"]) {
+    display: none !important;
+  }
+
+  /* Rotation tab: show only rotation section */
+  .svg-editor-workspace[data-mobile-tab="rotation"] .svg-editor-selected-heading,
+  .svg-editor-workspace[data-mobile-tab="rotation"] .svg-editor-properties-scroll > .svg-editor-field:first-of-type,
+  .svg-editor-workspace[data-mobile-tab="rotation"] [data-section]:not([data-section="rotation"]) {
+    display: none !important;
+  }
+
+  /* Stroke tab: show only stroke section */
+  .svg-editor-workspace[data-mobile-tab="stroke"] .svg-editor-selected-heading,
+  .svg-editor-workspace[data-mobile-tab="stroke"] .svg-editor-properties-scroll > .svg-editor-field:first-of-type,
+  .svg-editor-workspace[data-mobile-tab="stroke"] [data-section]:not([data-section="stroke"]) {
+    display: none !important;
+  }
+
+  /* Properties scroll: single column on mobile */
+  .svg-editor-properties-scroll {
+    display: flex !important;
+    flex-direction: column !important;
+    padding: 10px !important;
+  }
+
+  /* Empty state: compact on mobile */
+  .svg-editor-panel .svg-editor-property-empty {
+    min-height: 80px !important;
+    padding: 16px 12px;
+  }
+
+  /* Preset pills for opacity */
+  .svg-editor-quick-pills {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .svg-editor-preset-pill {
+    flex: 1;
+    padding: 7px 0;
+    border: 1px solid hsl(var(--border));
+    border-radius: 8px;
+    background: hsl(var(--secondary) / 0.5);
+    color: hsl(var(--foreground));
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .svg-editor-preset-pill:hover,
+  .svg-editor-preset-pill.is-active {
+    background: hsl(var(--primary));
+    color: hsl(var(--primary-foreground));
+    border-color: hsl(var(--primary));
+  }
+
+  /* Header layers button */
+  .svg-editor-layers-header-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .svg-editor-layers-header-btn.is-active {
+    background: hsl(var(--primary)) !important;
+    color: hsl(var(--primary-foreground)) !important;
+    border-color: hsl(var(--primary)) !important;
+  }
+
+  /* Add text action button */
+  .svg-editor-add-text-action {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    padding: 10px 16px;
+    border-radius: 12px;
+    background: hsl(var(--primary));
+    color: hsl(var(--primary-foreground));
+    font-size: 13px;
+    font-weight: 700;
+    border: none;
+    cursor: pointer;
+    box-shadow: 0 2px 8px hsl(var(--primary) / 0.3);
+    transition: all 0.15s ease;
+  }
+  .svg-editor-add-text-action:hover {
+    filter: brightness(1.08);
+    transform: translateY(-1px);
+  }
+  .svg-editor-add-text-action:active {
+    transform: translateY(0);
+  }
+
+  /* ── 4. Mobile bottom tab bar ── */
+  .svg-editor-mobile-tabbar {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: stretch;
+    justify-content: flex-start;
+    gap: 4px;
+    border-top: 1px solid hsl(var(--border));
+    background: hsl(var(--card));
+    padding: 6px 8px;
+    padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
+    box-shadow: 0 -2px 14px rgba(0, 0, 0, 0.05);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .svg-editor-mobile-tabbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .svg-editor-mobile-tab {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    flex: 1 0 auto;
+    min-width: 56px;
+    padding: 6px 8px 4px;
+    border: none;
+    background: transparent;
+    color: hsl(var(--muted-foreground));
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    cursor: pointer;
+    border-radius: 10px;
+    transition: color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+    white-space: nowrap;
+  }
+
+  .svg-editor-mobile-tab svg {
+    width: 20px;
+    height: 20px;
+    stroke-width: 1.8;
+    transition: transform 0.15s ease;
+  }
+
+  .svg-editor-mobile-tab.is-active {
+    color: hsl(var(--primary));
+    background: hsl(var(--accent));
+  }
+
+  .svg-editor-mobile-tab.is-active svg {
+    transform: scale(1.1);
+    filter: drop-shadow(0 1px 3px hsl(var(--primary) / .25));
+  }
+
+  /* ── 4b. Mobile background sub-tabbar ── */
+  .svg-editor-background-tabbar {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: stretch;
+    justify-content: flex-start;
+    gap: 4px;
+    border-top: 1px solid hsl(var(--border));
+    background: hsl(var(--card));
+    padding: 6px 8px;
+    padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
+    box-shadow: 0 -2px 14px rgba(0, 0, 0, 0.05);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .svg-editor-background-tabbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .svg-editor-bg-tab {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    flex: 1 0 auto;
+    min-width: 56px;
+    padding: 6px 8px 4px;
+    border: none;
+    background: transparent;
+    color: hsl(var(--muted-foreground));
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    cursor: pointer;
+    border-radius: 10px;
+    transition: color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+    white-space: nowrap;
+  }
+
+  .svg-editor-bg-tab svg {
+    width: 20px;
+    height: 20px;
+    stroke-width: 1.8;
+    transition: transform 0.15s ease;
+  }
+
+  .svg-editor-bg-tab.is-active {
+    color: hsl(var(--primary));
+    background: hsl(var(--accent));
+  }
+
+  .svg-editor-bg-tab.is-active svg {
+    transform: scale(1.1);
+    filter: drop-shadow(0 1px 3px hsl(var(--primary) / .25));
+  }
+
+  .svg-editor-bg-back-btn {
+    color: hsl(var(--primary));
+    font-weight: 800;
+    border-inline-end: 1px solid hsl(var(--border));
+    padding-inline-end: 10px;
+    margin-inline-end: 2px;
+  }
+
+  .svg-editor-bg-reset-btn {
+    color: hsl(var(--destructive, #ef4444));
+  }
+  .svg-editor-bg-reset-btn:hover {
+    background: hsl(var(--destructive, #ef4444) / 0.1);
+  }
+
+  /* ── Background panels styling ── */
+  .svg-editor-gradient-presets {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .svg-editor-gradient-preset-card {
+    height: 38px;
+    border-radius: 8px;
+    border: 2px solid transparent;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .svg-editor-gradient-preset-card.is-selected {
+    border-color: hsl(var(--primary));
+    transform: scale(1.06);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  }
+
+  .svg-editor-custom-gradient-box {
+    background: hsl(var(--secondary) / 0.35);
+    border: 1px solid hsl(var(--border));
+    border-radius: 12px;
+    padding: 12px;
+    margin-top: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .svg-editor-gradient-color-pickers {
+    display: flex;
+    gap: 10px;
+  }
+
+  .svg-editor-gradient-color-pickers .svg-editor-color-picker-card {
+    flex: 1;
+  }
+
+  .svg-editor-gradient-preview {
+    height: 34px;
+    border-radius: 8px;
+    border: 1px solid hsl(var(--border));
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.15);
+  }
+
+  /* ── 5. Footer: hide on mobile ── */
+  .svg-editor-footer { display: none; }
+
+  /* ── 6. Toolbar: compact on mobile ── */
+  .svg-editor-toolbar {
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    gap: 3px !important;
+    padding: 5px 8px !important;
+  }
+  .svg-editor-tool-group {
+    flex-wrap: nowrap !important;
+    gap: 2px !important;
+  }
+  .svg-editor-arrange-tools {
+    border-inline-start: 1px solid hsl(var(--border));
+    padding-inline-start: 4px;
+    margin-inline-start: 2px;
+  }
+}

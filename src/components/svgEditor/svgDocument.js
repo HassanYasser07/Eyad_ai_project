@@ -719,3 +719,182 @@ export function flipElement(root, id, axis, measuredBounds = null) {
   const flipY = axis === "y" ? -1 : 1;
   element.setAttribute("transform", `translate(${centerX} ${centerY}) scale(${flipX} ${flipY}) translate(${-centerX} ${-centerY}) ${transform}`.trim());
 }
+
+export function getBackgroundInfo(root) {
+  if (!root) return null;
+  const bg = root.querySelector('[data-editor-background="true"]');
+  if (!bg) return null;
+  const type = bg.getAttribute("data-editor-bg-type") || (bg.localName === "image" ? "image" : "solid");
+  const rotation = Number(bg.getAttribute("data-editor-bg-rotation") || 0);
+  const color = bg.getAttribute("fill") || "#ffffff";
+  const color1 = bg.getAttribute("data-editor-bg-color1") || "#3b82f6";
+  const color2 = bg.getAttribute("data-editor-bg-color2") || "#9333ea";
+  const angle = Number(bg.getAttribute("data-editor-bg-angle") || 90);
+  const imageHref = bg.getAttribute("href") || bg.getAttribute("xlink:href") || "";
+  const opacity = Number(bg.getAttribute("opacity") || 1);
+  return { type, rotation, color, color1, color2, angle, imageHref, opacity };
+}
+
+export function setSolidBackground(root, color) {
+  const rawViewBox = (root.getAttribute("viewBox") || "").trim().split(/[ ,]+/).map(Number);
+  const viewBox = rawViewBox.length === 4 && rawViewBox.every(Number.isFinite) && rawViewBox[2] > 0 && rawViewBox[3] > 0
+    ? rawViewBox
+    : [0, 0, Number.parseFloat(root.getAttribute("width")) || 512, Number.parseFloat(root.getAttribute("height")) || 512];
+  const [x, y, width, height] = viewBox;
+
+  let bg = root.querySelector('[data-editor-background="true"]');
+  if (bg && bg.localName !== "rect") {
+    bg.remove();
+    bg = null;
+  }
+  if (!bg) {
+    bg = root.ownerDocument.createElementNS(SVG_NAMESPACE, "rect");
+    bg.setAttribute("data-editor-background", "true");
+    const defs = root.querySelector("defs");
+    if (defs && defs.nextSibling) {
+      root.insertBefore(bg, defs.nextSibling);
+    } else if (root.firstChild) {
+      root.insertBefore(bg, root.firstChild);
+    } else {
+      root.appendChild(bg);
+    }
+  }
+  bg.setAttribute("data-editor-bg-type", "solid");
+  bg.setAttribute("x", String(x));
+  bg.setAttribute("y", String(y));
+  bg.setAttribute("width", String(width));
+  bg.setAttribute("height", String(height));
+  bg.setAttribute("fill", color);
+  bg.setAttribute("pointer-events", "none");
+  return bg;
+}
+
+export function setGradientBackground(root, color1, color2, angle = 90) {
+  const rawViewBox = (root.getAttribute("viewBox") || "").trim().split(/[ ,]+/).map(Number);
+  const viewBox = rawViewBox.length === 4 && rawViewBox.every(Number.isFinite) && rawViewBox[2] > 0 && rawViewBox[3] > 0
+    ? rawViewBox
+    : [0, 0, Number.parseFloat(root.getAttribute("width")) || 512, Number.parseFloat(root.getAttribute("height")) || 512];
+  const [x, y, width, height] = viewBox;
+
+  let defs = root.querySelector("defs");
+  if (!defs) {
+    defs = root.ownerDocument.createElementNS(SVG_NAMESPACE, "defs");
+    root.insertBefore(defs, root.firstChild);
+  }
+
+  let grad = defs.querySelector("#svg-editor-bg-gradient");
+  if (!grad) {
+    grad = root.ownerDocument.createElementNS(SVG_NAMESPACE, "linearGradient");
+    grad.setAttribute("id", "svg-editor-bg-gradient");
+    defs.appendChild(grad);
+  }
+  grad.innerHTML = "";
+  const rad = ((angle % 360) * Math.PI) / 180;
+  const x1 = Math.round(50 + Math.sin(rad - Math.PI) * 50);
+  const y1 = Math.round(50 - Math.cos(rad - Math.PI) * 50);
+  const x2 = Math.round(50 + Math.sin(rad) * 50);
+  const y2 = Math.round(50 - Math.cos(rad) * 50);
+  grad.setAttribute("x1", `${x1}%`);
+  grad.setAttribute("y1", `${y1}%`);
+  grad.setAttribute("x2", `${x2}%`);
+  grad.setAttribute("y2", `${y2}%`);
+
+  const stop1 = root.ownerDocument.createElementNS(SVG_NAMESPACE, "stop");
+  stop1.setAttribute("offset", "0%");
+  stop1.setAttribute("stop-color", color1);
+  const stop2 = root.ownerDocument.createElementNS(SVG_NAMESPACE, "stop");
+  stop2.setAttribute("offset", "100%");
+  stop2.setAttribute("stop-color", color2);
+  grad.appendChild(stop1);
+  grad.appendChild(stop2);
+
+  let bg = root.querySelector('[data-editor-background="true"]');
+  if (bg && bg.localName !== "rect") {
+    bg.remove();
+    bg = null;
+  }
+  if (!bg) {
+    bg = root.ownerDocument.createElementNS(SVG_NAMESPACE, "rect");
+    bg.setAttribute("data-editor-background", "true");
+    if (defs.nextSibling) {
+      root.insertBefore(bg, defs.nextSibling);
+    } else {
+      root.appendChild(bg);
+    }
+  }
+  bg.setAttribute("data-editor-bg-type", "gradient");
+  bg.setAttribute("data-editor-bg-color1", color1);
+  bg.setAttribute("data-editor-bg-color2", color2);
+  bg.setAttribute("data-editor-bg-angle", String(angle));
+  bg.setAttribute("x", String(x));
+  bg.setAttribute("y", String(y));
+  bg.setAttribute("width", String(width));
+  bg.setAttribute("height", String(height));
+  bg.setAttribute("fill", "url(#svg-editor-bg-gradient)");
+  bg.setAttribute("pointer-events", "none");
+  return bg;
+}
+
+export function setImageBackground(root, dataUrl, opacity = 1) {
+  const rawViewBox = (root.getAttribute("viewBox") || "").trim().split(/[ ,]+/).map(Number);
+  const viewBox = rawViewBox.length === 4 && rawViewBox.every(Number.isFinite) && rawViewBox[2] > 0 && rawViewBox[3] > 0
+    ? rawViewBox
+    : [0, 0, Number.parseFloat(root.getAttribute("width")) || 512, Number.parseFloat(root.getAttribute("height")) || 512];
+  const [x, y, width, height] = viewBox;
+
+  let bg = root.querySelector('[data-editor-background="true"]');
+  if (bg && bg.localName !== "image") {
+    bg.remove();
+    bg = null;
+  }
+  if (!bg) {
+    bg = root.ownerDocument.createElementNS(SVG_NAMESPACE, "image");
+    bg.setAttribute("data-editor-background", "true");
+    const defs = root.querySelector("defs");
+    if (defs && defs.nextSibling) {
+      root.insertBefore(bg, defs.nextSibling);
+    } else if (root.firstChild) {
+      root.insertBefore(bg, root.firstChild);
+    } else {
+      root.appendChild(bg);
+    }
+  }
+  bg.setAttribute("data-editor-bg-type", "image");
+  bg.setAttribute("href", dataUrl);
+  bg.setAttribute("x", String(x));
+  bg.setAttribute("y", String(y));
+  bg.setAttribute("width", String(width));
+  bg.setAttribute("height", String(height));
+  bg.setAttribute("preserveAspectRatio", "xMidYMid slice");
+  bg.setAttribute("opacity", String(opacity));
+  bg.setAttribute("pointer-events", "none");
+  return bg;
+}
+
+export function rotateBackground(root, angle) {
+  const bg = root.querySelector('[data-editor-background="true"]');
+  if (!bg) return false;
+  const rawViewBox = (root.getAttribute("viewBox") || "").trim().split(/[ ,]+/).map(Number);
+  const viewBox = rawViewBox.length === 4 && rawViewBox.every(Number.isFinite) && rawViewBox[2] > 0 && rawViewBox[3] > 0
+    ? rawViewBox
+    : [0, 0, Number.parseFloat(root.getAttribute("width")) || 512, Number.parseFloat(root.getAttribute("height")) || 512];
+  const [x, y, width, height] = viewBox;
+  const cx = x + width / 2;
+  const cy = y + height / 2;
+  bg.setAttribute("data-editor-bg-rotation", String(angle));
+  if (angle === 0) {
+    bg.removeAttribute("transform");
+  } else {
+    bg.setAttribute("transform", `rotate(${angle} ${cx} ${cy})`);
+  }
+  return true;
+}
+
+export function removeBackground(root) {
+  const bg = root.querySelector('[data-editor-background="true"]');
+  if (bg) bg.remove();
+  const grad = root.querySelector("#svg-editor-bg-gradient");
+  if (grad) grad.remove();
+  return true;
+}
+
