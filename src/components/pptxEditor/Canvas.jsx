@@ -1,4 +1,5 @@
 import React from "react";
+import { Copy, RotateCw, Trash2 } from "lucide-react";
 import SlideView, { collectImagePaths } from "./SlideView.jsx";
 import { useMediaUrls } from "./useMediaUrls.js";
 import { EMU_PER_PX } from "./engine/slideModel.js";
@@ -10,7 +11,7 @@ const HANDLES = [["nw", 0, 0], ["n", 0.5, 0], ["ne", 1, 0], ["e", 1, 0.5], ["se"
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const boundsOf = (e) => ({ x: e.x, y: e.y, w: e.w, h: e.h, rot: e.rot, flipH: e.flipH, flipV: e.flipV });
 
-const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelect, onCommit, onEditText, multi, grid, locked, labels, onZoom, compact }, ref) {
+const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelect, onSelectionComplete, onInteractionStart, onCommit, onEditText, onCopy, onDelete, onRotate, multi, grid, locked, labels, onZoom, compact }, ref) {
   const stageRef = React.useRef(null);
   const [size, setSize] = React.useState({ w: 800, h: 600 });
   const [view, setView] = React.useState({ zoom: 1, pan: { x: 0, y: 0 } });
@@ -27,7 +28,7 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
 
   // Everything the pointer handlers need, kept fresh without re-binding listeners.
   const R = React.useRef({});
-  R.current = { s, ox, oy, fit, size, W, H, model, selection, multi, grid, locked, view, onSelect, onCommit, onEditText, draft };
+  R.current = { s, ox, oy, fit, size, W, H, model, selection, multi, grid, locked, view, onSelect, onSelectionComplete, onInteractionStart, onCommit, onEditText, draft };
   const pointers = React.useRef(new Map());
   const gesture = React.useRef(null);
   const lastTap = React.useRef({ t: 0, id: null, x: 0, y: 0 });
@@ -37,10 +38,16 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
   React.useEffect(() => { onZoom?.(Math.round(view.zoom * 100)); }, [view.zoom, onZoom]);
   React.useEffect(() => {
     const el = stageRef.current;
-    const ro = new ResizeObserver(() => { const r = el.getBoundingClientRect(); setSize({ w: r.width, h: r.height }); });
-    ro.observe(el);
-    const r = el.getBoundingClientRect(); setSize({ w: r.width, h: r.height });
-    return () => ro.disconnect();
+    if (!el) return undefined;
+    const updateSize = () => {
+      const r = el.getBoundingClientRect();
+      const next = { w: r.width, h: r.height };
+      setSize((current) => current.w === next.w && current.h === next.h ? current : next);
+    };
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(updateSize) : null;
+    ro?.observe(el);
+    updateSize();
+    return () => ro?.disconnect();
   }, []);
   // Reset view when the slide changes.
   React.useEffect(() => { setView({ zoom: 1, pan: { x: 0, y: 0 } }); }, [model.path]);
@@ -76,7 +83,11 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
 
   React.useImperativeHandle(ref, () => ({
     zoomBy: (f) => zoomAt(f, R.current.size.w / 2, R.current.size.h / 2),
-    fit: () => setView({ zoom: 1, pan: { x: 0, y: 0 } }),
+    fit: () => {
+      const rect = stageRef.current?.getBoundingClientRect();
+      if (rect) setSize((current) => current.w === rect.width && current.h === rect.height ? current : { w: rect.width, h: rect.height });
+      setView({ zoom: 1, pan: { x: 0, y: 0 } });
+    },
     selectBehind: () => {
       const { selection: sel, model: m } = R.current;
       const cur = m.elements.find((e) => e.id === sel[0]);
@@ -85,7 +96,9 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
       const stack = stackAt(pt, true);
       if (!stack.length) return;
       const i = stack.findIndex((e) => e.id === sel[0]);
-      R.current.onSelect([stack[(i + 1) % stack.length].id]);
+      const next = [stack[(i + 1) % stack.length].id];
+      R.current.onSelect(next);
+      R.current.onSelectionComplete?.(next);
     },
   }), [zoomAt]);
 
@@ -130,6 +143,7 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
 
   const onPointerDown = (e) => {
     if (e.pointerType === "mouse" && e.button !== 0 && e.button !== 1) return;
+    R.current.onInteractionStart?.();
     stageRef.current.focus?.({ preventScroll: true });
     try { stageRef.current.setPointerCapture(e.pointerId); } catch { /* not capturable */ }
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY, type: e.pointerType });
@@ -162,6 +176,7 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
 
   const startHandle = (e, kind, id) => {
     e.stopPropagation();
+    R.current.onInteractionStart?.();
     try { stageRef.current.setPointerCapture(e.pointerId); } catch { /* ignore */ }
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY, type: e.pointerType });
     if (pointers.current.size >= 2) { startPinch(); return; }
@@ -256,17 +271,26 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
       const changes = [...d].map(([id, b]) => ({ id, ...b }));
       R.current.onCommit(changes, g.type === "handle" ? (g.kind === "rotate" ? "Rotate" : "Resize") : "Move");
       setDraft(null);
+      if (R.current.selection.length) R.current.onSelectionComplete?.(R.current.selection);
       return;
     }
     setDraft(null);
     if (g.type === "press" && !g.moved) {
-      if (g.toggleOff) R.current.onSelect(R.current.selection.filter((id) => id !== g.id));
+      let nextSelection = R.current.selection;
+      if (g.toggleOff) {
+        nextSelection = R.current.selection.filter((id) => id !== g.id);
+        R.current.onSelect(nextSelection);
+      }
       const tapped = g.tapId || g.id;
-      if (g.tapId) R.current.onSelect([g.tapId]);
-      else if (g.pending) R.current.onSelect(g.pending);
+      if (g.tapId) { nextSelection = [g.tapId]; R.current.onSelect(nextSelection); }
+      else if (g.pending) { nextSelection = g.pending; R.current.onSelect(nextSelection); }
       const now = Date.now(), lt = lastTap.current;
-      if (lt.id === tapped && now - lt.t < 380 && Math.hypot(e.clientX - lt.x, e.clientY - lt.y) < 26) { lastTap.current = { t: 0, id: null, x: 0, y: 0 }; R.current.onEditText(tapped); }
-      else lastTap.current = { t: now, id: tapped, x: e.clientX, y: e.clientY };
+      const doubleTap = !g.toggleOff && lt.id === tapped && now - lt.t < 380 && Math.hypot(e.clientX - lt.x, e.clientY - lt.y) < 26;
+      if (doubleTap) { lastTap.current = { t: 0, id: null, x: 0, y: 0 }; R.current.onEditText(tapped); }
+      else {
+        lastTap.current = { t: now, id: tapped, x: e.clientX, y: e.clientY };
+        if (nextSelection.length) R.current.onSelectionComplete?.(nextSelection);
+      }
     } else if (g.type === "empty") {
       if (!g.moved) {
         if (!g.additive) R.current.onSelect([]);
@@ -284,6 +308,7 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
         void r;
         const hit = m.elements.filter((el) => { if (el.hidden) return false; const b = rotatedBox(boundsOf(el)); const sx0 = x0 + (b.x / EMU_PER_PX) * sc, sy0 = y0 + (b.y / EMU_PER_PX) * sc, sx1 = sx0 + (b.w / EMU_PER_PX) * sc, sy1 = sy0 + (b.h / EMU_PER_PX) * sc; return sx0 < mx1 && sx1 > mx0 && sy0 < my1 && sy1 > my0; }).map((el) => el.id);
         R.current.onSelect(hit);
+        if (hit.length) R.current.onSelectionComplete?.(hit);
       }
       setMarquee(null);
     }
@@ -295,6 +320,16 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
   const toScreen = (b) => ({ cx: ox + ((b.x + b.w / 2) / EMU_PER_PX) * s, cy: oy + ((b.y + b.h / 2) / EMU_PER_PX) * s, w: (b.w / EMU_PER_PX) * s, h: (b.h / EMU_PER_PX) * s });
   const single = frames.length === 1 ? frames[0] : null;
   const union = frames.length > 1 ? unionBox(frames.map((f) => rotatedBox(f.b))) : null;
+  const quickActionBox = single ? rotatedBox(single.b) : union;
+  const quickActionsEnabled = frames.length > 0 && frames.every(({ el }) => !locked.has(el.id) && !el.readOnlyGeometry);
+  const quickActionWidth = 110;
+  const stageWidth = stageRef.current?.clientWidth || 0;
+  const quickActionRight = quickActionBox ? ox + ((quickActionBox.x + quickActionBox.w) / EMU_PER_PX) * s : 0;
+  // Anchor the toolbar above the frame while keeping its full width inside the canvas,
+  // including when the selected object sits against the left or right slide edge.
+  const quickActionLeft = quickActionBox
+    ? Math.max(quickActionWidth + 8, Math.min(quickActionRight, Math.max(quickActionWidth + 8, stageWidth - 8)))
+    : 0;
 
   return (
     <div ref={stageRef} className="pptx-stage" tabIndex={0} role="application" aria-label={labels.canvas}
@@ -324,6 +359,11 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
             </div>
           );
         })}
+        {quickActionBox && quickActionsEnabled && <div className="pptx-selection-actions" style={{ left: quickActionLeft, top: Math.max(52, oy + (quickActionBox.y / EMU_PER_PX) * s) }} aria-label={labels.selectionActions}>
+          <button type="button" title={labels.quickCopy} aria-label={labels.quickCopy} onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onCopy?.(); }}><Copy size={15} aria-hidden="true" /></button>
+          <button type="button" title={labels.quickRotate} aria-label={labels.quickRotate} onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onRotate?.(); }}><RotateCw size={15} aria-hidden="true" /></button>
+          <button type="button" className="is-danger" title={labels.quickDelete} aria-label={labels.quickDelete} onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onDelete?.(); }}><Trash2 size={15} aria-hidden="true" /></button>
+        </div>}
         {union && <div className="pptx-union" style={{ left: ox + (union.x / EMU_PER_PX) * s, top: oy + (union.y / EMU_PER_PX) * s, width: (union.w / EMU_PER_PX) * s, height: (union.h / EMU_PER_PX) * s }}><span>{frames.length}</span></div>}
         {marquee && <div className="pptx-marquee" style={{ left: Math.min(marquee.x0, marquee.x1), top: Math.min(marquee.y0, marquee.y1), width: Math.abs(marquee.x1 - marquee.x0), height: Math.abs(marquee.y1 - marquee.y0) }} />}
       </div>

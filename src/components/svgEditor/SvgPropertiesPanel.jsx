@@ -215,6 +215,36 @@ function normalizeColor(value) {
   return "#000000";
 }
 
+function ColorPickerCard({ label, value, onChange, disabled = false, t }) {
+  const normalized = normalizeColor(value);
+  const rawValue = String(value || "").trim();
+  const hasSolidHexValue = /^#[0-9a-f]{3}(?:[0-9a-f]{3})?$/i.test(rawValue);
+  const [draft, setDraft] = React.useState(normalized.toUpperCase());
+  React.useEffect(() => setDraft(normalizeColor(value).toUpperCase()), [value]);
+  const commitHex = () => {
+    const candidate = draft.trim().replace(/^#/, "");
+    if (/^[0-9a-f]{6}$/i.test(candidate)) {
+      const next = `#${candidate.toUpperCase()}`;
+      setDraft(next);
+      if (!hasSolidHexValue || next.toLowerCase() !== normalized.toLowerCase()) onChange(next);
+    } else {
+      setDraft(normalized.toUpperCase());
+    }
+  };
+  return (
+    <div className="svg-editor-color-picker-card">
+      <span className="svg-editor-large-color-swatch" style={{ background: normalized }}>
+        <input aria-label={label} type="color" value={normalized} onChange={(event) => { setDraft(event.target.value.toUpperCase()); onChange(event.target.value); }} disabled={disabled} />
+      </span>
+      <span className="svg-editor-color-value-copy">
+        <strong>{label}</strong>
+        <input className="svg-editor-color-hex-field" aria-label={`${label} HEX`} value={draft} maxLength={7} spellCheck={false} disabled={disabled} onChange={(event) => setDraft(event.target.value.toUpperCase())} onBlur={commitHex} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); commitHex(); event.currentTarget.blur(); } }} />
+      </span>
+      <span className="svg-editor-color-picker-edit">{t?.("svgEditor.chooseColor") || "Choose color"}</span>
+    </div>
+  );
+}
+
 function QuickAction({ icon: Icon, label, onClick, disabled = false, danger = false }) {
   return <button type="button" className={`svg-editor-action ${danger ? "is-danger" : ""}`} onClick={onClick} disabled={disabled}><Icon size={14} /><span>{label}</span></button>;
 }
@@ -422,21 +452,7 @@ export default function SvgPropertiesPanel({
               {backgroundSubTab === "solid" && (
                 <div>
                   <h3><Palette size={14} /> {t("svgEditor.solidColor") || "Solid Color"}</h3>
-                  <label className="svg-editor-color-picker-card">
-                    <span className="svg-editor-large-color-swatch" style={{ background: normalizeColor(backgroundInfo?.color || "#ffffff") }}>
-                      <input
-                        aria-label={t("svgEditor.solidColor") || "Solid Color"}
-                        type="color"
-                        value={normalizeColor(backgroundInfo?.color || "#ffffff")}
-                        onChange={(event) => onSetSolidBackground?.(event.target.value)}
-                      />
-                    </span>
-                    <span className="svg-editor-color-value-copy">
-                      <strong>{t("svgEditor.solidColor") || "Solid Color"}</strong>
-                      <code>{backgroundInfo?.color || "#ffffff"}</code>
-                    </span>
-                    <span className="svg-editor-color-picker-edit">{t("svgEditor.chooseColor")}</span>
-                  </label>
+                  <ColorPickerCard label={t("svgEditor.solidColor") || "Solid Color"} value={backgroundInfo?.color || "#ffffff"} onChange={(color) => onSetSolidBackground?.(color)} t={t} />
                   <div className="svg-editor-swatches-label" style={{ marginTop: 12 }}>{t("svgEditor.colorSwatches")}</div>
                   <div className="svg-editor-color-swatches">
                     {SOLID_BG_PRESETS.map((color) => (
@@ -484,38 +500,8 @@ export default function SvgPropertiesPanel({
                       style={{ background: `linear-gradient(${customAngle}deg, ${customColor1}, ${customColor2})` }}
                     />
                     <div className="svg-editor-gradient-color-pickers">
-                      <label className="svg-editor-color-picker-card">
-                        <span className="svg-editor-large-color-swatch" style={{ background: normalizeColor(customColor1) }}>
-                          <input
-                            type="color"
-                            value={normalizeColor(customColor1)}
-                            onChange={(e) => {
-                              setCustomColor1(e.target.value);
-                              onSetGradientBackground?.(e.target.value, customColor2, customAngle);
-                            }}
-                          />
-                        </span>
-                        <span className="svg-editor-color-value-copy">
-                          <strong>{t("svgEditor.color1") || "Color 1"}</strong>
-                          <code>{customColor1}</code>
-                        </span>
-                      </label>
-                      <label className="svg-editor-color-picker-card">
-                        <span className="svg-editor-large-color-swatch" style={{ background: normalizeColor(customColor2) }}>
-                          <input
-                            type="color"
-                            value={normalizeColor(customColor2)}
-                            onChange={(e) => {
-                              setCustomColor2(e.target.value);
-                              onSetGradientBackground?.(customColor1, e.target.value, customAngle);
-                            }}
-                          />
-                        </span>
-                        <span className="svg-editor-color-value-copy">
-                          <strong>{t("svgEditor.color2") || "Color 2"}</strong>
-                          <code>{customColor2}</code>
-                        </span>
-                      </label>
+                      <ColorPickerCard label={t("svgEditor.color1") || "Color 1"} value={customColor1} onChange={(color) => { setCustomColor1(color); onSetGradientBackground?.(color, customColor2, customAngle); }} t={t} />
+                      <ColorPickerCard label={t("svgEditor.color2") || "Color 2"} value={customColor2} onChange={(color) => { setCustomColor2(color); onSetGradientBackground?.(customColor1, color, customAngle); }} t={t} />
                     </div>
 
                     <div style={{ marginTop: 6 }}>
@@ -809,11 +795,7 @@ export default function SvgPropertiesPanel({
                 <button type="button" className={activeColorTarget === "fill" ? "is-active" : ""} onClick={() => setActiveColorTarget("fill")}><span className="svg-editor-color-target-dot is-fill" />{t("svgEditor.fill")}</button>
                 <button type="button" className={activeColorTarget === "stroke" ? "is-active" : ""} onClick={() => setActiveColorTarget("stroke")}><span className="svg-editor-color-target-dot is-stroke" />{t("svgEditor.stroke")}</button>
               </div>
-              <label className="svg-editor-color-picker-card">
-                <span className="svg-editor-large-color-swatch" style={{ background: normalizeColor(colorValue) }}><input aria-label={t(activeColorTarget === "fill" ? "svgEditor.fill" : "svgEditor.stroke")} type="color" value={normalizeColor(colorValue)} onChange={(event) => onAttribute(activeColorTarget, event.target.value)} disabled={locked} /></span>
-                <span className="svg-editor-color-value-copy"><strong>{t(activeColorTarget === "fill" ? "svgEditor.fill" : "svgEditor.stroke")}</strong><code>{colorValue}</code></span>
-                <span className="svg-editor-color-picker-edit">{t("svgEditor.chooseColor")}</span>
-              </label>
+              <ColorPickerCard label={t(activeColorTarget === "fill" ? "svgEditor.fill" : "svgEditor.stroke")} value={colorValue} onChange={(color) => onAttribute(activeColorTarget, color)} disabled={locked} t={t} />
               <div className="svg-editor-swatches-label">{t("svgEditor.colorSwatches")}</div>
               <div className="svg-editor-color-swatches">
                 {COLOR_PRESETS.map((color) => <button key={color} type="button" className={`svg-editor-color-swatch ${normalizeColor(colorValue).toLowerCase() === color.toLowerCase() ? "is-selected" : ""}`} style={{ "--swatch-color": color }} aria-label={`${t(activeColorTarget === "fill" ? "svgEditor.fill" : "svgEditor.stroke")} ${color}`} title={color} onClick={() => onAttribute(activeColorTarget, color)} disabled={locked}><span /></button>)}
@@ -853,13 +835,7 @@ export default function SvgPropertiesPanel({
               <h3><Paintbrush size={13} />{t("svgEditor.stroke")}</h3>
               <RangeControl label={t("svgEditor.strokeWidth")} value={strokeWidth} min={0} max={Math.max(20, Math.min(1000, Math.ceil(strokeWidth * 2)))} step={0.5} suffix=" px" onCommit={(value) => onAttribute("stroke-width", value)} disabled={locked} />
               <div className="svg-editor-stroke-color-wrap" style={{ marginTop: 10 }}>
-                <label className="svg-editor-color-picker-card">
-                  <span className="svg-editor-large-color-swatch" style={{ background: normalizeColor(attrs.stroke || "#000000") }}>
-                    <input aria-label={t("svgEditor.stroke")} type="color" value={normalizeColor(attrs.stroke || "#000000")} onChange={(event) => onAttribute("stroke", event.target.value)} disabled={locked} />
-                  </span>
-                  <span className="svg-editor-color-value-copy"><strong>{t("svgEditor.stroke")}</strong><code>{attrs.stroke || "none"}</code></span>
-                  <span className="svg-editor-color-picker-edit">{t("svgEditor.chooseColor")}</span>
-                </label>
+                <ColorPickerCard label={t("svgEditor.stroke")} value={attrs.stroke || "#000000"} onChange={(color) => onAttribute("stroke", color)} disabled={locked} t={t} />
                 <div className="svg-editor-swatches-label">{t("svgEditor.colorSwatches")}</div>
                 <div className="svg-editor-color-swatches">
                   {COLOR_PRESETS.map((color) => <button key={color} type="button" className={`svg-editor-color-swatch ${normalizeColor(attrs.stroke || "").toLowerCase() === color.toLowerCase() ? "is-selected" : ""}`} style={{ "--swatch-color": color }} aria-label={`${t("svgEditor.stroke")} ${color}`} title={color} onClick={() => onAttribute("stroke", color)} disabled={locked}><span /></button>)}

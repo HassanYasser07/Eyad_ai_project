@@ -6,11 +6,12 @@ import {
   X, Upload, Download, Undo2, Redo2, ZoomIn, ZoomOut, RotateCcw,
   Copy, Trash2, Group, Ungroup, FileCode2,
   MousePointer2, Type, CircleAlert, CheckCircle2, FileUp,
-  SlidersHorizontal, Maximize2, Layers, Palette,
+  SlidersHorizontal, Maximize2, Layers, Palette, Eye, EyeOff,
   Blend, RotateCw, Paintbrush, Image, Sparkles, ChevronLeft,
 } from "lucide-react";
 import SvgLayersPanel from "@/components/svgEditor/SvgLayersPanel";
 import SvgPropertiesPanel from "@/components/svgEditor/SvgPropertiesPanel";
+import ColorPalettePicker from "@/components/shared/ColorPalettePicker";
 import {
   addTextElement,
   cloneSelectedElements,
@@ -37,6 +38,7 @@ import {
   setSolidBackground,
   setGradientBackground,
   setImageBackground,
+  applySvgPalette,
   rotateBackground,
   removeBackground,
 } from "@/components/svgEditor/svgDocument";
@@ -294,6 +296,9 @@ export default function SvgEditorDialog({ onClose, direction = "ltr" }) {
   const [propertiesCollapsed, setPropertiesCollapsed] = React.useState(false);
   const [mobileEditorTab, setMobileEditorTab] = React.useState(null);
   const [backgroundSubTab, setBackgroundSubTab] = React.useState("solid");
+  const [palettePickerOpen, setPalettePickerOpen] = React.useState(false);
+  const [selectedPaletteId, setSelectedPaletteId] = React.useState("ocean-mist");
+  const [previewHiddenIds, setPreviewHiddenIds] = React.useState(() => new Set());
   const fileInputRef = React.useRef(null);
   const stageRef = React.useRef(null);
   const markupRef = React.useRef("");
@@ -403,6 +408,9 @@ export default function SvgEditorDialog({ onClose, direction = "ltr" }) {
       setOriginalMarkup(parsed.markup);
       setFileName(file.name.replace(/\.svg$/i, "") || "untitled");
       setSelectedIds([]);
+      setPreviewHiddenIds(new Set());
+      setSelectedPaletteId("ocean-mist");
+      setPalettePickerOpen(false);
       setHistory({ past: [], future: [] });
       updateView({ zoom: 1, pan: { x: 0, y: 0 } });
       setNotice(t("svgEditor.imported"));
@@ -564,6 +572,35 @@ export default function SvgEditorDialog({ onClose, direction = "ltr" }) {
     if (succeeded) setSelectedIds([]);
   };
 
+  const flipSelectedElement = (axis) => {
+    if (!selectedId) return;
+    const svg = stageRef.current?.querySelector("svg");
+    const liveElement = Array.from(svg?.querySelectorAll("[data-editor-id]") || [])
+      .find((item) => item.getAttribute("data-editor-id") === selectedId);
+    // flipElement needs bounds in the selected element's parent coordinate space,
+    // not the root artboard coordinates used by the blue selection frame.
+    const boundsInParent = getBounds(liveElement) || selectedBounds;
+    performEdit(t("svgEditor.flipped"), (root) => flipElement(root, selectedId, axis, boundsInParent));
+  };
+
+  const choosePalette = (palette) => {
+    const changed = performEdit(t("palette.applied"), (root) => applySvgPalette(root, palette));
+    if (changed) {
+      setSelectedPaletteId(palette.id);
+      setPalettePickerOpen(false);
+    }
+  };
+  const previewSelectedHidden = selectedIds.length > 0 && selectedIds.every((id) => previewHiddenIds.has(id));
+  const togglePreviewVisibility = () => setPreviewHiddenIds((current) => {
+    const next = new Set(current);
+    if (selectedIds.length && selectedIds.every((id) => next.has(id))) selectedIds.forEach((id) => next.delete(id));
+    else selectedIds.forEach((id) => next.add(id));
+    return next;
+  });
+  const previewVisibilityCss = Array.from(previewHiddenIds)
+    .map((id) => `.svg-editor-artboard [data-editor-id="${String(id).replace(/[^a-zA-Z0-9_-]/g, "")}"]{visibility:hidden!important;}`)
+    .join("\n");
+
   const groupSelection = () => {
     if (selectedIds.length < 2) return;
     let groupId = null;
@@ -629,6 +666,7 @@ export default function SvgEditorDialog({ onClose, direction = "ltr" }) {
     replaceMarkup(originalMarkup);
     setHistory({ past: [], future: [] });
     setSelectedIds([]);
+    setPreviewHiddenIds(new Set());
     setError("");
     setNotice(t("svgEditor.resetDone"));
     updateView({ zoom: 1, pan: { x: 0, y: 0 } });
@@ -974,6 +1012,7 @@ export default function SvgEditorDialog({ onClose, direction = "ltr" }) {
         event.preventDefault();
         if (handle.getAttribute("data-editor-handle") === "delete") deleteSelection();
       }}>
+        {previewVisibilityCss && <style>{previewVisibilityCss}</style>}
         <div
           className="svg-editor-artboard"
           style={{
@@ -1035,6 +1074,8 @@ export default function SvgEditorDialog({ onClose, direction = "ltr" }) {
             <ToolbarButton icon={RotateCcw} label={t("svgEditor.resetView")} onClick={resetEditor} disabled={!originalMarkup} danger />
           </div>
           <div className="svg-editor-tool-group svg-editor-arrange-tools">
+            <ToolbarButton icon={Palette} label={t("palette.open")} onClick={() => setPalettePickerOpen(true)} disabled={!svgMarkup} />
+            <ToolbarButton icon={previewSelectedHidden ? Eye : EyeOff} label={previewSelectedHidden ? t("palette.showSelectedInEditor") : t("palette.hideSelectedInEditor")} onClick={togglePreviewVisibility} disabled={!selectedIds.length} active={previewSelectedHidden} />
             <ToolbarButton icon={Type} label={t("svgEditor.addText")} onClick={createTextSelection} disabled={!svgMarkup} />
             <ToolbarButton
               icon={Image}
@@ -1053,6 +1094,15 @@ export default function SvgEditorDialog({ onClose, direction = "ltr" }) {
         </div>
 
         {(error || notice) && <div className={`svg-editor-feedback ${error ? "is-error" : "is-success"}`} role={error ? "alert" : "status"}>{error ? <CircleAlert size={15} /> : <CheckCircle2 size={15} />}{error || notice}</div>}
+
+        {palettePickerOpen && (
+          <div className="svg-editor-palette-overlay" role="presentation" onPointerDown={(event) => { if (event.target === event.currentTarget) setPalettePickerOpen(false); }}>
+            <section className="svg-editor-palette-dialog" role="dialog" aria-modal="true" aria-label={t("palette.galleryTitle")}>
+              <header><div><Palette size={18} /><div><strong>{t("palette.galleryTitle")}</strong><small>{t("palette.galleryHint")}</small></div></div><button type="button" onClick={() => setPalettePickerOpen(false)} aria-label={t("svgEditor.close")}><X size={18} /></button></header>
+              <ColorPalettePicker onSelect={choosePalette} selectedPaletteId={selectedPaletteId} t={t} />
+            </section>
+          </div>
+        )}
 
         <div className={`svg-editor-workspace ${layersCollapsed ? "layers-collapsed" : ""} ${propertiesCollapsed ? "properties-collapsed" : ""}`} data-mobile-tab={mobileEditorTab || ""}>
           <SvgLayersPanel tree={tree} selectedIds={selectedIds} onSelect={selectElement} onHide={hideElement} onLock={lockElement} onReorder={reorderBetween} t={t} collapsed={layersCollapsed} onToggleCollapsed={() => setLayersCollapsed((value) => !value)} />
@@ -1089,7 +1139,7 @@ export default function SvgEditorDialog({ onClose, direction = "ltr" }) {
             onText={(value) => performEdit(t("svgEditor.textUpdated"), (root) => updateElementText(root, selectedId, value))}
             onSize={(dimension, value, bounds) => performEdit(t("svgEditor.dimensionsUpdated"), (root) => updateElementSize(root, selectedId, dimension, value, bounds))}
             onRotate={(value, bounds) => performEdit(t("svgEditor.rotationUpdated"), (root) => rotateElement(root, selectedId, value, bounds))}
-            onFlip={(axis, bounds) => performEdit(t("svgEditor.flipped"), (root) => flipElement(root, selectedId, axis, bounds))}
+            onFlip={(axis) => flipSelectedElement(axis)}
             onAttribute={(name, value) => performEdit(t("svgEditor.appearanceUpdated"), (root) => updateElementAttribute(root, selectedId, name, value))}
             onNudge={nudgeSelection}
             collapsed={propertiesCollapsed}

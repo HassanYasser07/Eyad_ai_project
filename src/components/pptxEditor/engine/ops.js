@@ -96,7 +96,32 @@ function mutateSlide(pkg, slidePath, label, fn) {
 // ---------- geometry & structure ----------
 export function setBounds(pkg, slidePath, changes, label = "Move") {
   return mutateSlide(pkg, slidePath, label, (doc, tree) => {
-    for (const ch of changes) writeBounds(doc, findNode(tree, ch.id), ch);
+    for (const ch of changes) {
+      const node = findNode(tree, ch.id);
+      const before = readBoundsFromNode(node);
+      writeBounds(doc, node, ch);
+      if (before && (Math.round(before.w) !== Math.round(ch.w) || Math.round(before.h) !== Math.round(ch.h))) {
+        const body = kid(node, "txBody");
+        const bodyPr = body && kid(body, "bodyPr");
+        if (bodyPr) {
+          // Match PowerPoint's shrink-to-fit behavior after resizing text boxes/shapes.
+          for (const old of kids(bodyPr, "noAutofit", "normAutofit", "spAutoFit")) bodyPr.removeChild(old);
+          insertOrdered(bodyPr, create(doc, "a", "normAutofit"), ORDER.bodyPr);
+        }
+      }
+    }
+  });
+}
+
+/** Hide/show selected drawing objects using DrawingML's non-visual hidden flag. */
+export function setElementsHidden(pkg, slidePath, ids, hidden) {
+  return mutateSlide(pkg, slidePath, hidden ? "Hide layer" : "Show layer", (doc, tree) => {
+    for (const id of ids) {
+      const meta = cNvPr(findNode(tree, id));
+      if (!meta) continue;
+      if (hidden) meta.setAttribute("hidden", "1");
+      else meta.removeAttribute("hidden");
+    }
   });
 }
 
@@ -159,6 +184,35 @@ export function reorderElements(pkg, slidePath, ids, mode) {
     } else if (mode === "backward") {
       for (let i = 1; i < all.length; i++) if (sel.has(idOfNode(all[i])) && !sel.has(idOfNode(all[i - 1]))) { tree.insertBefore(all[i], all[i - 1]); [all[i], all[i - 1]] = [all[i - 1], all[i]]; }
     }
+  });
+}
+
+/** Move one layer to a front-to-back layer index in one undoable transaction. */
+export function moveElementToLayer(pkg, slidePath, id, targetLayerIndex) {
+  return mutateSlide(pkg, slidePath, "Reorder layer", (doc, tree) => {
+    const keyed = keyedNodes(tree);
+    if (!keyed.length) return;
+    const key = String(id);
+    const sourceXmlIndex = keyed.findIndex((item) => item.key === key);
+    if (sourceXmlIndex < 0) throw new PptxError("ELEMENT_MISSING", `Layer ${key} is no longer on this slide.`);
+
+    // The Layers panel is front-to-back, while spTree stores objects back-to-front.
+    // Reorder using the exact same front-to-back list users see, then write that order
+    // back to the XML tree. This is safe with duplicate cNvPr ids because `keyed` uses
+    // stable disambiguated keys such as "12~1".
+    const frontToBack = [...keyed].reverse();
+    const sourceUiIndex = frontToBack.findIndex((item) => item.key === key);
+    const rawTarget = Number(targetLayerIndex);
+    if (!Number.isFinite(rawTarget)) throw new PptxError("BAD_INDEX", "Invalid layer position.");
+    const targetUiIndex = Math.max(0, Math.min(frontToBack.length - 1, Math.trunc(rawTarget)));
+    if (sourceUiIndex === targetUiIndex) return;
+
+    const [moving] = frontToBack.splice(sourceUiIndex, 1);
+    frontToBack.splice(targetUiIndex, 0, moving);
+    const xmlOrder = [...frontToBack].reverse();
+    const anchor = endAnchor(tree);
+    // Move only drawable nodes, preserving spTree metadata and extension nodes.
+    for (const item of xmlOrder) tree.insertBefore(item.node, anchor);
   });
 }
 
@@ -371,7 +425,17 @@ export function setTextProps(pkg, slidePath, ids, props, cell = null) {
             if (props.bold !== undefined) rPr.setAttribute("b", props.bold ? "1" : "0");
             if (props.italic !== undefined) rPr.setAttribute("i", props.italic ? "1" : "0");
             if (props.underline !== undefined) rPr.setAttribute("u", props.underline ? "sng" : "none");
+            if (props.strike !== undefined) rPr.setAttribute("strike", props.strike ? "sngStrike" : "noStrike");
             if (props.color) insertOrdered(rPr, solid(doc, props.color), ORDER.rPr, { replace: true });
+            if (props.highlight !== undefined) {
+              for (const node of kids(rPr, "highlight")) rPr.removeChild(node);
+              if (props.highlight) {
+                if (!HEX.test(String(props.highlight))) throw new PptxError("BAD_COLOR", "Invalid highlight colour");
+                const highlight = create(doc, "a", "highlight");
+                highlight.appendChild(create(doc, "a", "srgbClr", { val: String(props.highlight).toUpperCase() }));
+                insertOrdered(rPr, highlight, ORDER.rPr, { replace: true });
+              }
+            }
             if (props.font) insertOrdered(rPr, create(doc, "a", "latin", { typeface: String(props.font).slice(0, 80) }), ORDER.rPr, { replace: true });
           }
         }
@@ -418,33 +482,215 @@ export function setShapeStyle(pkg, slidePath, ids, { fill, line } = {}) {
         if (line.w !== undefined) ln.setAttribute("w", String(R(line.w)));
         if (line.none || line.hex) {
           for (const n of kids(ln, "noFill", "solidFill", "gradFill", "pattFill")) ln.removeChild(n);
-          insertOrdered(ln, line.none ? create(doc, "a", "noFill") : solid(doc, line.hex), ORDER.ln);
+          insertOrdered(ln, line.none ? create(doc, "a", "noFill") : solid(doc, line.hex, line.alpha), ORDER.ln);
         }
         if (line.dash) insertOrdered(ln, create(doc, "a", "prstDash", { val: line.dash }), ORDER.ln, { replace: true });
       }
     }
   });
 }
-export function setOpacity(pkg, slidePath, ids, opacity, currentHex = null) {
+const DRAWINGML_COLOR_NODES = new Set(["srgbClr", "schemeClr", "prstClr", "sysClr", "scrgbClr"]);
+function writeColorAlpha(doc, colorNode, opacity) {
+  // Replace every alpha transform with one exact value while preserving tint/shade/etc.
+  for (const transform of kids(colorNode, "alpha", "alphaMod", "alphaOff")) colorNode.removeChild(transform);
+  if (opacity < 1) insertOrdered(colorNode, create(doc, "a", "alpha", { val: R(opacity * 100000) }), ORDER.color);
+}
+function writeTreeAlpha(doc, root, opacity) {
+  let changed = false;
+  const walk = (node) => {
+    for (const child of kids(node)) {
+      if (DRAWINGML_COLOR_NODES.has(child.localName)) {
+        writeColorAlpha(doc, child, opacity);
+        changed = true;
+      } else walk(child);
+    }
+  };
+  if (root) walk(root);
+  return changed;
+}
+function writePictureAlpha(doc, blip, opacity) {
+  if (!blip) return false;
+  for (const effect of kids(blip, "alphaModFix")) blip.removeChild(effect);
+  if (opacity < 1) insertOrdered(blip, create(doc, "a", "alphaModFix", { amt: R(opacity * 100000) }), ORDER.blip);
+  return true;
+}
+function setFillOpacity(doc, owner, opacity) {
+  if (!owner) return false;
+  const fill = kid(owner, "solidFill", "gradFill", "pattFill", "blipFill", "grpFill", "noFill");
+  if (!fill || fill.localName === "noFill") return false;
+  if (fill.localName === "blipFill") return writePictureAlpha(doc, kid(fill, "blip"), opacity);
+  return writeTreeAlpha(doc, fill, opacity);
+}
+function setStyleRefOpacity(doc, node, refName, opacity) {
+  const style = kid(node, "style");
+  const ref = style && kid(style, refName);
+  return ref ? writeTreeAlpha(doc, ref, opacity) : false;
+}
+function setShapeOpacity(doc, node, spPr, opacity) {
+  // Explicit local fills/lines take precedence. When PowerPoint uses a theme style
+  // reference instead, materialise the alpha transform on that object's own style ref.
+  const localFill = kid(spPr, "solidFill", "gradFill", "pattFill", "blipFill", "grpFill", "noFill");
+  if (localFill) setFillOpacity(doc, spPr, opacity);
+  else setStyleRefOpacity(doc, node, "fillRef", opacity);
+
+  const localLine = kid(spPr, "ln");
+  if (localLine) {
+    const localLineFill = kid(localLine, "solidFill", "gradFill", "pattFill", "blipFill", "grpFill", "noFill");
+    if (localLineFill) setFillOpacity(doc, localLine, opacity);
+    else setStyleRefOpacity(doc, node, "lnRef", opacity);
+  } else {
+    setStyleRefOpacity(doc, node, "lnRef", opacity);
+  }
+}
+/**
+ * Set object opacity in the OOXML document (0..1). Pictures use a:alphaModFix;
+ * shapes/connectors apply alpha to all fill stops and outline colours, preserving
+ * their colour transforms and outline dash/width.
+ */
+export function setOpacity(pkg, slidePath, ids, opacity) {
+  const value = Number(opacity);
+  if (!Number.isFinite(value)) throw new PptxError("BAD_OPACITY", "Opacity must be a number between 0 and 1.");
+  const alpha = Math.max(0, Math.min(1, value));
   return mutateSlide(pkg, slidePath, "Opacity", (doc, tree) => {
     for (const id of ids) {
       const node = findNode(tree, id);
       if (node.localName === "pic") {
-        const blip = path(node, "blipFill", "blip");
-        if (!blip) continue;
-        for (const n of kids(blip, "alphaModFix")) blip.removeChild(n);
-        if (opacity < 1) insertOrdered(blip, create(doc, "a", "alphaModFix", { amt: R(opacity * 100000) }), ORDER.blip);
-      } else if (node.localName === "sp") {
+        writePictureAlpha(doc, path(node, "blipFill", "blip"), alpha);
+        // PowerPoint pictures can carry an independent border: keep it in sync too.
+        const spPr = kid(node, "spPr");
+        if (spPr) setFillOpacity(doc, kid(spPr, "ln"), alpha);
+      } else if (node.localName === "sp" || node.localName === "cxnSp") {
         const spPr = spPrOf(doc, node);
-        const sf = kid(spPr, "solidFill");
-        let hex = currentHex;
-        if (sf) { const c = kids(sf)[0]; if (c?.localName === "srgbClr") hex = attr(c, "val", hex); else if (c) { /* scheme colour: keep colour, add alpha */
-            for (const a of kids(c, "alpha")) c.removeChild(a);
-            if (opacity < 1) c.appendChild(create(doc, "a", "alpha", { val: R(opacity * 100000) }));
-            continue; } }
-        if (!hex) continue;
-        for (const n of kids(spPr, "noFill", "solidFill", "gradFill", "blipFill", "pattFill", "grpFill")) spPr.removeChild(n);
-        insertOrdered(spPr, solid(doc, hex, opacity), ORDER.spPr);
+        setShapeOpacity(doc, node, spPr, alpha);
+      }
+    }
+  });
+}
+
+
+const normalizePaletteColor = (value) => String(value || "").replace(/^#/, "").toUpperCase();
+const colorRgbLuminance = (hex) => {
+  const rgb = normalizePaletteColor(hex).match(/.{2}/g) || ["FF", "FF", "FF"];
+  const values = rgb.map((v) => parseInt(v, 16) / 255).map((v) => v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+  return 0.2126 * values[0] + 0.7152 * values[1] + 0.0722 * values[2];
+};
+const contrastInk = (hex) => colorRgbLuminance(hex) > 0.179 ? "111827" : "FFFFFF";
+
+function replaceColorFill(doc, owner, hex) {
+  if (!owner) return;
+  for (const old of kids(owner, "noFill", "solidFill", "gradFill", "blipFill", "pattFill", "grpFill")) owner.removeChild(old);
+  insertOrdered(owner, solid(doc, normalizePaletteColor(hex)), ORDER.spPr);
+}
+
+function replaceLineColor(doc, spPr, hex) {
+  if (!spPr) return;
+  let line = kid(spPr, "ln");
+  if (!line) { line = create(doc, "a", "ln"); insertOrdered(spPr, line, ORDER.spPr); }
+  for (const old of kids(line, "noFill", "solidFill", "gradFill", "pattFill")) line.removeChild(old);
+  insertOrdered(line, solid(doc, normalizePaletteColor(hex)), ORDER.ln);
+}
+
+function setTextBodyColor(doc, body, hex) {
+  if (!body) return;
+  // Run properties (including defRPr inside a:pPr) share DrawingML's run-property order.
+  // ORDER.pPr applies to the paragraph-properties container, not to a:defRPr itself.
+  for (const tag of ["rPr", "defRPr", "endParaRPr"]) {
+    for (const runProps of descendants(body, tag)) {
+      insertOrdered(runProps, solid(doc, normalizePaletteColor(hex)), ORDER.rPr, { replace: true });
+    }
+  }
+  // Ensure empty paragraphs and runs that inherit formatting still receive the palette ink.
+  for (const paragraph of descendants(body, "p")) {
+    let pPr = kid(paragraph, "pPr");
+    if (!pPr) {
+      pPr = create(doc, "a", "pPr");
+      paragraph.insertBefore(pPr, paragraph.firstChild);
+    }
+    let defaults = kid(pPr, "defRPr");
+    if (!defaults) defaults = insertOrdered(pPr, create(doc, "a", "defRPr"), ORDER.pPr);
+    insertOrdered(defaults, solid(doc, normalizePaletteColor(hex)), ORDER.rPr, { replace: true });
+  }
+}
+
+/**
+ * Apply a coordinated five-color palette to one slide as a single undoable edit.
+ * Palette[0] is the slide background; remaining colors rotate across text and shapes.
+ * Shape-contained text receives black/white ink chosen for contrast against its fill.
+ */
+export function applySlidePalette(pkg, slidePath, palette) {
+  const colors = Array.isArray(palette?.colors) ? palette.colors.map(normalizePaletteColor) : [];
+  if (colors.length !== 5 || colors.some((color) => !HEX.test(color))) {
+    throw new PptxError("BAD_PALETTE", "A palette must contain five six-digit hexadecimal colors.");
+  }
+  return mutateSlide(pkg, slidePath, `Apply ${String(palette.name || "color")} palette`, (doc, tree) => {
+    const cSld = kid(doc.documentElement, "cSld");
+    if (!cSld) throw new PptxError("SLIDE_INVALID", "Slide is missing its common slide data.");
+    const oldBg = kid(cSld, "bg");
+    if (oldBg) cSld.removeChild(oldBg);
+    const bg = create(doc, "p", "bg");
+    const bgPr = create(doc, "p", "bgPr");
+    bgPr.appendChild(solid(doc, colors[0]));
+    bgPr.appendChild(create(doc, "a", "effectLst"));
+    bg.appendChild(bgPr);
+    cSld.insertBefore(bg, kid(cSld, "spTree") || cSld.firstChild);
+
+    // Traverse the XML tree once so accent assignment follows the same z-order users see.
+    const drawableNodes = [];
+    const collectDrawableNodes = (parent) => {
+      for (const child of kids(parent)) {
+        if (["sp", "pic", "cxnSp"].includes(child.localName)) drawableNodes.push(child);
+        collectDrawableNodes(child);
+      }
+    };
+    collectDrawableNodes(tree);
+    let visibleShapeIndex = 0;
+    let textIndex = 0;
+    for (const node of drawableNodes) {
+      const tag = node.localName;
+      // Do not synthesize a missing p:pic/p:spPr before blipFill: that would violate
+      // the picture schema order. Normal shape and connector properties may be materialized.
+      const spPr = kid(node, "spPr") || (tag === "sp" || tag === "cxnSp" ? spPrOf(doc, node) : null);
+      const shapeColor = colors[1 + (visibleShapeIndex % 4)];
+      const outlineColor = colors[1 + ((visibleShapeIndex + 1) % 4)];
+      const isTextBox = tag === "sp" && attr(path(node, "nvSpPr", "cNvSpPr"), "txBox") === "1";
+      const ph = tag === "sp" ? path(node, "nvSpPr", "nvPr", "ph") : null;
+      const shapeFill = spPr && kids(spPr, "noFill", "solidFill", "gradFill", "blipFill", "pattFill", "grpFill")[0];
+      const isInheritedTextPlaceholder = !!ph && (!shapeFill || shapeFill.localName === "noFill");
+      const isTextItem = isTextBox || isInheritedTextPlaceholder;
+      const geom = kid(spPr, "prstGeom");
+      const geomName = attr(geom, "prst", "");
+      if (tag === "sp" && !isTextItem && geomName !== "line") replaceColorFill(doc, spPr, shapeColor);
+      if (spPr && (tag === "cxnSp" || tag === "pic" || (tag === "sp" && geomName === "line") || (tag === "sp" && !isTextItem))) {
+        replaceLineColor(doc, spPr, outlineColor);
+      }
+
+      const body = tag === "sp" ? kid(node, "txBody") : null;
+      if (body) {
+        const textColor = isTextItem ? colors[1 + (textIndex % 4)] : contrastInk(shapeColor);
+        setTextBodyColor(doc, body, textColor);
+        if (isTextItem) textIndex += 1;
+      }
+      visibleShapeIndex += 1;
+    }
+
+    // Tables are drawable graphic frames and should harmonize with the same palette.
+    for (const frame of descendants(tree, "graphicFrame")) {
+      const table = path(frame, "graphic", "graphicData", "tbl");
+      if (!table) continue;
+      const rows = descendants(table, "tr");
+      let cellIndex = 0;
+      for (const row of rows) {
+        for (const cell of kids(row, "tc")) {
+          const tcPr = kid(cell, "tcPr");
+          if (tcPr) {
+            for (const oldFill of kids(tcPr, "noFill", "solidFill", "gradFill", "blipFill", "pattFill", "grpFill")) tcPr.removeChild(oldFill);
+            const cellFill = solid(doc, colors[1 + (cellIndex % 4)]);
+            const anchor = kid(tcPr, "cell3D", "extLst");
+            tcPr.insertBefore(cellFill, anchor || null);
+          }
+          setTextBodyColor(doc, kid(cell, "txBody"), contrastInk(colors[1 + (cellIndex % 4)]));
+          cellIndex += 1;
+        }
       }
     }
   });
@@ -468,7 +714,7 @@ export function addTextBox(pkg, slidePath, { x, y, w, h, text = "Text", size = 2
     return String(id);
   });
 }
-export const SHAPE_PRESETS = ["rect", "roundRect", "ellipse", "triangle", "rightArrow", "star5", "line"];
+export const SHAPE_PRESETS = ["rect", "roundRect", "ellipse", "triangle", "rtTriangle", "diamond", "parallelogram", "trapezoid", "pentagon", "hexagon", "octagon", "rightArrow", "leftArrow", "upArrow", "downArrow", "leftRightArrow", "upDownArrow", "quadArrow", "notchedRightArrow", "bentArrow", "chevron", "homePlate", "plus", "heart", "lightningBolt", "sun", "moon", "wedgeRectCallout", "star4", "star5", "star6", "star8", "line", "flowChartProcess", "flowChartPredefinedProcess", "flowChartAlternateProcess", "flowChartTerminator", "flowChartDecision", "flowChartConnector", "flowChartInputOutput", "flowChartPreparation", "flowChartManualInput", "flowChartOffpageConnector", "flowChartDocument"];
 export function addShape(pkg, slidePath, { prst = "rect", x, y, w, h, hex = null }) {
   if (!SHAPE_PRESETS.includes(prst)) throw new PptxError("BAD_SHAPE", "Unsupported shape");
   return mutateSlide(pkg, slidePath, "Add shape", (doc, tree) => {

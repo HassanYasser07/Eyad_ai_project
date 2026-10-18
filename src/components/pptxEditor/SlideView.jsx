@@ -37,7 +37,6 @@ function Geometry({ el, w, h, idPrefix }) {
   const sw = ln.none || ln.hex === undefined ? 0 : Math.max(0.5, px(ln.w ?? 12700));
   const stroke = sw ? { stroke: `#${ln.hex}`, strokeOpacity: ln.alpha, strokeWidth: sw, strokeDasharray: DASH[ln.dash], strokeLinejoin: "round" } : { stroke: "none" };
   const g = el.geom || { kind: "rect" };
-  const flip = `${el.flipH ? "scaleX(-1)" : ""} ${el.flipV ? "scaleY(-1)" : ""}`.trim();
   let body = null;
   if (g.kind === "ellipse") body = <ellipse cx={w / 2} cy={h / 2} rx={w / 2} ry={h / 2} {...f} {...stroke} />;
   else if (g.kind === "path") body = <path d={g.d} {...f} {...stroke} />;
@@ -53,7 +52,7 @@ function Geometry({ el, w, h, idPrefix }) {
     );
   } else body = <rect x="0" y="0" width={w} height={h} {...f} {...stroke} />;
   return (
-    <svg className="pptx-geom" width={Math.max(w, 1)} height={Math.max(h, 1)} viewBox={`0 0 ${Math.max(w, 1)} ${Math.max(h, 1)}`} style={{ transform: flip || undefined }} aria-hidden="true">
+    <svg className="pptx-geom" width={Math.max(w, 1)} height={Math.max(h, 1)} viewBox={`0 0 ${Math.max(w, 1)} ${Math.max(h, 1)}`} aria-hidden="true">
       {defs.length > 0 && <defs>{defs}</defs>}
       {body}
     </svg>
@@ -67,32 +66,100 @@ function bulletText(b) {
 }
 
 export function TextBody({ text, hint, cellMode = false }) {
+  const containerRef = React.useRef(null);
+  const contentRef = React.useRef(null);
+  const [autoScale, setAutoScale] = React.useState(1);
+  const autoScaleRef = React.useRef(autoScale);
+  const body = text?.body || {};
+  // PowerPoint only shrinks text when the source text body explicitly requests
+  // normAutofit. Applying browser-measured shrink to every object made titles,
+  // headings and ordinary text boxes change size simply by activating a slide.
+  // Already-applied OOXML fontScale values are not shrunk a second time. Table
+  // cells keep their imported run sizes: their dimensions are controlled by the
+  // table grid, not by an independent text-box fit pass.
+  const shouldAutoFit = !cellMode && body.autofit?.type === "shrink" && (body.autofit.fontScale ?? 1) >= 0.999;
+  const renderScale = shouldAutoFit ? autoScale : 1;
+  autoScaleRef.current = autoScale;
+
+  React.useLayoutEffect(() => {
+    if (!shouldAutoFit) {
+      setAutoScale((current) => current === 1 ? current : 1);
+      return undefined;
+    }
+    const container = containerRef.current;
+    const content = contentRef.current;
+    if (!container || !content || typeof window === "undefined") return undefined;
+    let frame = 0;
+    const measure = () => {
+      if (typeof window.requestAnimationFrame !== "function") return;
+      if (frame) window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => {
+        frame = 0;
+        // A slide can briefly mount inside a hidden/off-canvas panel during
+        // navigation. Never infer a tiny text scale from those transient 0px
+        // dimensions; the frame observer will retry after it becomes measurable.
+        if (container.clientWidth < 8 || container.clientHeight < 8) return;
+        const css = window.getComputedStyle(container);
+        const horizontalPadding = (Number.parseFloat(css.paddingLeft) || 0) + (Number.parseFloat(css.paddingRight) || 0);
+        const verticalPadding = (Number.parseFloat(css.paddingTop) || 0) + (Number.parseFloat(css.paddingBottom) || 0);
+        const availableWidth = Math.max(1, container.clientWidth - horizontalPadding - 2);
+        const availableHeight = Math.max(1, container.clientHeight - verticalPadding - 3);
+        const contentWidth = content.clientWidth;
+        const contentScrollWidth = content.scrollWidth;
+        const contentHeight = content.scrollHeight;
+        if (!availableWidth || !availableHeight || !contentHeight) return;
+
+        // The scale is only used for source bodies explicitly marked normAutofit.
+        // Padding remains fixed, and observing only the frame avoids feedback loops.
+        const currentScale = Math.max(0.05, autoScaleRef.current || 1);
+        const naturalHeight = contentHeight / currentScale;
+        const heightFit = Math.min(1, availableHeight / Math.max(1, naturalHeight));
+        const widthFit = contentScrollWidth > contentWidth + 1 && contentScrollWidth > 0
+          ? Math.min(1, currentScale * (Math.max(1, contentWidth - 2) / contentScrollWidth))
+          : 1;
+        const next = Math.max(0.05, Math.min(1, heightFit, widthFit));
+        setAutoScale((current) => Math.abs(next - current) < 0.01 ? current : next);
+      });
+    };
+    measure();
+    const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
+    observer?.observe(container);
+    window.addEventListener("resize", measure);
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      observer?.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [text, hint, shouldAutoFit]);
+
   if (!text) return null;
-  const { body, paragraphs } = text;
-  const ins = body.insets;
+  const { paragraphs } = text;
+  const ins = body.insets || { t: 45720, r: 91440, b: 45720, l: 91440 };
   const justify = body.anchor === "ctr" ? "center" : body.anchor === "b" ? "flex-end" : "flex-start";
   const nowrap = body.wrap === "none";
   const empty = text.isEmpty;
   return (
-    <div className="pptx-text" style={{ padding: `${px(ins.t)}px ${px(ins.r)}px ${px(ins.b)}px ${px(ins.l)}px`, justifyContent: cellMode ? "flex-start" : justify, whiteSpace: nowrap ? "pre" : "pre-wrap" }}>
+    <div ref={containerRef} className="pptx-text" style={{ padding: `${px(ins.t)}px ${px(ins.r)}px ${px(ins.b)}px ${px(ins.l)}px`, justifyContent: cellMode ? "flex-start" : justify, whiteSpace: nowrap ? "pre" : "pre-wrap" }}>
+      <div ref={contentRef} className="pptx-text-content" data-auto-fit={shouldAutoFit ? "shrink" : "none"} data-auto-scale={renderScale.toFixed(3)}>
       {empty && hint ? <div className="pptx-hint">{hint}</div> : paragraphs.map((p, i) => {
         const maxPt = Math.max(p.end.size, ...p.runs.map((r) => r.style.size));
-        const fs = ptToPx(maxPt);
-        const lh = p.lnSpc ? (p.lnSpc.pct ? p.lnSpc.pct * 1.2 : ptToPx(p.lnSpc.pts) / fs) : 1.2;
-        const sp = (s) => (s ? (s.pts !== undefined ? ptToPx(s.pts) : s.pct * fs * 1.2) : 0);
+        const fs = ptToPx(maxPt) * renderScale;
+        const lh = p.lnSpc ? (p.lnSpc.pct ? p.lnSpc.pct * 1.2 : ptToPx(p.lnSpc.pts) / Math.max(1, fs / renderScale)) : 1.2;
+        const sp = (s) => (s ? (s.pts !== undefined ? ptToPx(s.pts) * renderScale : s.pct * fs * 1.2) : 0);
         const bt = bulletText(p.bullet);
         const hang = Math.abs(px(p.indent));
         return (
-          <div key={i} className="pptx-para" dir={p.rtl ? "rtl" : "ltr"} style={{ textAlign: p.algn === "ctr" ? "center" : p.algn === "r" ? "right" : p.algn === "just" ? "justify" : "left", paddingInlineStart: px(p.marL), textIndent: px(p.indent), marginTop: i ? sp(p.spcBef) : 0, marginBottom: sp(p.spcAft), lineHeight: lh, minHeight: `${fs * lh}px`, fontSize: fs }}>
+          <div key={i} className="pptx-para" dir={p.rtl ? "rtl" : "ltr"} style={{ textAlign: p.algn === "ctr" ? "center" : p.algn === "r" ? "right" : p.algn === "just" ? "justify" : "left", paddingInlineStart: px(p.marL) * renderScale, textIndent: px(p.indent) * renderScale, marginTop: i ? sp(p.spcBef) : 0, marginBottom: sp(p.spcAft), lineHeight: lh, minHeight: `${fs * lh}px`, fontSize: fs }}>
             {bt && <span className="pptx-bullet" style={{ display: "inline-block", minWidth: hang || fs, textIndent: 0, color: rgba(p.runs[0]?.style.color || p.end.color), fontFamily: "Arial, sans-serif" }}>{bt}</span>}
             {p.runs.map((r, j) => {
               const s = r.style;
-              return <span key={j} style={{ fontFamily: font(s.font), fontSize: ptToPx(s.size), fontWeight: s.bold ? 700 : 400, fontStyle: s.italic ? "italic" : "normal", textDecoration: [s.underline && "underline", s.strike && "line-through"].filter(Boolean).join(" ") || "none", color: rgba(s.color), backgroundColor: s.highlight ? rgba(s.highlight) : undefined, verticalAlign: s.baseline > 0 ? "super" : s.baseline < 0 ? "sub" : "baseline" }}>{r.text}</span>;
+              return <span key={j} style={{ fontFamily: font(s.font), fontSize: ptToPx(s.size) * renderScale, fontWeight: s.bold ? 700 : 400, fontStyle: s.italic ? "italic" : "normal", textDecoration: [s.underline && "underline", s.strike && "line-through"].filter(Boolean).join(" ") || "none", color: rgba(s.color), backgroundColor: s.highlight ? rgba(s.highlight) : undefined, verticalAlign: s.baseline > 0 ? "super" : s.baseline < 0 ? "sub" : "baseline" }}>{r.text}</span>;
             })}
-            {!p.runs.length && <span style={{ fontSize: fs }}>{"\u200b"}</span>}
+            {!p.runs.length && <span style={{ fontSize: fs }}>\u200b</span>}
           </div>
         );
       })}
+      </div>
     </div>
   );
 }
@@ -176,7 +243,8 @@ function ElementNode({ el, urls, hints, idPrefix, labels }) {
   if (el.hidden) return null;
   if (el.kind === "group") return <>{el.children.map((c, ci) => <ElementNode key={`${c.id}-${ci}`} el={c} urls={urls} hints={hints} idPrefix={idPrefix} labels={labels} />)}</>;
   const w = px(el.w), h = px(el.h);
-  const style = { left: px(el.x), top: px(el.y), width: w, height: h, transform: el.rot ? `rotate(${el.rot}deg)` : undefined };
+  const transforms = [el.rot ? `rotate(${el.rot}deg)` : "", el.flipH ? "scaleX(-1)" : "", el.flipV ? "scaleY(-1)" : ""].filter(Boolean).join(" ");
+  const style = { left: px(el.x), top: px(el.y), width: w, height: h, transform: transforms || undefined, transformOrigin: "center center" };
   let inner = null;
   switch (el.kind) {
     case "image": {
@@ -186,10 +254,10 @@ function ElementNode({ el, urls, hints, idPrefix, labels }) {
       const round = el.geom?.kind === "ellipse" ? "50%" : undefined;
       inner = url ? (
         <div className="pptx-img" style={{ borderRadius: round, opacity: el.opacity }}>
-          <img src={url} alt={el.alt || ""} draggable={false} style={{ width: `${100 / sw}%`, height: `${100 / sh}%`, left: `${(-c.l / sw) * 100}%`, top: `${(-c.t / sh) * 100}%`, transform: `${el.flipH ? "scaleX(-1)" : ""} ${el.flipV ? "scaleY(-1)" : ""}`.trim() || undefined }} />
+          <img src={url} alt={el.alt || ""} draggable={false} style={{ width: `${100 / sw}%`, height: `${100 / sh}%`, left: `${(-c.l / sw) * 100}%`, top: `${(-c.t / sh) * 100}%`, transform: undefined }} />
         </div>
       ) : <div className="pptx-object-card">{el.mime ? labels.loading : labels.imageUnavailable}</div>;
-      if (el.line && !el.line.none && el.line.hex) inner = <>{inner}<div className="pptx-img-border" style={{ borderColor: `#${el.line.hex}`, borderWidth: Math.max(1, px(el.line.w ?? 12700)), borderRadius: round }} /></>;
+      if (el.line && !el.line.none && el.line.hex) inner = <>{inner}<div className="pptx-img-border" style={{ borderColor: `#${el.line.hex}`, borderWidth: Math.max(1, px(el.line.w ?? 12700)), borderRadius: round, opacity: el.line.alpha ?? 1 }} /></>;
       break;
     }
     case "table": inner = <TableView el={el} w={w} h={h} />; break;
@@ -229,6 +297,7 @@ export default function SlideView({ model, urls, overrides, hints = false, label
   const idPrefix = React.useId().replace(/:/g, "");
   const W = px(model.size.w), H = px(model.size.h);
   const renderTop = (el) => {
+    if (el.hidden) return null;
     const ov = overrides?.get(el.id);
     if (!ov) return <ElementNode key={el.id} el={el} urls={urls} hints={hints} idPrefix={idPrefix} labels={labels} />;
     if (el.kind === "group") {

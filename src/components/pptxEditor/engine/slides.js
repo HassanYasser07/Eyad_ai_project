@@ -184,3 +184,41 @@ export function moveSlide(pkg, from, to) {
 export function hasSections(pkg) {
   return descendants(pkg.doc(PRES).documentElement, "sectionLst").length > 0;
 }
+
+/** Apply or reset the background on every slide as a single undoable operation. */
+export function setPresentationBackground(pkg, hex) {
+  if (hex !== null && hex !== undefined && !/^[0-9a-f]{6}$/i.test(String(hex))) {
+    throw new PptxError("BAD_COLOR", "Background colour must be a six-digit hexadecimal value.");
+  }
+  const presentation = readPresentation(pkg);
+  if (!presentation.slides.length) throw new PptxError("NO_SLIDES", "No slides are available.");
+  return pkg.transact("Set all slide backgrounds", () => {
+    for (const slide of presentation.slides) setSlideBackground(pkg, slide.path, hex);
+  });
+}
+
+/** Set a slide's explicit solid background. Pass null to inherit the layout/master background. */
+export function setSlideBackground(pkg, slidePath, hex) {
+  if (hex !== null && hex !== undefined && !/^[0-9a-f]{6}$/i.test(String(hex))) {
+    throw new PptxError("BAD_COLOR", "Background colour must be a six-digit hexadecimal value.");
+  }
+  return pkg.transact("Set slide background", () => {
+    const doc = pkg.edit(slidePath);
+    const cSld = kid(doc.documentElement, "cSld");
+    if (!cSld) throw new PptxError("SLIDE_INVALID", "Slide is missing its common slide data.");
+    const current = kid(cSld, "bg");
+    if (current) cSld.removeChild(current);
+    if (hex === null || hex === undefined) return;
+
+    const bg = create(doc, "p", "bg");
+    const bgPr = create(doc, "p", "bgPr");
+    const solidFill = create(doc, "a", "solidFill");
+    solidFill.appendChild(create(doc, "a", "srgbClr", { val: String(hex).toUpperCase() }));
+    bgPr.appendChild(solidFill);
+    bgPr.appendChild(create(doc, "a", "effectLst"));
+    bg.appendChild(bgPr);
+    const spTree = kid(cSld, "spTree");
+    cSld.insertBefore(bg, spTree || cSld.firstChild);
+  });
+}
+

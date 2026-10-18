@@ -67,15 +67,27 @@ export function NumberField({ label, value, onCommit, step = 1, min = -9999, max
   );
 }
 
-export function SliderField({ label, value, onCommit, min = 0, max = 100, testId }) {
+export function SliderField({ label, value, onCommit, min = 0, max = 100, suffix = "%", testId }) {
   const [v, setV] = React.useState(value);
   React.useEffect(() => setV(value), [value]);
   return (
     <div className="pe-slider" data-testid={testId}>
       <span>{label}</span>
-      <Slider min={min} max={max} step={1} value={[v]} aria-label={label} onValueChange={([x]) => setV(x)} onValueCommit={([x]) => onCommit(x)} />
-      <em>{Math.round(v)}%</em>
+      <Slider variant="wave" className="pe-wave-slider-root" min={min} max={max} step={1} value={[v]} aria-label={label} onValueChange={([x]) => setV(x)} onValueCommit={([x]) => onCommit(x)} />
+      <em>{Math.round(v)}{suffix}</em>
     </div>
+  );
+}
+
+/** A compact select control styled to match the editor's numeric-field card. */
+export function SelectField({ label, value, options, onChange, testId, disabled = false }) {
+  return (
+    <label className={`pe-num pe-select-field ${disabled ? "is-disabled" : ""}`}>
+      <span>{label}</span>
+      <select className="pe-num-select" value={value} aria-label={label} data-testid={testId} disabled={disabled} onChange={(event) => onChange(event.target.value)}>
+        {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+      </select>
+    </label>
   );
 }
 

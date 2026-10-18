@@ -7,9 +7,9 @@ import { DOMParser, XMLSerializer } from "@xmldom/xmldom";
 import JSZip from "jszip";
 import {
   PptxPackage, setXmlImpl, readPresentation, readSlide, flattenElements, setBounds, setText, setTextProps,
-  deleteElements, duplicateElements, reorderElements, groupElements, ungroupElement, addTextBox, addShape,
-  addPicture, setShapeStyle, tableRows, tableCols, addSlide, duplicateSlide, deleteSlide, moveSlide, listLayouts,
-  computeAlign, computeDistribute, hitTest, copyElements, pasteElements,
+  deleteElements, duplicateElements, reorderElements, moveElementToLayer, setElementsHidden, groupElements, ungroupElement, addTextBox, addShape,
+  addPicture, setShapeStyle, setOpacity, tableRows, tableCols, addSlide, duplicateSlide, deleteSlide, moveSlide, listLayouts,
+  computeAlign, computeDistribute, hitTest, copyElements, pasteElements, setSlideBackground, setPresentationBackground, SHAPE_PRESETS, applySlidePalette,
 } from "../../src/components/pptxEditor/engine/index.js";
 
 setXmlImpl({ DOMParser, XMLSerializer });
@@ -125,11 +125,62 @@ test("text: add and remove paragraphs", async () => {
   await roundTrip(pkg);
 });
 
+test("opacity updates solid shape fills, outlines, connector lines and pictures in exported PPTX", async () => {
+  const pkg = await load("simple.pptx");
+  let { m } = slide(pkg);
+  const shape = m.elements.find((e) => e.name.startsWith("Rounded"));
+  setShapeStyle(pkg, m.path, [shape.id], { fill: { hex: "2563EB" }, line: { hex: "111827", w: 25400 } });
+  // Simulate an imported fill carrying an existing colour transform. Opacity must be
+  // inserted in DrawingML schema order instead of blindly appended after lumMod.
+  pkg.transact("seed color transform", () => {
+    const doc = pkg.edit(m.path);
+    const node = Array.from(doc.getElementsByTagName("p:sp")).find((candidate) =>
+      Array.from(candidate.getElementsByTagName("p:cNvPr")).some((meta) => meta.getAttribute("id") === String(shape.id))
+    );
+    const color = node && Array.from(node.getElementsByTagName("a:srgbClr")).find((candidate) => candidate.getAttribute("val") === "2563EB");
+    assert.ok(color, "test shape has the edited fill color");
+    const lumMod = doc.createElementNS("http://schemas.openxmlformats.org/drawingml/2006/main", "a:lumMod");
+    lumMod.setAttribute("val", "80000");
+    color.appendChild(lumMod);
+  });
+  setOpacity(pkg, m.path, [shape.id], 0.36);
+  let edited = slide(pkg).m.elements.find((e) => e.id === shape.id);
+  const shapeDoc = pkg.doc(m.path);
+  const shapeNode = Array.from(shapeDoc.getElementsByTagName("p:sp")).find((candidate) =>
+    Array.from(candidate.getElementsByTagName("p:cNvPr")).some((meta) => meta.getAttribute("id") === String(shape.id))
+  );
+  const fillColor = Array.from(shapeNode.getElementsByTagName("a:srgbClr")).find((candidate) => candidate.getAttribute("val") === "2563EB");
+  assert.deepEqual(Array.from(fillColor.childNodes).filter((child) => child.nodeType === 1).map((child) => child.localName), ["alpha", "lumMod"], "alpha transform is kept in valid DrawingML order");
+  assert.equal(edited.fill.alpha, 0.36, "shape fill uses selected opacity");
+  assert.equal(edited.line.alpha, 0.36, "shape outline uses the same selected opacity");
+
+  const lineId = addShape(pkg, m.path, { prst: "line", x: 200000, y: 300000, w: 700000, h: 0, hex: "334155" });
+  setOpacity(pkg, m.path, [lineId], 0.2);
+  edited = slide(pkg).m.elements.find((e) => e.id === lineId);
+  assert.equal(edited.line.alpha, 0.2, "line-only shapes receive opacity on their stroke");
+
+  const imageId = addPicture(pkg, m.path, { bytes: PNG, ext: "png", x: 1000000, y: 1200000, w: 250000, h: 250000 });
+  setOpacity(pkg, m.path, [imageId], 0.47);
+  assert.equal(slide(pkg).m.elements.find((e) => e.id === imageId).opacity, 0.47, "picture transparency round-trips through alphaModFix");
+  await roundTrip(pkg);
+
+  setOpacity(pkg, m.path, [shape.id, lineId, imageId], 1);
+  edited = slide(pkg).m.elements.find((e) => e.id === shape.id);
+  assert.equal(edited.fill.alpha, 1, "100% opacity clears prior alpha transforms");
+  assert.equal(edited.line.alpha, 1, "100% opacity restores outline opacity");
+  assert.equal(slide(pkg).m.elements.find((e) => e.id === lineId).line.alpha, 1);
+  assert.equal(slide(pkg).m.elements.find((e) => e.id === imageId).opacity, 1);
+  await roundTrip(pkg);
+});
+
 test("text properties and fill/line produce schema-ordered, valid XML", async () => {
   const pkg = await load("simple.pptx"); const { m } = slide(pkg); const tb = m.elements.find((e) => e.name.startsWith("TextBox")); const sh = m.elements.find((e) => e.name.startsWith("Rounded"));
-  setTextProps(pkg, m.path, [tb.id], { size: 40, italic: true, underline: true, color: "FF0000", font: "Arial", align: "ctr", bullet: true, lineSpacing: 1.5 });
+  setTextProps(pkg, m.path, [tb.id], { size: 40, italic: true, underline: true, strike: true, highlight: "FFFF00", color: "FF0000", font: "Arial", align: "ctr", bullet: true, lineSpacing: 1.5 });
   const s = slide(pkg).m.elements.find((e) => e.id === tb.id).text.paragraphs[0];
-  assert.deepEqual([s.runs[0].style.size, s.runs[0].style.italic, s.runs[0].style.color.hex, s.runs[0].style.font, s.algn, s.bullet.kind, s.lnSpc.pct], [40, true, "FF0000", "Arial", "ctr", "char", 1.5]);
+  assert.deepEqual([s.runs[0].style.size, s.runs[0].style.italic, s.runs[0].style.underline, s.runs[0].style.strike, s.runs[0].style.highlight.hex, s.runs[0].style.color.hex, s.runs[0].style.font, s.algn, s.bullet.kind, s.lnSpc.pct], [40, true, true, true, "FFFF00", "FF0000", "Arial", "ctr", "char", 1.5]);
+  setTextProps(pkg, m.path, [tb.id], { strike: false, highlight: null });
+  const resetStyle = slide(pkg).m.elements.find((e) => e.id === tb.id).text.paragraphs[0].runs[0].style;
+  assert.equal(resetStyle.strike, false); assert.equal(resetStyle.highlight, null);
   setShapeStyle(pkg, m.path, [sh.id], { fill: { hex: "00FF00", alpha: 0.5 }, line: { hex: "000000", w: 38100 } });
   const f = slide(pkg).m.elements.find((e) => e.id === sh.id);
   assert.deepEqual([f.fill.hex, f.fill.alpha, f.line.hex, f.line.w], ["00FF00", 0.5, "000000", 38100]);
@@ -155,6 +206,52 @@ test("delete, duplicate, reorder, group, ungroup", async () => {
   assert.deepEqual(after, before);
   deleteElements(pkg, m.path, [dup]);
   assert.ok(!slide(pkg).m.elements.some((e) => e.id === dup));
+  await roundTrip(pkg);
+});
+
+test("layer visibility and drag reordering persist and undo as single operations", async () => {
+  const pkg = await load("overlap.pptx");
+  const { m } = slide(pkg);
+  const originalXml = pkg.text.get(m.path);
+  const originalOrder = m.elements.map((element) => element.id);
+  const target = originalOrder[0];
+
+  setElementsHidden(pkg, m.path, [target], true);
+  assert.equal(slide(pkg).m.elements.find((element) => element.id === target).hidden, true);
+  assert.match(pkg.text.get(m.path), /hidden="1"/);
+  await roundTrip(pkg);
+  pkg.undo();
+  assert.equal(pkg.text.get(m.path), originalXml, "undo restores exact visibility XML");
+  pkg.redo();
+  assert.equal(slide(pkg).m.elements.find((element) => element.id === target).hidden, true);
+  pkg.undo();
+
+  moveElementToLayer(pkg, m.path, target, 0); // UI index 0 means front/top layer.
+  assert.equal(slide(pkg).m.elements.at(-1).id, target, "moving to layer index zero places it at the front");
+  await roundTrip(pkg);
+  pkg.undo();
+  assert.equal(pkg.text.get(m.path), originalXml, "one undo restores original layer order");
+  assert.deepEqual(slide(pkg).m.elements.map((element) => element.id), originalOrder);
+});
+
+test("layer dragging uses stable front-to-back indices across every target position", async () => {
+  const pkg = await load("overlap.pptx");
+  const { m } = slide(pkg);
+  const initialFrontToBack = [...m.elements].reverse().map((element) => element.id);
+  assert.ok(initialFrontToBack.length >= 3);
+  for (let source = 0; source < initialFrontToBack.length; source++) {
+    for (let target = 0; target < initialFrontToBack.length; target++) {
+      if (source === target) continue;
+      const start = [...initialFrontToBack];
+      const [id] = start.splice(source, 1);
+      start.splice(target, 0, id);
+      moveElementToLayer(pkg, m.path, id, target);
+      const actual = [...slide(pkg).m.elements].reverse().map((element) => element.id);
+      assert.deepEqual(actual, start, `dragging front index ${source} to ${target}`);
+      pkg.undo();
+      assert.deepEqual([...slide(pkg).m.elements].reverse().map((element) => element.id), initialFrontToBack, "undo restores source layer order");
+    }
+  }
   await roundTrip(pkg);
 });
 
@@ -324,3 +421,116 @@ test("duplicate shape ids (PptxGenJS) are addressed independently", async () => 
   assert.ok(ids.includes(dupe));
   const out = await PptxPackage.open(await pkg.exportBytes()); assert.deepEqual(out.validate(), []);
 });
+
+
+test("flipping works on text, shapes and pictures and survives PPTX export", async () => {
+  const pkg = await load("simple.pptx");
+  const { m } = slide(pkg);
+  const textId = addTextBox(pkg, m.path, { x: 500000, y: 700000, w: 1600000, h: 700000, text: "Flip me" });
+  const pictureId = addPicture(pkg, m.path, { bytes: PNG, ext: "png", x: 2300000, y: 1200000, w: 300000, h: 300000 });
+  const shapeId = addShape(pkg, m.path, { prst: "triangle", x: 2800000, y: 1300000, w: 500000, h: 450000 });
+  const before = pkg.text.get(m.path);
+  for (const id of [textId, pictureId, shapeId]) {
+    const item = readSlide(pkg, m.path, readPresentation(pkg)).elements.find((entry) => entry.id === id);
+    setBounds(pkg, m.path, [{ id, x: item.x, y: item.y, w: item.w, h: item.h, rot: item.rot, flipH: true, flipV: true }], "Flip object");
+    const changed = readSlide(pkg, m.path, readPresentation(pkg)).elements.find((entry) => entry.id === id);
+    assert.equal(changed.flipH, true, `${item.kind} horizontal flip should be represented in the slide model`);
+    assert.equal(changed.flipV, true, `${item.kind} vertical flip should be represented in the slide model`);
+  }
+  await roundTrip(pkg);
+  pkg.undo();
+  const last = readSlide(pkg, m.path, readPresentation(pkg)).elements.find((entry) => entry.id === shapeId);
+  assert.equal(last.flipH, false, "one undo should revert the last object's flip transaction");
+  assert.notEqual(pkg.text.get(m.path), before, "earlier object insertions and flips remain earlier separate undo steps");
+});
+
+test("coordinated palettes color text separately, recolor shapes, and export as one undoable edit", async () => {
+  const pkg = await load("simple.pptx");
+  const { m } = slide(pkg);
+  const firstText = addTextBox(pkg, m.path, { x: 100000, y: 100000, w: 1500000, h: 500000, text: "First title" });
+  const secondText = addTextBox(pkg, m.path, { x: 1800000, y: 100000, w: 1500000, h: 500000, text: "Second title" });
+  addShape(pkg, m.path, { prst: "roundRect", x: 200000, y: 800000, w: 900000, h: 600000 });
+  const beforePalette = pkg.text.get(m.path);
+  const palette = { id: "ocean-mist", name: "Ocean Mist", colors: ["#F5FAFC", "#123047", "#176B87", "#0F766E", "#B45309"] };
+  applySlidePalette(pkg, m.path, palette);
+  const after = readSlide(pkg, m.path, readPresentation(pkg));
+  assert.equal(after.background.hex, "F5FAFC", "first palette color becomes the slide background");
+  const getTextColor = (id) => after.elements.find((entry) => entry.id === id).text.paragraphs[0].runs[0].style.color.hex;
+  assert.notEqual(getTextColor(firstText), getTextColor(secondText), "separate text objects get different accent colors");
+  const shape = after.elements.find((entry) => entry.kind === "shape" && entry.fill?.type === "solid");
+  assert.ok(["123047", "176B87", "0F766E", "B45309"].includes(shape.fill.hex), "shapes receive one of the chosen accents");
+  await roundTrip(pkg);
+  pkg.undo();
+  assert.equal(pkg.text.get(m.path), beforePalette, "one undo restores the entire previous slide XML");
+  assert.throws(() => applySlidePalette(pkg, m.path, { colors: ["#fff"] }), { code: "BAD_PALETTE" });
+});
+
+test("slide background edits are undoable, inheritable, and survive export", async () => {
+  const pkg = await load("simple.pptx");
+  const { m } = slide(pkg);
+  const original = pkg.text.get(m.path);
+  setSlideBackground(pkg, m.path, "1E40AF");
+  assert.equal(slide(pkg).m.background.hex, "1E40AF");
+  assert.match(pkg.text.get(m.path), /<p:bg>/);
+  await roundTrip(pkg);
+
+  pkg.undo();
+  assert.equal(pkg.text.get(m.path), original, "undo restores the exact original slide XML");
+  pkg.redo();
+  assert.equal(slide(pkg).m.background.hex, "1E40AF");
+  setSlideBackground(pkg, m.path, null);
+  assert.doesNotMatch(pkg.text.get(m.path), /<p:bg>/);
+  await roundTrip(pkg);
+  assert.throws(() => setSlideBackground(pkg, m.path, "#fff"), { code: "BAD_COLOR" });
+});
+
+test("presentation-wide backgrounds apply and reset as one undoable operation", async () => {
+  const pkg = await load("simple.pptx");
+  const pres = readPresentation(pkg);
+  assert.ok(pres.slides.length > 1, "fixture must contain multiple slides");
+  const original = pres.slides.map(({ path }) => pkg.text.get(path));
+
+  setPresentationBackground(pkg, "22A06B");
+  for (const slideInfo of readPresentation(pkg).slides) {
+    assert.equal(readSlide(pkg, slideInfo.path, readPresentation(pkg)).background.hex, "22A06B");
+  }
+  await roundTrip(pkg);
+
+  pkg.undo();
+  for (const [i, slideInfo] of readPresentation(pkg).slides.entries()) {
+    assert.equal(pkg.text.get(slideInfo.path), original[i], "one undo restores every slide exactly");
+  }
+  pkg.redo();
+  setPresentationBackground(pkg, null);
+  for (const slideInfo of readPresentation(pkg).slides) assert.doesNotMatch(pkg.text.get(slideInfo.path), /<p:bg(?:\s|>)/);
+  await roundTrip(pkg);
+  assert.throws(() => setPresentationBackground(pkg, "#abc"), { code: "BAD_COLOR" });
+});
+
+test("shape outline dash presets survive model reads and export", async () => {
+  const pkg = await load("simple.pptx");
+  const { m } = slide(pkg);
+  const id = addShape(pkg, m.path, { prst: "rect", x: 100000, y: 100000, w: 500000, h: 300000 });
+  for (const dash of ["solid", "dash", "dot", "dashDot", "lgDash", "lgDashDot", "lgDashDotDot", "sysDash", "sysDot", "sysDashDot", "sysDashDotDot"]) {
+    setShapeStyle(pkg, m.path, [id], { line: { dash } });
+    const element = readSlide(pkg, m.path, readPresentation(pkg)).elements.find((item) => item.id === id);
+    assert.equal(element.line.dash, dash);
+  }
+  await roundTrip(pkg);
+  pkg.undo();
+  assert.equal(readSlide(pkg, m.path, readPresentation(pkg)).elements.find((item) => item.id === id).line.dash, "sysDashDot", "undo restores the previous outline pattern");
+});
+
+test("extended shape gallery presets render without approximation", async () => {
+  const pkg = await load("simple.pptx");
+  const { m } = slide(pkg);
+  const originalIds = new Set(m.elements.map((e) => e.id));
+  for (const [i, prst] of SHAPE_PRESETS.entries()) {
+    addShape(pkg, m.path, { prst, x: 800000 + i * 1000, y: 900000, w: 400000, h: prst === "line" ? 0 : 300000 });
+  }
+  const updated = slide(pkg).m;
+  assert.equal(updated.elements.filter((e) => !originalIds.has(e.id)).length, SHAPE_PRESETS.length);
+  assert.ok(!updated.warnings.some((w) => w.code === "geometry-approximated"), "every offered preset has a renderer implementation");
+  await roundTrip(pkg);
+});
+
