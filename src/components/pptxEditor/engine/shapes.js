@@ -8,8 +8,13 @@ export function presetGeometry(prst, w, h, adj = {}) {
   const a = (name, def) => (adj[name] ?? def) / 100000;
   const m = Math.min(w, h);
   switch (prst) {
-    case "rect": case "flowChartProcess": case "flowChartPredefinedProcess": case "snipRoundRect": case "textBox":
+    case "rect": case "flowChartProcess": case "snipRoundRect": case "textBox":
       return { kind: "rect" };
+    case "flowChartPredefinedProcess": return { kind: "custom", paths: [
+      { d: `M0 0 H${w} V${h} H0 Z`, fill: true, stroke: true },
+      { d: `M${w * .18} 0 V${h}`, fill: false, stroke: true },
+      { d: `M${w * .82} 0 V${h}`, fill: false, stroke: true },
+    ] };
     case "roundRect": case "flowChartAlternateProcess": {
       const r = Math.min(a("adj", 16667), 0.5) * m;
       return { kind: "path", d: `M${r} 0 H${w - r} A${r} ${r} 0 0 1 ${w} ${r} V${h - r} A${r} ${r} 0 0 1 ${w - r} ${h} H${r} A${r} ${r} 0 0 1 0 ${h - r} V${r} A${r} ${r} 0 0 1 ${r} 0 Z` };
@@ -45,6 +50,40 @@ export function presetGeometry(prst, w, h, adj = {}) {
       }
       return { kind: "path", d: P(pts) };
     }
+    case "leftRightArrow": {
+      const pts = [[0, h * .5], [w * .22, 0], [w * .22, h * .28], [w * .78, h * .28], [w * .78, 0], [w, h * .5], [w * .78, h], [w * .78, h * .72], [w * .22, h * .72], [w * .22, h]];
+      return { kind: "path", d: P(pts) };
+    }
+    case "upDownArrow": {
+      const pts = [[w * .5, 0], [w, h * .25], [w * .68, h * .25], [w * .68, h * .75], [w, h * .75], [w * .5, h], [0, h * .75], [w * .32, h * .75], [w * .32, h * .25], [0, h * .25]];
+      return { kind: "path", d: P(pts) };
+    }
+    case "quadArrow": {
+      const pts = [[w * .5, 0], [w * .68, h * .23], [w * .59, h * .23], [w * .59, h * .41], [w * .77, h * .41], [w * .77, h * .32], [w, h * .5], [w * .77, h * .68], [w * .77, h * .59], [w * .59, h * .59], [w * .59, h * .77], [w * .68, h * .77], [w * .5, h], [w * .32, h * .77], [w * .41, h * .77], [w * .41, h * .59], [w * .23, h * .59], [w * .23, h * .68], [0, h * .5], [w * .23, h * .32], [w * .23, h * .41], [w * .41, h * .41], [w * .41, h * .23], [w * .32, h * .23]];
+      return { kind: "path", d: P(pts) };
+    }
+    case "notchedRightArrow": {
+      const pts = [[0, h * .28], [w * .68, h * .28], [w * .68, 0], [w, h * .5], [w * .68, h], [w * .68, h * .72], [0, h * .72], [w * .14, h * .5]];
+      return { kind: "path", d: P(pts) };
+    }
+    case "bentArrow": {
+      const pts = [[0, h * .72], [w * .52, h * .72], [w * .52, h * .48], [w, h * .48], [w * .72, h * .18], [w * .72, h * .35], [w * .32, h * .35], [w * .32, h * .58], [0, h * .58]];
+      return { kind: "path", d: P(pts) };
+    }
+    case "flowChartInputOutput": case "flowChartPreparation":
+      return { kind: "path", d: P(prst === "flowChartInputOutput" ? [[w * .2, 0], [w, 0], [w * .8, h], [0, h]] : [[w * .25, 0], [w * .75, 0], [w, h * .5], [w * .75, h], [w * .25, h], [0, h * .5]]) };
+    case "flowChartManualInput": return { kind: "path", d: P([[0, h * .24], [w, 0], [w, h], [0, h]]) };
+    case "flowChartOffpageConnector": return { kind: "path", d: P([[0, 0], [w, 0], [w, h * .72], [w / 2, h], [0, h * .72]]) };
+    case "flowChartDocument": return { kind: "path", d: `M0 0 H${w} V${h * .78} C${w * .76} ${h * .65} ${w * .24} ${h * 1.02} 0 ${h * .84} Z` };
+    case "wedgeRectCallout": return { kind: "path", d: `M0 0 H${w} V${h * .72} H${w * .62} L${w * .46} ${h} L${w * .48} ${h * .72} H0 Z` };
+    case "heart": return { kind: "path", d: `M${w / 2} ${h * .32} C${w * .31} ${h * .05} ${w * .04} ${h * .06} ${w * .04} ${h * .32} C${w * .04} ${h * .59} ${w * .23} ${h * .79} ${w / 2} ${h * .98} C${w * .77} ${h * .79} ${w * .96} ${h * .59} ${w * .96} ${h * .32} C${w * .96} ${h * .06} ${w * .69} ${h * .05} ${w / 2} ${h * .32} Z` };
+    case "lightningBolt": return { kind: "path", d: P([[w * .58, 0], [w * .18, h * .54], [w * .46, h * .54], [w * .32, h], [w * .82, h * .38], [w * .55, h * .38]]) };
+    case "sun": {
+      const pts = [];
+      for (let i = 0; i < 24; i++) { const angle = -Math.PI / 2 + i * Math.PI / 12, radius = i % 3 === 0 ? 1 : i % 3 === 1 ? .72 : .5; pts.push([w / 2 + Math.cos(angle) * w * .5 * radius, h / 2 + Math.sin(angle) * h * .5 * radius]); }
+      return { kind: "path", d: P(pts) };
+    }
+    case "moon": return { kind: "path", d: `M${w * .72} 0 C${w * .12} 0 ${w * .1} ${h} ${w * .72} ${h} C${w * .42} ${h * .74} ${w * .42} ${h * .26} ${w * .72} 0 Z` };
     case "line": case "straightConnector1": case "straightConnector": return { kind: "line" };
     default: return { kind: "rect", approximated: true };
   }

@@ -150,7 +150,10 @@ function readText(txBody, ctx, { ph, fontRefColor }) {
       };
     };
     for (const c of kids(p)) {
-      if (c.localName === "r" || c.localName === "fld") runs.push({ text: textOf(kid(c, "t")), style: styleOf(kid(c, "rPr")) });
+      // PPTX files produced by editors sometimes contain U+200B in an otherwise
+      // empty run. It is a layout workaround, not user content; never surface it
+      // as editable text in the canvas or text controls.
+      if (c.localName === "r" || c.localName === "fld") runs.push({ text: textOf(kid(c, "t")).replace(/[\u200B\uFEFF]/g, ""), style: styleOf(kid(c, "rPr")) });
       else if (c.localName === "br") runs.push({ text: "\n", style: styleOf(kid(c, "rPr")) });
     }
     const end = styleOf(kid(p, "endParaRPr"), true);
@@ -315,7 +318,7 @@ function readTable(tbl, ctx) {
       return { text: readText(kid(tc, "txBody"), ctx, { ph: null }), gridSpan: num(tc, "gridSpan", 1), rowSpan: num(tc, "rowSpan", 1), hMerge: bool(tc, "hMerge"), vMerge: bool(tc, "vMerge"), fill: fillEl };
     }),
   }));
-  return { cols, rows, hasMerge, firstRow: bool(pr, "firstRow"), bandRow: bool(pr, "bandRow"), accent: { hex: ctx.theme.colors.accent1, alpha: 1 } };
+  return { cols, rows, hasMerge, firstRow: bool(pr, "firstRow"), lastRow: bool(pr, "lastRow"), firstCol: bool(pr, "firstCol"), lastCol: bool(pr, "lastCol"), bandRow: bool(pr, "bandRow"), bandCol: bool(pr, "bandCol"), accent: { hex: ctx.theme.colors.accent1, alpha: 1 } };
 }
 
 /** Cached series data of a bar/line/pie chart, for a clearly labelled view-only preview. */

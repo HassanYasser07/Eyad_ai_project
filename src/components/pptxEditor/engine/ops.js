@@ -96,7 +96,25 @@ function mutateSlide(pkg, slidePath, label, fn) {
 // ---------- geometry & structure ----------
 export function setBounds(pkg, slidePath, changes, label = "Move") {
   return mutateSlide(pkg, slidePath, label, (doc, tree) => {
-    for (const ch of changes) writeBounds(doc, findNode(tree, ch.id), ch);
+    for (const ch of changes) {
+      const node = findNode(tree, ch.id);
+      // Geometry edits must never rewrite text auto-fit settings. Automatically
+      // injecting normAutofit here caused ordinary titles/body text to shrink
+      // after a user narrowed a box, instead of wrapping and growing its frame.
+      writeBounds(doc, node, ch);
+    }
+  });
+}
+
+/** Hide/show selected drawing objects using DrawingML's non-visual hidden flag. */
+export function setElementsHidden(pkg, slidePath, ids, hidden) {
+  return mutateSlide(pkg, slidePath, hidden ? "Hide layer" : "Show layer", (doc, tree) => {
+    for (const id of ids) {
+      const meta = cNvPr(findNode(tree, id));
+      if (!meta) continue;
+      if (hidden) meta.setAttribute("hidden", "1");
+      else meta.removeAttribute("hidden");
+    }
   });
 }
 
@@ -159,6 +177,35 @@ export function reorderElements(pkg, slidePath, ids, mode) {
     } else if (mode === "backward") {
       for (let i = 1; i < all.length; i++) if (sel.has(idOfNode(all[i])) && !sel.has(idOfNode(all[i - 1]))) { tree.insertBefore(all[i], all[i - 1]); [all[i], all[i - 1]] = [all[i - 1], all[i]]; }
     }
+  });
+}
+
+/** Move one layer to a front-to-back layer index in one undoable transaction. */
+export function moveElementToLayer(pkg, slidePath, id, targetLayerIndex) {
+  return mutateSlide(pkg, slidePath, "Reorder layer", (doc, tree) => {
+    const keyed = keyedNodes(tree);
+    if (!keyed.length) return;
+    const key = String(id);
+    const sourceXmlIndex = keyed.findIndex((item) => item.key === key);
+    if (sourceXmlIndex < 0) throw new PptxError("ELEMENT_MISSING", `Layer ${key} is no longer on this slide.`);
+
+    // The Layers panel is front-to-back, while spTree stores objects back-to-front.
+    // Reorder using the exact same front-to-back list users see, then write that order
+    // back to the XML tree. This is safe with duplicate cNvPr ids because `keyed` uses
+    // stable disambiguated keys such as "12~1".
+    const frontToBack = [...keyed].reverse();
+    const sourceUiIndex = frontToBack.findIndex((item) => item.key === key);
+    const rawTarget = Number(targetLayerIndex);
+    if (!Number.isFinite(rawTarget)) throw new PptxError("BAD_INDEX", "Invalid layer position.");
+    const targetUiIndex = Math.max(0, Math.min(frontToBack.length - 1, Math.trunc(rawTarget)));
+    if (sourceUiIndex === targetUiIndex) return;
+
+    const [moving] = frontToBack.splice(sourceUiIndex, 1);
+    frontToBack.splice(targetUiIndex, 0, moving);
+    const xmlOrder = [...frontToBack].reverse();
+    const anchor = endAnchor(tree);
+    // Move only drawable nodes, preserving spTree metadata and extension nodes.
+    for (const item of xmlOrder) tree.insertBefore(item.node, anchor);
   });
 }
 
@@ -277,19 +324,20 @@ function cleanupEmptyRuns(p) {
 }
 
 function applyParagraphTexts(doc, txBody, texts) {
+  const cleanTexts = (Array.isArray(texts) ? texts : [texts]).map((value) => String(value ?? "").replace(/[\u200B\uFEFF]/g, ""));
   const paras = kids(txBody, "p");
-  const n = Math.max(texts.length, 1);
-  for (let i = 0; i < Math.min(paras.length, n); i++) editParagraph(doc, paras[i], texts[i] ?? "");
+  const n = Math.max(cleanTexts.length, 1);
+  for (let i = 0; i < Math.min(paras.length, n); i++) editParagraph(doc, paras[i], cleanTexts[i] ?? "");
   for (let i = paras.length; i < n; i++) {
     const proto = paras[paras.length - 1];
     const clone = proto.cloneNode(true);
     for (const r of kids(clone, ...RUN_TAGS)) clone.removeChild(r);
     const rPr = kid(proto, ...RUN_TAGS) && kid(kid(proto, ...RUN_TAGS), "rPr");
     const end = kid(clone, "endParaRPr");
-    if (texts[i]) {
+    if (cleanTexts[i]) {
       const run = create(doc, "a", "r");
       if (rPr) run.appendChild(rPr.cloneNode(true));
-      const t = create(doc, "a", "t"); t.appendChild(doc.createTextNode(texts[i])); run.appendChild(t);
+      const t = create(doc, "a", "t"); t.appendChild(doc.createTextNode(cleanTexts[i])); run.appendChild(t);
       clone.insertBefore(run, end);
     }
     txBody.appendChild(clone);
@@ -297,7 +345,7 @@ function applyParagraphTexts(doc, txBody, texts) {
   for (const p of kids(txBody, "p").slice(n)) txBody.removeChild(p);
 }
 
-export function setText(pkg, slidePath, id, texts, cell = null) {
+export function setText(pkg, slidePath, id, texts, cell = null, fittedHeight = null, fallbackBounds = null) {
   return mutateSlide(pkg, slidePath, "Edit text", (doc, tree) => {
     const node = findNode(tree, id);
     let body = txBodyOf(node, cell);
@@ -311,6 +359,11 @@ export function setText(pkg, slidePath, id, texts, cell = null) {
     }
     if (!body) throw new PptxError("NO_TEXT", "This object has no text.");
     applyParagraphTexts(doc, body, texts);
+    // Commit text and its auto-grown frame in the same undoable transaction.
+    if (!cell && Number.isFinite(fittedHeight)) {
+      const current = readBoundsFromNode(node) || fallbackBounds;
+      if (current && fittedHeight > current.h) writeBounds(doc, node, { ...current, h: Math.round(fittedHeight) });
+    }
   });
 }
 
@@ -371,7 +424,17 @@ export function setTextProps(pkg, slidePath, ids, props, cell = null) {
             if (props.bold !== undefined) rPr.setAttribute("b", props.bold ? "1" : "0");
             if (props.italic !== undefined) rPr.setAttribute("i", props.italic ? "1" : "0");
             if (props.underline !== undefined) rPr.setAttribute("u", props.underline ? "sng" : "none");
+            if (props.strike !== undefined) rPr.setAttribute("strike", props.strike ? "sngStrike" : "noStrike");
             if (props.color) insertOrdered(rPr, solid(doc, props.color), ORDER.rPr, { replace: true });
+            if (props.highlight !== undefined) {
+              for (const node of kids(rPr, "highlight")) rPr.removeChild(node);
+              if (props.highlight) {
+                if (!HEX.test(String(props.highlight))) throw new PptxError("BAD_COLOR", "Invalid highlight colour");
+                const highlight = create(doc, "a", "highlight");
+                highlight.appendChild(create(doc, "a", "srgbClr", { val: String(props.highlight).toUpperCase() }));
+                insertOrdered(rPr, highlight, ORDER.rPr, { replace: true });
+              }
+            }
             if (props.font) insertOrdered(rPr, create(doc, "a", "latin", { typeface: String(props.font).slice(0, 80) }), ORDER.rPr, { replace: true });
           }
         }
@@ -418,33 +481,392 @@ export function setShapeStyle(pkg, slidePath, ids, { fill, line } = {}) {
         if (line.w !== undefined) ln.setAttribute("w", String(R(line.w)));
         if (line.none || line.hex) {
           for (const n of kids(ln, "noFill", "solidFill", "gradFill", "pattFill")) ln.removeChild(n);
-          insertOrdered(ln, line.none ? create(doc, "a", "noFill") : solid(doc, line.hex), ORDER.ln);
+          insertOrdered(ln, line.none ? create(doc, "a", "noFill") : solid(doc, line.hex, line.alpha), ORDER.ln);
         }
         if (line.dash) insertOrdered(ln, create(doc, "a", "prstDash", { val: line.dash }), ORDER.ln, { replace: true });
       }
     }
   });
 }
-export function setOpacity(pkg, slidePath, ids, opacity, currentHex = null) {
+const DRAWINGML_COLOR_NODES = new Set(["srgbClr", "schemeClr", "prstClr", "sysClr", "scrgbClr"]);
+function writeColorAlpha(doc, colorNode, opacity) {
+  // Replace every alpha transform with one exact value while preserving tint/shade/etc.
+  for (const transform of kids(colorNode, "alpha", "alphaMod", "alphaOff")) colorNode.removeChild(transform);
+  if (opacity < 1) insertOrdered(colorNode, create(doc, "a", "alpha", { val: R(opacity * 100000) }), ORDER.color);
+}
+function writeTreeAlpha(doc, root, opacity) {
+  let changed = false;
+  const walk = (node) => {
+    for (const child of kids(node)) {
+      if (DRAWINGML_COLOR_NODES.has(child.localName)) {
+        writeColorAlpha(doc, child, opacity);
+        changed = true;
+      } else walk(child);
+    }
+  };
+  if (root) walk(root);
+  return changed;
+}
+function writePictureAlpha(doc, blip, opacity) {
+  if (!blip) return false;
+  for (const effect of kids(blip, "alphaModFix")) blip.removeChild(effect);
+  if (opacity < 1) insertOrdered(blip, create(doc, "a", "alphaModFix", { amt: R(opacity * 100000) }), ORDER.blip);
+  return true;
+}
+function setFillOpacity(doc, owner, opacity) {
+  if (!owner) return false;
+  const fill = kid(owner, "solidFill", "gradFill", "pattFill", "blipFill", "grpFill", "noFill");
+  if (!fill || fill.localName === "noFill") return false;
+  if (fill.localName === "blipFill") return writePictureAlpha(doc, kid(fill, "blip"), opacity);
+  return writeTreeAlpha(doc, fill, opacity);
+}
+function setStyleRefOpacity(doc, node, refName, opacity) {
+  const style = kid(node, "style");
+  const ref = style && kid(style, refName);
+  return ref ? writeTreeAlpha(doc, ref, opacity) : false;
+}
+function setShapeOpacity(doc, node, spPr, opacity) {
+  // Explicit local fills/lines take precedence. When PowerPoint uses a theme style
+  // reference instead, materialise the alpha transform on that object's own style ref.
+  const localFill = kid(spPr, "solidFill", "gradFill", "pattFill", "blipFill", "grpFill", "noFill");
+  if (localFill) setFillOpacity(doc, spPr, opacity);
+  else setStyleRefOpacity(doc, node, "fillRef", opacity);
+
+  const localLine = kid(spPr, "ln");
+  if (localLine) {
+    const localLineFill = kid(localLine, "solidFill", "gradFill", "pattFill", "blipFill", "grpFill", "noFill");
+    if (localLineFill) setFillOpacity(doc, localLine, opacity);
+    else setStyleRefOpacity(doc, node, "lnRef", opacity);
+  } else {
+    setStyleRefOpacity(doc, node, "lnRef", opacity);
+  }
+}
+/**
+ * Set object opacity in the OOXML document (0..1). Pictures use a:alphaModFix;
+ * shapes/connectors apply alpha to all fill stops and outline colours, preserving
+ * their colour transforms and outline dash/width.
+ */
+export function setOpacity(pkg, slidePath, ids, opacity) {
+  const value = Number(opacity);
+  if (!Number.isFinite(value)) throw new PptxError("BAD_OPACITY", "Opacity must be a number between 0 and 1.");
+  const alpha = Math.max(0, Math.min(1, value));
   return mutateSlide(pkg, slidePath, "Opacity", (doc, tree) => {
     for (const id of ids) {
       const node = findNode(tree, id);
       if (node.localName === "pic") {
-        const blip = path(node, "blipFill", "blip");
-        if (!blip) continue;
-        for (const n of kids(blip, "alphaModFix")) blip.removeChild(n);
-        if (opacity < 1) insertOrdered(blip, create(doc, "a", "alphaModFix", { amt: R(opacity * 100000) }), ORDER.blip);
-      } else if (node.localName === "sp") {
+        writePictureAlpha(doc, path(node, "blipFill", "blip"), alpha);
+        // PowerPoint pictures can carry an independent border: keep it in sync too.
+        const spPr = kid(node, "spPr");
+        if (spPr) setFillOpacity(doc, kid(spPr, "ln"), alpha);
+      } else if (node.localName === "sp" || node.localName === "cxnSp") {
         const spPr = spPrOf(doc, node);
-        const sf = kid(spPr, "solidFill");
-        let hex = currentHex;
-        if (sf) { const c = kids(sf)[0]; if (c?.localName === "srgbClr") hex = attr(c, "val", hex); else if (c) { /* scheme colour: keep colour, add alpha */
-            for (const a of kids(c, "alpha")) c.removeChild(a);
-            if (opacity < 1) c.appendChild(create(doc, "a", "alpha", { val: R(opacity * 100000) }));
-            continue; } }
-        if (!hex) continue;
-        for (const n of kids(spPr, "noFill", "solidFill", "gradFill", "blipFill", "pattFill", "grpFill")) spPr.removeChild(n);
-        insertOrdered(spPr, solid(doc, hex, opacity), ORDER.spPr);
+        setShapeOpacity(doc, node, spPr, alpha);
+      }
+    }
+  });
+}
+
+
+const normalizePaletteColor = (value) => String(value || "").replace(/^#/, "").toUpperCase();
+const colorRgbLuminance = (hex) => {
+  const rgb = normalizePaletteColor(hex).match(/.{2}/g) || ["FF", "FF", "FF"];
+  const values = rgb.map((v) => parseInt(v, 16) / 255).map((v) => v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+  return 0.2126 * values[0] + 0.7152 * values[1] + 0.0722 * values[2];
+};
+const contrastInk = (hex) => colorRgbLuminance(hex) > 0.179 ? "111827" : "FFFFFF";
+
+function replaceColorFill(doc, owner, hex) {
+  if (!owner) return;
+  for (const old of kids(owner, "noFill", "solidFill", "gradFill", "blipFill", "pattFill", "grpFill")) owner.removeChild(old);
+  insertOrdered(owner, solid(doc, normalizePaletteColor(hex)), ORDER.spPr);
+}
+
+function replaceLineColor(doc, spPr, hex) {
+  if (!spPr) return;
+  let line = kid(spPr, "ln");
+  if (!line) { line = create(doc, "a", "ln"); insertOrdered(spPr, line, ORDER.spPr); }
+  for (const old of kids(line, "noFill", "solidFill", "gradFill", "pattFill")) line.removeChild(old);
+  insertOrdered(line, solid(doc, normalizePaletteColor(hex)), ORDER.ln);
+}
+
+function setTextBodyColor(doc, body, hex) {
+  if (!body) return;
+  // Run properties (including defRPr inside a:pPr) share DrawingML's run-property order.
+  // ORDER.pPr applies to the paragraph-properties container, not to a:defRPr itself.
+  for (const tag of ["rPr", "defRPr", "endParaRPr"]) {
+    for (const runProps of descendants(body, tag)) {
+      insertOrdered(runProps, solid(doc, normalizePaletteColor(hex)), ORDER.rPr, { replace: true });
+    }
+  }
+  // Ensure empty paragraphs and runs that inherit formatting still receive the palette ink.
+  for (const paragraph of descendants(body, "p")) {
+    let pPr = kid(paragraph, "pPr");
+    if (!pPr) {
+      pPr = create(doc, "a", "pPr");
+      paragraph.insertBefore(pPr, paragraph.firstChild);
+    }
+    let defaults = kid(pPr, "defRPr");
+    if (!defaults) defaults = insertOrdered(pPr, create(doc, "a", "defRPr"), ORDER.pPr);
+    insertOrdered(defaults, solid(doc, normalizePaletteColor(hex)), ORDER.rPr, { replace: true });
+  }
+}
+
+/**
+ * Apply a coordinated five-color palette to one slide as a single undoable edit.
+ * Palette[0] is the slide background; remaining colors rotate across text and shapes.
+ * Shape-contained text receives black/white ink chosen for contrast against its fill.
+ */
+export function applySlidePalette(pkg, slidePath, palette) {
+  const colors = Array.isArray(palette?.colors) ? palette.colors.map(normalizePaletteColor) : [];
+  if (colors.length !== 5 || colors.some((color) => !HEX.test(color))) {
+    throw new PptxError("BAD_PALETTE", "A palette must contain five six-digit hexadecimal colors.");
+  }
+  return mutateSlide(pkg, slidePath, `Apply ${String(palette.name || "color")} palette`, (doc, tree) => {
+    const cSld = kid(doc.documentElement, "cSld");
+    if (!cSld) throw new PptxError("SLIDE_INVALID", "Slide is missing its common slide data.");
+    const oldBg = kid(cSld, "bg");
+    if (oldBg) cSld.removeChild(oldBg);
+    const bg = create(doc, "p", "bg");
+    const bgPr = create(doc, "p", "bgPr");
+    bgPr.appendChild(solid(doc, colors[0]));
+    bgPr.appendChild(create(doc, "a", "effectLst"));
+    bg.appendChild(bgPr);
+    cSld.insertBefore(bg, kid(cSld, "spTree") || cSld.firstChild);
+
+    // Traverse the XML tree once so accent assignment follows the same z-order users see.
+    const drawableNodes = [];
+    const collectDrawableNodes = (parent) => {
+      for (const child of kids(parent)) {
+        if (["sp", "pic", "cxnSp"].includes(child.localName)) drawableNodes.push(child);
+        collectDrawableNodes(child);
+      }
+    };
+    collectDrawableNodes(tree);
+    let visibleShapeIndex = 0;
+    let textIndex = 0;
+    for (const node of drawableNodes) {
+      const tag = node.localName;
+      // Do not synthesize a missing p:pic/p:spPr before blipFill: that would violate
+      // the picture schema order. Normal shape and connector properties may be materialized.
+      const spPr = kid(node, "spPr") || (tag === "sp" || tag === "cxnSp" ? spPrOf(doc, node) : null);
+      const shapeColor = colors[1 + (visibleShapeIndex % 4)];
+      const outlineColor = colors[1 + ((visibleShapeIndex + 1) % 4)];
+      const isTextBox = tag === "sp" && attr(path(node, "nvSpPr", "cNvSpPr"), "txBox") === "1";
+      const ph = tag === "sp" ? path(node, "nvSpPr", "nvPr", "ph") : null;
+      const shapeFill = spPr && kids(spPr, "noFill", "solidFill", "gradFill", "blipFill", "pattFill", "grpFill")[0];
+      const isInheritedTextPlaceholder = !!ph && (!shapeFill || shapeFill.localName === "noFill");
+      const isTextItem = isTextBox || isInheritedTextPlaceholder;
+      const geom = kid(spPr, "prstGeom");
+      const geomName = attr(geom, "prst", "");
+      if (tag === "sp" && !isTextItem && geomName !== "line") replaceColorFill(doc, spPr, shapeColor);
+      if (spPr && (tag === "cxnSp" || tag === "pic" || (tag === "sp" && geomName === "line") || (tag === "sp" && !isTextItem))) {
+        replaceLineColor(doc, spPr, outlineColor);
+      }
+
+      const body = tag === "sp" ? kid(node, "txBody") : null;
+      if (body) {
+        const textColor = isTextItem ? colors[1 + (textIndex % 4)] : contrastInk(shapeColor);
+        setTextBodyColor(doc, body, textColor);
+        if (isTextItem) textIndex += 1;
+      }
+      visibleShapeIndex += 1;
+    }
+
+    // Tables are drawable graphic frames and should harmonize with the same palette.
+    for (const frame of descendants(tree, "graphicFrame")) {
+      const table = path(frame, "graphic", "graphicData", "tbl");
+      if (!table) continue;
+      const rows = descendants(table, "tr");
+      let cellIndex = 0;
+      for (const row of rows) {
+        for (const cell of kids(row, "tc")) {
+          const tcPr = kid(cell, "tcPr");
+          if (tcPr) {
+            for (const oldFill of kids(tcPr, "noFill", "solidFill", "gradFill", "blipFill", "pattFill", "grpFill")) tcPr.removeChild(oldFill);
+            const cellFill = solid(doc, colors[1 + (cellIndex % 4)]);
+            const anchor = kid(tcPr, "extLst");
+            tcPr.insertBefore(cellFill, anchor || null);
+          }
+          setTextBodyColor(doc, kid(cell, "txBody"), contrastInk(colors[1 + (cellIndex % 4)]));
+          cellIndex += 1;
+        }
+      }
+    }
+  });
+}
+
+const PALETTE_SHAPE_FILLS = ["noFill", "solidFill", "gradFill", "blipFill", "pattFill", "grpFill"];
+const PALETTE_LINE_FILLS = ["noFill", "solidFill", "gradFill", "pattFill"];
+
+function elementPathFrom(root, target) {
+  const segments = [];
+  let node = target;
+  while (node && node !== root) {
+    const parent = node.parentNode;
+    if (!parent) return null;
+    const siblings = kids(parent, node.localName);
+    segments.unshift({ tag: node.localName, index: siblings.indexOf(node) });
+    node = parent;
+  }
+  return node === root ? segments : null;
+}
+function elementAtPath(root, segments) {
+  let node = root;
+  for (const segment of segments || []) {
+    node = kids(node, segment.tag)[segment.index] || null;
+    if (!node) return null;
+  }
+  return node;
+}
+function cloneChildren(owner, names) {
+  return owner ? kids(owner, ...names).map((node) => node.cloneNode(true)) : [];
+}
+function captureTextColors(body) {
+  if (!body) return null;
+  const hosts = [];
+  for (const tag of ["rPr", "defRPr", "endParaRPr"]) {
+    for (const node of descendants(body, tag)) {
+      hosts.push({ path: elementPathFrom(body, node), fills: cloneChildren(node, ["solidFill"]) });
+    }
+  }
+  const paragraphs = descendants(body, "p").map((paragraph) => {
+    const props = kid(paragraph, "pPr");
+    return { path: elementPathFrom(body, paragraph), hadPPr: !!props, hadDefRPr: !!kid(props, "defRPr") };
+  });
+  return { hosts, paragraphs };
+}
+function restoreDirectColorChildren(doc, owner, names, snapshots, order) {
+  if (!owner) return;
+  for (const old of kids(owner, ...names)) owner.removeChild(old);
+  for (const old of snapshots || []) {
+    const restored = doc.importNode(old, true);
+    if (owner.localName === "tcPr") owner.insertBefore(restored, kid(owner, "extLst") || null);
+    else insertOrdered(owner, restored, order);
+  }
+}
+function restoreTextColors(doc, body, snapshot) {
+  if (!body || !snapshot) return;
+  for (const saved of snapshot.hosts || []) {
+    const host = elementAtPath(body, saved.path);
+    if (host) restoreDirectColorChildren(doc, host, ["solidFill"], saved.fills, ORDER.rPr);
+  }
+  for (const saved of snapshot.paragraphs || []) {
+    if (saved.hadDefRPr) continue;
+    const paragraph = elementAtPath(body, saved.path);
+    const props = paragraph && kid(paragraph, "pPr");
+    const defaults = props && kid(props, "defRPr");
+    if (defaults) {
+      for (const old of kids(defaults, "solidFill")) defaults.removeChild(old);
+      if (!defaults.attributes?.length && !kids(defaults).length) props.removeChild(defaults);
+    }
+    if (!saved.hadPPr && props && !props.attributes?.length && !kids(props).length) paragraph.removeChild(props);
+  }
+}
+function collectPaletteDrawables(tree) {
+  const entries = [], counts = new Map();
+  const walk = (parent) => {
+    for (const node of kids(parent)) {
+      if (["sp", "pic", "cxnSp"].includes(node.localName)) {
+        const id = idOf(node), count = counts.get(id) || 0;
+        counts.set(id, count + 1);
+        entries.push({ node, key: count ? `${id}~${count}` : id });
+      }
+      walk(node);
+    }
+  };
+  walk(tree);
+  return entries;
+}
+function collectPaletteFrames(tree) {
+  const counts = new Map();
+  return descendants(tree, "graphicFrame").map((node) => {
+    const id = idOf(node), count = counts.get(id) || 0;
+    counts.set(id, count + 1);
+    return { node, key: count ? `${id}~${count}` : id };
+  });
+}
+
+/** Capture only the colour properties that a coordinated palette changes; geometry and content are not snapshotted. */
+export function captureSlidePaletteState(pkg, slidePath) {
+  const doc = pkg.doc(slidePath);
+  const cSld = doc && kid(doc.documentElement, "cSld");
+  const tree = cSld && kid(cSld, "spTree");
+  if (!doc || !cSld || !tree) throw new PptxError("SLIDE_INVALID", "Slide is missing its common slide data.");
+  const objects = collectPaletteDrawables(tree).map(({ node, key }) => {
+    const spPr = kid(node, "spPr"), line = spPr && kid(spPr, "ln");
+    return {
+      key, tag: node.localName, hadSpPr: !!spPr,
+      fills: cloneChildren(spPr, PALETTE_SHAPE_FILLS),
+      hadLine: !!line, lineFills: cloneChildren(line, PALETTE_LINE_FILLS),
+      text: node.localName === "sp" ? captureTextColors(kid(node, "txBody")) : null,
+    };
+  });
+  const tables = collectPaletteFrames(tree).map(({ node, key }) => {
+    const tbl = path(node, "graphic", "graphicData", "tbl");
+    if (!tbl) return null;
+    return {
+      key,
+      rows: kids(tbl, "tr").map((row) => kids(row, "tc").map((cell) => {
+        const props = kid(cell, "tcPr");
+        return { hadTcPr: !!props, fills: cloneChildren(props, PALETTE_SHAPE_FILLS), text: captureTextColors(kid(cell, "txBody")) };
+      })),
+    };
+  }).filter(Boolean);
+  const background = kid(cSld, "bg");
+  return { path: slidePath, background: background ? background.cloneNode(true) : null, objects, tables };
+}
+
+/** Restore palette-managed colours only, leaving text, geometry, rows/columns, and unrelated edits intact. */
+export function restoreSlidePaletteStates(pkg, snapshots) {
+  if (!Array.isArray(snapshots) || !snapshots.length) return;
+  return pkg.transact("Restore palette colours", () => {
+    for (const snapshot of snapshots) {
+      if (!pkg.exists(snapshot.path)) continue;
+      const doc = pkg.edit(snapshot.path);
+      const cSld = kid(doc.documentElement, "cSld"), tree = cSld && kid(cSld, "spTree");
+      if (!cSld || !tree) continue;
+      const bg = kid(cSld, "bg");
+      if (bg) cSld.removeChild(bg);
+      if (snapshot.background) cSld.insertBefore(doc.importNode(snapshot.background, true), kid(cSld, "spTree") || cSld.firstChild);
+
+      const currentObjects = new Map(collectPaletteDrawables(tree).map((entry) => [entry.key, entry.node]));
+      for (const saved of snapshot.objects || []) {
+        const node = currentObjects.get(saved.key);
+        if (!node) continue;
+        let spPr = kid(node, "spPr");
+        if (!spPr && (node.localName === "sp" || node.localName === "cxnSp")) spPr = spPrOf(doc, node);
+        if (spPr) {
+          restoreDirectColorChildren(doc, spPr, PALETTE_SHAPE_FILLS, saved.fills, ORDER.spPr);
+          const line = kid(spPr, "ln");
+          if (saved.hadLine) {
+            if (line) restoreDirectColorChildren(doc, line, PALETTE_LINE_FILLS, saved.lineFills, ORDER.ln);
+          } else if (line) {
+            restoreDirectColorChildren(doc, line, PALETTE_LINE_FILLS, [], ORDER.ln);
+            if (!line.attributes?.length && !kids(line).length) spPr.removeChild(line);
+          }
+          if (!saved.hadSpPr && !spPr.attributes?.length && !kids(spPr).length) node.removeChild(spPr);
+        }
+        if (saved.text && node.localName === "sp") restoreTextColors(doc, kid(node, "txBody"), saved.text);
+      }
+
+      const currentFrames = new Map(collectPaletteFrames(tree).map((entry) => [entry.key, entry.node]));
+      for (const saved of snapshot.tables || []) {
+        const frame = currentFrames.get(saved.key);
+        const tbl = frame && path(frame, "graphic", "graphicData", "tbl");
+        if (!tbl) continue;
+        const rows = kids(tbl, "tr");
+        saved.rows.forEach((rowState, rowIndex) => {
+          const row = rows[rowIndex];
+          if (!row) return;
+          const cells = kids(row, "tc");
+          rowState.forEach((cellState, colIndex) => {
+            const cell = cells[colIndex];
+            if (!cell) return;
+            const props = kid(cell, "tcPr");
+            if (props && cellState.hadTcPr) restoreDirectColorChildren(doc, props, PALETTE_SHAPE_FILLS, cellState.fills, ORDER.spPr);
+            restoreTextColors(doc, kid(cell, "txBody"), cellState.text);
+          });
+        });
       }
     }
   });
@@ -461,6 +883,7 @@ const NSDECL = `xmlns:p="${NS.p}" xmlns:a="${NS.a}" xmlns:r="${NS.r}"`;
 const esc = (s) => String(s).replace(/[<>&"']/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;", "'": "&apos;" })[c]);
 
 export function addTextBox(pkg, slidePath, { x, y, w, h, text = "Text", size = 24 }) {
+  text = String(text ?? "").replace(/[\u200B\uFEFF]/g, "");
   return mutateSlide(pkg, slidePath, "Add text", (doc, tree) => {
     const id = nextId(tree);
     const node = importFragment(doc, `<p:sp ${NSDECL}><p:nvSpPr><p:cNvPr id="${id}" name="TextBox ${id - 1}"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="${R(x)}" y="${R(y)}"/><a:ext cx="${R(w)}" cy="${R(h)}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/></p:spPr><p:txBody><a:bodyPr wrap="square" rtlCol="0"><a:noAutofit/></a:bodyPr><a:lstStyle/><a:p><a:r><a:rPr lang="en-US" sz="${R(size * 100)}" dirty="0"/><a:t>${esc(text)}</a:t></a:r></a:p></p:txBody></p:sp>`);
@@ -468,7 +891,27 @@ export function addTextBox(pkg, slidePath, { x, y, w, h, text = "Text", size = 2
     return String(id);
   });
 }
-export const SHAPE_PRESETS = ["rect", "roundRect", "ellipse", "triangle", "rightArrow", "star5", "line"];
+export const SHAPE_PRESETS = ["rect", "roundRect", "ellipse", "triangle", "rtTriangle", "diamond", "parallelogram", "trapezoid", "pentagon", "hexagon", "octagon", "rightArrow", "leftArrow", "upArrow", "downArrow", "leftRightArrow", "upDownArrow", "quadArrow", "notchedRightArrow", "bentArrow", "chevron", "homePlate", "plus", "heart", "lightningBolt", "sun", "moon", "wedgeRectCallout", "star4", "star5", "star6", "star8", "line", "flowChartProcess", "flowChartPredefinedProcess", "flowChartAlternateProcess", "flowChartTerminator", "flowChartDecision", "flowChartConnector", "flowChartInputOutput", "flowChartPreparation", "flowChartManualInput", "flowChartOffpageConnector", "flowChartDocument"];
+
+/** Insert an editable DrawingML table. Dimensions are EMUs; row/column counts are bounded for usability. */
+export function addTable(pkg, slidePath, { x, y, w, h, rows = 3, cols = 3 } = {}) {
+  const rowCount = Math.max(1, Math.min(12, Math.trunc(Number(rows) || 3)));
+  const colCount = Math.max(1, Math.min(12, Math.trunc(Number(cols) || 3)));
+  if (![x, y, w, h].every((v) => Number.isFinite(Number(v))) || w <= 0 || h <= 0) {
+    throw new PptxError("BAD_TABLE_SIZE", "Table position and size must be positive numbers.");
+  }
+  return mutateSlide(pkg, slidePath, "Insert table", (doc, tree) => {
+    const id = nextId(tree);
+    const columnWidths = Array.from({ length: colCount }, (_, i) => i === colCount - 1 ? Math.round(w) - Math.floor(w / colCount) * (colCount - 1) : Math.floor(w / colCount));
+    const rowHeights = Array.from({ length: rowCount }, (_, i) => i === rowCount - 1 ? Math.round(h) - Math.floor(h / rowCount) * (rowCount - 1) : Math.floor(h / rowCount));
+    const grid = columnWidths.map((width) => `<a:gridCol w="${width}"/>`).join("");
+    const cell = `<a:tc><a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:endParaRPr lang="en-US"/></a:p></a:txBody><a:tcPr marL="91440" marR="91440" marT="45720" marB="45720"/></a:tc>`;
+    const tableRowsXml = rowHeights.map((height) => `<a:tr h="${height}">${Array.from({ length: colCount }, () => cell).join("")}</a:tr>`).join("");
+    const xml = `<p:graphicFrame ${NSDECL}><p:nvGraphicFramePr><p:cNvPr id="${id}" name="Table ${id - 1}"/><p:cNvGraphicFramePr/><p:nvPr/></p:nvGraphicFramePr><p:xfrm><a:off x="${R(x)}" y="${R(y)}"/><a:ext cx="${R(w)}" cy="${R(h)}"/></p:xfrm><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/table"><a:tbl><a:tblPr firstRow="1" bandRow="1"><a:tableStyleId>{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}</a:tableStyleId></a:tblPr><a:tblGrid>${grid}</a:tblGrid>${tableRowsXml}</a:tbl></a:graphicData></a:graphic></p:graphicFrame>`;
+    tree.insertBefore(importFragment(doc, xml), endAnchor(tree));
+    return String(id);
+  });
+}
 export function addShape(pkg, slidePath, { prst = "rect", x, y, w, h, hex = null }) {
   if (!SHAPE_PRESETS.includes(prst)) throw new PptxError("BAD_SHAPE", "Unsupported shape");
   return mutateSlide(pkg, slidePath, "Add shape", (doc, tree) => {
@@ -633,6 +1076,123 @@ export function tableCols(pkg, slidePath, id, op, index) {
       growFrame(doc, node, -num(cols[index], "w"), 0);
       grid.removeChild(cols[index]);
       for (const tr of kids(tbl, "tr")) tr.removeChild(kids(tr, "tc")[index]);
+    }
+  });
+}
+
+/** Table design flags mirror PowerPoint's Table Design options. */
+export function setTableOptions(pkg, slidePath, id, options = {}) {
+  return mutateSlide(pkg, slidePath, "Table design", (doc, tree) => {
+    const node = findNode(tree, id), tbl = tblOf(node);
+    let props = kid(tbl, "tblPr");
+    if (!props) {
+      props = create(doc, "a", "tblPr");
+      tbl.insertBefore(props, kid(tbl, "tblGrid") || tbl.firstChild);
+    }
+    for (const key of ["firstRow", "lastRow", "firstCol", "lastCol", "bandRow", "bandCol"]) {
+      if (options[key] === undefined) continue;
+      props.setAttribute(key, options[key] ? "1" : "0");
+    }
+  });
+}
+
+/** Set or clear the fill of one selected table cell. */
+export function setTableCellFill(pkg, slidePath, id, rowIndex, colIndex, hex) {
+  if (hex !== null && hex !== undefined && !HEX.test(String(hex))) throw new PptxError("BAD_COLOR", "Invalid table cell colour.");
+  return mutateSlide(pkg, slidePath, "Table cell fill", (doc, tree) => {
+    const node = findNode(tree, id), tbl = tblOf(node);
+    const row = kids(tbl, "tr")[Math.trunc(rowIndex)];
+    const cell = row && kids(row, "tc")[Math.trunc(colIndex)];
+    if (!cell) throw new PptxError("TABLE_CELL_MISSING", "The selected table cell no longer exists.");
+    let props = kid(cell, "tcPr");
+    if (!props) { props = create(doc, "a", "tcPr"); cell.appendChild(props); }
+    for (const old of kids(props, "noFill", "solidFill", "gradFill", "blipFill", "pattFill", "grpFill")) props.removeChild(old);
+    if (hex) {
+      const fill = solid(doc, String(hex).replace(/^#/, ""));
+      props.insertBefore(fill, kid(props, "extLst") || null);
+    }
+  });
+}
+
+function tableCellsForScope(tbl, rowIndex, colIndex, scope = "cell") {
+  const rows = kids(tbl, "tr");
+  const row = rows[Math.trunc(Number(rowIndex))];
+  const col = Math.trunc(Number(colIndex));
+  if (scope === "table") return rows.flatMap((item) => kids(item, "tc"));
+  if (scope === "row") {
+    if (!row) throw new PptxError("TABLE_CELL_MISSING", "The selected table row no longer exists.");
+    return kids(row, "tc");
+  }
+  if (scope === "column") {
+    const cells = rows.map((item) => kids(item, "tc")[col]).filter(Boolean);
+    if (!cells.length) throw new PptxError("TABLE_CELL_MISSING", "The selected table column no longer exists.");
+    return cells;
+  }
+  const cell = row && kids(row, "tc")[col];
+  if (!cell) throw new PptxError("TABLE_CELL_MISSING", "The selected table cell no longer exists.");
+  return [cell];
+}
+
+/** Format the currently selected cell, row, column or entire table in one undoable edit. */
+export function setTableRangeTextProps(pkg, slidePath, id, rowIndex, colIndex, scope = "cell", props = {}) {
+  return mutateSlide(pkg, slidePath, "Format table text", (doc, tree) => {
+    const node = findNode(tree, id), tbl = tblOf(node);
+    for (const cell of tableCellsForScope(tbl, rowIndex, colIndex, scope)) {
+      const body = kid(cell, "txBody");
+      if (!body) continue;
+      for (const paragraph of kids(body, "p")) {
+        const pProps = ["align", "bullet", "lineSpacing"].some((key) => props[key] !== undefined);
+        if (pProps) {
+          const pPr = ensurePPr(doc, paragraph);
+          if (props.align) pPr.setAttribute("algn", props.align);
+          if (props.lineSpacing !== undefined) {
+            const lineSpacing = create(doc, "a", "lnSpc");
+            lineSpacing.appendChild(create(doc, "a", "spcPct", { val: R(props.lineSpacing * 100000) }));
+            insertOrdered(pPr, lineSpacing, ORDER.pPr, { replace: true });
+          }
+        }
+        const targets = [...kids(paragraph, "r", "fld", "br").map((run) => ensureRPr(doc, run))];
+        const end = kid(paragraph, "endParaRPr");
+        if (end) targets.push(end);
+        for (const rPr of targets) {
+          if (props.size !== undefined) rPr.setAttribute("sz", String(R(Number(props.size) * 100)));
+          if (props.bold !== undefined) rPr.setAttribute("b", props.bold ? "1" : "0");
+          if (props.italic !== undefined) rPr.setAttribute("i", props.italic ? "1" : "0");
+          if (props.underline !== undefined) rPr.setAttribute("u", props.underline ? "sng" : "none");
+          if (props.strike !== undefined) rPr.setAttribute("strike", props.strike ? "sngStrike" : "noStrike");
+          if (props.color) insertOrdered(rPr, solid(doc, String(props.color).replace(/^#/, "")), ORDER.rPr, { replace: true });
+          if (props.font) insertOrdered(rPr, create(doc, "a", "latin", { typeface: String(props.font).slice(0, 80) }), ORDER.rPr, { replace: true });
+          if (props.highlight !== undefined) {
+            for (const old of kids(rPr, "highlight")) rPr.removeChild(old);
+            if (props.highlight) {
+              if (!HEX.test(String(props.highlight).replace(/^#/, ""))) throw new PptxError("BAD_COLOR", "Invalid highlight colour");
+              const highlight = create(doc, "a", "highlight");
+              highlight.appendChild(create(doc, "a", "srgbClr", { val: String(props.highlight).replace(/^#/, "").toUpperCase() }));
+              insertOrdered(rPr, highlight, ORDER.rPr, { replace: true });
+            }
+          }
+        }
+        const bodyPr = kid(body, "bodyPr");
+        if (bodyPr && props.anchor) bodyPr.setAttribute("anchor", props.anchor);
+      }
+    }
+  });
+}
+
+/** Apply/remove cell fills at cell, row, column or whole-table scope. */
+export function setTableRangeCellFill(pkg, slidePath, id, rowIndex, colIndex, scope = "cell", hex = null) {
+  const normalized = hex == null ? null : String(hex).replace(/^#/, "");
+  if (normalized !== null && !HEX.test(normalized)) throw new PptxError("BAD_COLOR", "Invalid table cell colour.");
+  return mutateSlide(pkg, slidePath, "Table fill", (doc, tree) => {
+    const node = findNode(tree, id), tbl = tblOf(node);
+    for (const cell of tableCellsForScope(tbl, rowIndex, colIndex, scope)) {
+      let props = kid(cell, "tcPr");
+      if (!props) { props = create(doc, "a", "tcPr"); cell.appendChild(props); }
+      for (const old of kids(props, "noFill", "solidFill", "gradFill", "blipFill", "pattFill", "grpFill")) props.removeChild(old);
+      if (normalized) {
+        const fill = solid(doc, normalized);
+        props.insertBefore(fill, kid(props, "extLst") || null);
+      }
     }
   });
 }

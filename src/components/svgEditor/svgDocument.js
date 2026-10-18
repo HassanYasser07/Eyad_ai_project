@@ -720,6 +720,52 @@ export function flipElement(root, id, axis, measuredBounds = null) {
   element.setAttribute("transform", `translate(${centerX} ${centerY}) scale(${flipX} ${flipY}) translate(${-centerX} ${-centerY}) ${transform}`.trim());
 }
 
+/** Apply a coordinated five-color palette across the SVG. The first color becomes the artboard background. */
+export function applySvgPalette(root, palette) {
+  const colors = Array.isArray(palette?.colors) ? palette.colors.map((color) => String(color || "").toUpperCase()) : [];
+  if (colors.length !== 5 || colors.some((color) => !/^#[0-9A-F]{6}$/.test(color))) {
+    throw new Error("A palette must contain five six-digit hexadecimal colors.");
+  }
+  setSolidBackground(root, colors[0]);
+  const nodes = collectElements(root).filter((element) => {
+    if (element === root || element.hasAttribute("data-editor-background")) return false;
+    if (isInsideDefinitions(element, root)) return false;
+    return EDITABLE_ELEMENTS.has(element.localName) && element.localName !== "g" && element.localName !== "symbol";
+  });
+  let shapeIndex = 0;
+  let textIndex = 0;
+  const cssSet = (element, name, value) => {
+    const style = element.getAttribute("style") || "";
+    const property = name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
+    const re = new RegExp(`(^|;)\\s*${property}\\s*:[^;]*`, "i");
+    const next = re.test(style)
+      ? style.replace(re, (_match, prefix) => `${prefix}${property}:${value}`)
+      : `${style}${style.trim() ? ";" : ""}${property}:${value}`;
+    element.setAttribute("style", next);
+  };
+  const lineOnly = new Set(["line", "polyline"]);
+  for (const element of nodes) {
+    const tag = element.localName;
+    if (tag === "tspan" && element.parentElement?.localName === "text") continue;
+    const color = colors[1 + (shapeIndex % 4)];
+    const stroke = colors[1 + ((shapeIndex + 1) % 4)];
+    if (tag === "text" || tag === "tspan") {
+      cssSet(element, "fill", colors[1 + (textIndex % 4)]);
+      textIndex += 1;
+    } else if (lineOnly.has(tag)) {
+      cssSet(element, "stroke", color);
+      if (!element.hasAttribute("fill")) cssSet(element, "fill", "none");
+    } else if (tag !== "image") {
+      cssSet(element, "fill", color);
+      cssSet(element, "stroke", stroke);
+    } else {
+      cssSet(element, "stroke", stroke);
+    }
+    shapeIndex += 1;
+  }
+  return root;
+}
+
 export function getBackgroundInfo(root) {
   if (!root) return null;
   const bg = root.querySelector('[data-editor-background="true"]');

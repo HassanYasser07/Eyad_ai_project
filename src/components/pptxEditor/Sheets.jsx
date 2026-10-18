@@ -6,16 +6,26 @@ import { readSlide } from "./engine/slideModel.js";
 import { IconButton } from "./Controls.jsx";
 
 /** Tracks the visual viewport so a software keyboard never hides the sheet or the canvas. */
-export function useVisualViewport() {
+export function useVisualViewport(enabled = true) {
   const [vp, setVp] = React.useState({ h: null, top: 0 });
   React.useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    if (!enabled) {
+      setVp((current) => current.h === null && current.top === 0 ? current : { h: null, top: 0 });
+      return undefined;
+    }
     const v = window.visualViewport;
     if (!v) return undefined;
-    const update = () => setVp({ h: v.height, top: v.offsetTop });
+    const update = () => {
+      // Integer CSS pixels avoid sub-pixel viewport jitter causing repeated state updates.
+      const h = Math.round(v.height);
+      const top = Math.round(v.offsetTop);
+      setVp((current) => current.h === h && current.top === top ? current : { h, top });
+    };
     update();
     v.addEventListener("resize", update); v.addEventListener("scroll", update);
     return () => { v.removeEventListener("resize", update); v.removeEventListener("scroll", update); };
-  }, []);
+  }, [enabled]);
   return vp;
 }
 

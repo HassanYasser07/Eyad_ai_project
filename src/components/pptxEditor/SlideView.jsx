@@ -37,7 +37,6 @@ function Geometry({ el, w, h, idPrefix }) {
   const sw = ln.none || ln.hex === undefined ? 0 : Math.max(0.5, px(ln.w ?? 12700));
   const stroke = sw ? { stroke: `#${ln.hex}`, strokeOpacity: ln.alpha, strokeWidth: sw, strokeDasharray: DASH[ln.dash], strokeLinejoin: "round" } : { stroke: "none" };
   const g = el.geom || { kind: "rect" };
-  const flip = `${el.flipH ? "scaleX(-1)" : ""} ${el.flipV ? "scaleY(-1)" : ""}`.trim();
   let body = null;
   if (g.kind === "ellipse") body = <ellipse cx={w / 2} cy={h / 2} rx={w / 2} ry={h / 2} {...f} {...stroke} />;
   else if (g.kind === "path") body = <path d={g.d} {...f} {...stroke} />;
@@ -53,7 +52,7 @@ function Geometry({ el, w, h, idPrefix }) {
     );
   } else body = <rect x="0" y="0" width={w} height={h} {...f} {...stroke} />;
   return (
-    <svg className="pptx-geom" width={Math.max(w, 1)} height={Math.max(h, 1)} viewBox={`0 0 ${Math.max(w, 1)} ${Math.max(h, 1)}`} style={{ transform: flip || undefined }} aria-hidden="true">
+    <svg className="pptx-geom" width={Math.max(w, 1)} height={Math.max(h, 1)} viewBox={`0 0 ${Math.max(w, 1)} ${Math.max(h, 1)}`} aria-hidden="true">
       {defs.length > 0 && <defs>{defs}</defs>}
       {body}
     </svg>
@@ -66,33 +65,138 @@ function bulletText(b) {
   return "";
 }
 
-export function TextBody({ text, hint, cellMode = false }) {
+export function TextBody({ text, hint, cellMode = false, editing = false, elementId, frameW, frameH, onAutoSize, onEditStart, onCommit, onCancel }) {
+  const containerRef = React.useRef(null);
+  const contentRef = React.useRef(null);
+  const autoSizeFrameRef = React.useRef(0);
+  const previousBoundsRef = React.useRef({ w: frameW, h: frameH });
+  const makeTextLayoutKey = (value) => JSON.stringify((value?.paragraphs || []).map((p) => ({
+    plain: p.plain, endSize: p.end?.size, align: p.algn, indent: p.indent, margin: p.marL,
+    lineSpacing: p.lnSpc, spaceBefore: p.spcBef, spaceAfter: p.spcAft, bullet: p.bullet,
+    runs: p.runs.map((r) => ({ text: r.text, size: r.style.size, font: r.style.font, bold: r.style.bold, italic: r.style.italic, underline: r.style.underline, strike: r.style.strike, baseline: r.style.baseline })),
+  })));
+  const textLayoutKey = makeTextLayoutKey(text);
+  const previousTextLayoutKeyRef = React.useRef(textLayoutKey);
+  const body = text?.body || {};
+  // Preserve the font sizes authored in the PPTX. Browser-measured shrink-to-fit
+  // was unreliable for titles and wrapped text and could make content suddenly
+  // tiny when a slide was selected. Overflow is handled by growing the text box.
+  const renderScale = 1;
+
+  // Grow text objects when wrapping or edited content exceeds their frame. We
+  // deliberately don't run this on first mount for unchanged imported objects;
+  // it activates on inline editing, text-style changes, or geometry changes.
+  // Cell geometry is owned by the table grid and must never be auto-resized.
+  const requestContentFit = React.useCallback(() => {
+    if (cellMode || !onAutoSize || !elementId || !Number.isFinite(frameH) || typeof window === "undefined") return;
+    if (autoSizeFrameRef.current) window.cancelAnimationFrame(autoSizeFrameRef.current);
+    autoSizeFrameRef.current = window.requestAnimationFrame(() => {
+      autoSizeFrameRef.current = 0;
+      const container = containerRef.current;
+      const content = contentRef.current;
+      if (!container || !content || !container.isConnected || !content.isConnected) return;
+      const css = window.getComputedStyle(container);
+      const verticalPadding = (Number.parseFloat(css.paddingTop) || 0) + (Number.parseFloat(css.paddingBottom) || 0);
+      const contentRect = content.getBoundingClientRect();
+      // scrollHeight captures wrapped lines and contenteditable-created line breaks;
+      // the bounding-box height covers fractional line metrics in Chromium/WebKit.
+      const naturalContentHeight = Math.max(content.scrollHeight, content.offsetHeight, contentRect.height);
+      if (!Number.isFinite(naturalContentHeight) || naturalContentHeight <= 0) return;
+      const requiredHeight = Math.ceil((naturalContentHeight + verticalPadding + 1) * EMU_PER_PX);
+      if (requiredHeight > frameH + 2 * EMU_PER_PX) onAutoSize(elementId, requiredHeight, editing);
+    });
+  }, [cellMode, onAutoSize, elementId, frameH, editing]);
+
+  React.useLayoutEffect(() => {
+    // During a live resize Canvas deliberately suspends auto-sizing so that the
+    // user's pointer controls the frame. Do NOT consume the new dimensions while
+    // the callback is absent: after the drag commits, the callback returns and
+    // we must still detect the geometry change and measure the wrapped content.
+    // The previous implementation updated these refs before checking onAutoSize,
+    // making the final committed size look unchanged and leaving wrapped lines clipped.
+    if (cellMode || !onAutoSize) return undefined;
+
+    const previous = previousBoundsRef.current;
+    const boundsChanged = previous.w !== frameW || previous.h !== frameH;
+    const textChanged = previousTextLayoutKeyRef.current !== textLayoutKey;
+    previousBoundsRef.current = { w: frameW, h: frameH };
+    previousTextLayoutKeyRef.current = textLayoutKey;
+    if (!editing && !boundsChanged && !textChanged) return undefined;
+
+    requestContentFit();
+    return () => {
+      if (autoSizeFrameRef.current && typeof window !== "undefined") {
+        window.cancelAnimationFrame(autoSizeFrameRef.current);
+        autoSizeFrameRef.current = 0;
+      }
+    };
+  }, [cellMode, onAutoSize, editing, frameW, frameH, textLayoutKey, requestContentFit]);
+
+  React.useEffect(() => () => {
+    if (autoSizeFrameRef.current && typeof window !== "undefined") window.cancelAnimationFrame(autoSizeFrameRef.current);
+  }, []);
+
+  React.useEffect(() => {
+    if (!editing || !contentRef.current) return undefined;
+    const editor = contentRef.current;
+    editor.focus({ preventScroll: true });
+    try {
+      const selection = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(editor);
+      range.collapse(false);
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+    } catch { /* Focus still works if selection APIs are unavailable. */ }
+    return undefined;
+  }, [editing]);
+
   if (!text) return null;
-  const { body, paragraphs } = text;
-  const ins = body.insets;
+  const { paragraphs } = text;
+  const ins = body.insets || { t: 45720, r: 91440, b: 45720, l: 91440 };
   const justify = body.anchor === "ctr" ? "center" : body.anchor === "b" ? "flex-end" : "flex-start";
   const nowrap = body.wrap === "none";
   const empty = text.isEmpty;
   return (
-    <div className="pptx-text" style={{ padding: `${px(ins.t)}px ${px(ins.r)}px ${px(ins.b)}px ${px(ins.l)}px`, justifyContent: cellMode ? "flex-start" : justify, whiteSpace: nowrap ? "pre" : "pre-wrap" }}>
+    <div ref={containerRef} className={`pptx-text ${editing ? "is-inline-editing" : ""}`} style={{ padding: `${px(ins.t)}px ${px(ins.r)}px ${px(ins.b)}px ${px(ins.l)}px`, justifyContent: cellMode ? "flex-start" : justify, whiteSpace: nowrap ? "pre" : "pre-wrap" }}
+      onDoubleClick={(event) => { if (!editing && onEditStart) { event.preventDefault(); event.stopPropagation(); onEditStart(); } }}>
+      <div key={editing ? "editing-content" : "view-content"} ref={contentRef} className="pptx-text-content" data-auto-fit="none" data-auto-scale="1.000"
+        contentEditable={editing} suppressContentEditableWarning={editing}
+        onPointerDown={(event) => { if (editing) event.stopPropagation(); }}
+        onInput={() => { if (editing) requestContentFit(); }}
+        onKeyDown={(event) => {
+          if (!editing) return;
+          if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onCancel?.(); }
+          else if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) { event.preventDefault(); event.currentTarget.blur(); }
+          else event.stopPropagation();
+        }}
+        onBlur={(event) => {
+          if (!editing || !onCommit) return;
+          const value = String(event.currentTarget.innerText ?? event.currentTarget.textContent ?? "").replace(/[\u200B\uFEFF]/g, "").replace(/\r\n?/g, "\n").replace(/\n+$/, "");
+          onCommit(value.split("\n"));
+        }}>
       {empty && hint ? <div className="pptx-hint">{hint}</div> : paragraphs.map((p, i) => {
         const maxPt = Math.max(p.end.size, ...p.runs.map((r) => r.style.size));
-        const fs = ptToPx(maxPt);
-        const lh = p.lnSpc ? (p.lnSpc.pct ? p.lnSpc.pct * 1.2 : ptToPx(p.lnSpc.pts) / fs) : 1.2;
-        const sp = (s) => (s ? (s.pts !== undefined ? ptToPx(s.pts) : s.pct * fs * 1.2) : 0);
+        const fs = ptToPx(maxPt) * renderScale;
+        const lh = p.lnSpc ? (p.lnSpc.pct ? p.lnSpc.pct * 1.2 : ptToPx(p.lnSpc.pts) / Math.max(1, fs / renderScale)) : 1.2;
+        const sp = (s) => (s ? (s.pts !== undefined ? ptToPx(s.pts) * renderScale : s.pct * fs * 1.2) : 0);
         const bt = bulletText(p.bullet);
         const hang = Math.abs(px(p.indent));
         return (
-          <div key={i} className="pptx-para" dir={p.rtl ? "rtl" : "ltr"} style={{ textAlign: p.algn === "ctr" ? "center" : p.algn === "r" ? "right" : p.algn === "just" ? "justify" : "left", paddingInlineStart: px(p.marL), textIndent: px(p.indent), marginTop: i ? sp(p.spcBef) : 0, marginBottom: sp(p.spcAft), lineHeight: lh, minHeight: `${fs * lh}px`, fontSize: fs }}>
+          <div key={i} className="pptx-para" dir={p.rtl ? "rtl" : "ltr"} style={{ textAlign: p.algn === "ctr" ? "center" : p.algn === "r" ? "right" : p.algn === "just" ? "justify" : "left", paddingInlineStart: px(p.marL) * renderScale, textIndent: px(p.indent) * renderScale, marginTop: i ? sp(p.spcBef) : 0, marginBottom: sp(p.spcAft), lineHeight: lh, minHeight: `${fs * lh}px`, fontSize: fs }}>
             {bt && <span className="pptx-bullet" style={{ display: "inline-block", minWidth: hang || fs, textIndent: 0, color: rgba(p.runs[0]?.style.color || p.end.color), fontFamily: "Arial, sans-serif" }}>{bt}</span>}
             {p.runs.map((r, j) => {
               const s = r.style;
-              return <span key={j} style={{ fontFamily: font(s.font), fontSize: ptToPx(s.size), fontWeight: s.bold ? 700 : 400, fontStyle: s.italic ? "italic" : "normal", textDecoration: [s.underline && "underline", s.strike && "line-through"].filter(Boolean).join(" ") || "none", color: rgba(s.color), backgroundColor: s.highlight ? rgba(s.highlight) : undefined, verticalAlign: s.baseline > 0 ? "super" : s.baseline < 0 ? "sub" : "baseline" }}>{r.text}</span>;
+              const visibleText = String(r.text ?? "").replace(/[\u200B\uFEFF]/g, "");
+              return <span key={j} style={{ fontFamily: font(s.font), fontSize: ptToPx(s.size) * renderScale, fontWeight: s.bold ? 700 : 400, fontStyle: s.italic ? "italic" : "normal", textDecoration: [s.underline && "underline", s.strike && "line-through"].filter(Boolean).join(" ") || "none", color: rgba(s.color), backgroundColor: s.highlight ? rgba(s.highlight) : undefined, verticalAlign: s.baseline > 0 ? "super" : s.baseline < 0 ? "sub" : "baseline" }}>{visibleText}</span>;
             })}
-            {!p.runs.length && <span style={{ fontSize: fs }}>{"\u200b"}</span>}
+            {/* An actual line break gives empty editable paragraphs a caret target;
+                it is not persisted as text and avoids zero-width placeholder characters. */}
+            {editing && p.runs.every((run) => !String(run.text ?? "").replace(/[\u200B\uFEFF]/g, "")) && <br data-empty-caret="true" aria-hidden="true" />}
           </div>
         );
       })}
+      </div>
     </div>
   );
 }
@@ -144,7 +248,7 @@ function ChartPreview({ info, w, h, note }) {
   );
 }
 
-function TableView({ el, w, h }) {
+function TableView({ el, w, h, tableSelection, editingText, onTableCellSelect, onEditText, onTextCommit, onTextCancel }) {
   const t = el.table;
   if (!t) return <div className="pptx-object-card">Table</div>;
   const accent = t.accent.hex;
@@ -156,12 +260,23 @@ function TableView({ el, w, h }) {
           <tr key={ri} style={{ height: px(r.h) }}>
             {r.cells.map((c, ci) => {
               if (c.hMerge || c.vMerge) return null;
-              const head = t.firstRow && ri === 0;
-              const band = t.bandRow && !head && ri % 2 === 1;
-              const bg = c.fill?.type === "solid" ? rgba(c.fill) : head ? `#${accent}` : band ? `#${accent}22` : t.bandRow ? `#${accent}11` : "transparent";
+              const head = !!t.firstRow && ri === 0;
+              const firstCol = !!t.firstCol && ci === 0;
+              const lastCol = !!t.lastCol && ci === t.cols.length - 1;
+              const totalRow = !!t.lastRow && ri === t.rows.length - 1;
+              const bandRow = !!t.bandRow && ri % 2 === 1 && !head;
+              const bandCol = !!t.bandCol && ci % 2 === 1 && !head;
+              const emphasized = head || firstCol || lastCol || totalRow;
+              const bg = c.fill?.type === "solid" ? rgba(c.fill) : emphasized ? `#${accent}` : bandRow || bandCol ? `#${accent}22` : (t.bandRow || t.bandCol) ? `#${accent}0A` : "transparent";
               return (
-                <td key={ci} colSpan={c.gridSpan} rowSpan={c.rowSpan} style={{ background: bg, color: head ? "#fff" : undefined, fontWeight: head ? 700 : undefined }}>
-                  <TextBody text={c.text} cellMode />
+                <td key={ci} colSpan={c.gridSpan} rowSpan={c.rowSpan}
+                  className={tableSelection?.id === el.id && (tableSelection.scope === "table" || (tableSelection.scope === "row" && tableSelection.row === ri) || (tableSelection.scope === "column" && tableSelection.col === ci) || (tableSelection.scope === "cell" && tableSelection.row === ri && tableSelection.col === ci)) ? `is-table-${tableSelection.scope}-selected` : undefined}
+                  style={{ background: bg, color: emphasized ? "#fff" : undefined, fontWeight: emphasized ? 700 : undefined }}
+                  onClick={(event) => { event.stopPropagation(); onTableCellSelect?.(el.id, ri, ci); }}
+                  onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); onEditText?.(el.id, { row: ri, col: ci }); }}>
+                  <TextBody text={c.text} cellMode editing={editingText?.id === el.id && editingText?.row === ri && editingText?.col === ci}
+                    onEditStart={() => onEditText?.(el.id, { row: ri, col: ci })}
+                    onCommit={(texts) => onTextCommit?.(el.id, texts, { row: ri, col: ci })} onCancel={onTextCancel} />
                 </td>
               );
             })}
@@ -172,11 +287,12 @@ function TableView({ el, w, h }) {
   );
 }
 
-function ElementNode({ el, urls, hints, idPrefix, labels }) {
+function ElementNode({ el, urls, hints, idPrefix, labels, editingText, tableSelection, onTableCellSelect, onAutoSizeText, onEditText, onTextCommit, onTextCancel }) {
   if (el.hidden) return null;
-  if (el.kind === "group") return <>{el.children.map((c, ci) => <ElementNode key={`${c.id}-${ci}`} el={c} urls={urls} hints={hints} idPrefix={idPrefix} labels={labels} />)}</>;
+  if (el.kind === "group") return <>{el.children.map((c, ci) => <ElementNode key={`${c.id}-${ci}`} el={c} urls={urls} hints={hints} idPrefix={idPrefix} labels={labels} editingText={editingText} tableSelection={tableSelection} onTableCellSelect={onTableCellSelect} onAutoSizeText={onAutoSizeText} onEditText={onEditText} onTextCommit={onTextCommit} onTextCancel={onTextCancel} />)}</>;
   const w = px(el.w), h = px(el.h);
-  const style = { left: px(el.x), top: px(el.y), width: w, height: h, transform: el.rot ? `rotate(${el.rot}deg)` : undefined };
+  const transforms = [el.rot ? `rotate(${el.rot}deg)` : "", el.flipH ? "scaleX(-1)" : "", el.flipV ? "scaleY(-1)" : ""].filter(Boolean).join(" ");
+  const style = { left: px(el.x), top: px(el.y), width: w, height: h, transform: transforms || undefined, transformOrigin: "center center" };
   let inner = null;
   switch (el.kind) {
     case "image": {
@@ -186,13 +302,13 @@ function ElementNode({ el, urls, hints, idPrefix, labels }) {
       const round = el.geom?.kind === "ellipse" ? "50%" : undefined;
       inner = url ? (
         <div className="pptx-img" style={{ borderRadius: round, opacity: el.opacity }}>
-          <img src={url} alt={el.alt || ""} draggable={false} style={{ width: `${100 / sw}%`, height: `${100 / sh}%`, left: `${(-c.l / sw) * 100}%`, top: `${(-c.t / sh) * 100}%`, transform: `${el.flipH ? "scaleX(-1)" : ""} ${el.flipV ? "scaleY(-1)" : ""}`.trim() || undefined }} />
+          <img src={url} alt={el.alt || ""} draggable={false} style={{ width: `${100 / sw}%`, height: `${100 / sh}%`, left: `${(-c.l / sw) * 100}%`, top: `${(-c.t / sh) * 100}%`, transform: undefined }} />
         </div>
       ) : <div className="pptx-object-card">{el.mime ? labels.loading : labels.imageUnavailable}</div>;
-      if (el.line && !el.line.none && el.line.hex) inner = <>{inner}<div className="pptx-img-border" style={{ borderColor: `#${el.line.hex}`, borderWidth: Math.max(1, px(el.line.w ?? 12700)), borderRadius: round }} /></>;
+      if (el.line && !el.line.none && el.line.hex) inner = <>{inner}<div className="pptx-img-border" style={{ borderColor: `#${el.line.hex}`, borderWidth: Math.max(1, px(el.line.w ?? 12700)), borderRadius: round, opacity: el.line.alpha ?? 1 }} /></>;
       break;
     }
-    case "table": inner = <TableView el={el} w={w} h={h} />; break;
+    case "table": inner = <TableView el={el} w={w} h={h} tableSelection={tableSelection} editingText={editingText} onTableCellSelect={onTableCellSelect} onEditText={onEditText} onTextCommit={onTextCommit} onTextCancel={onTextCancel} />; break;
     case "chart": inner = el.chartInfo.preview
       ? <ChartPreview info={el.chartInfo} w={w} h={h} note={labels.chartPreview} />
       : <div className="pptx-object-card"><strong>{el.chartInfo.title || el.chartInfo.type}</strong>{el.chartInfo.title && <span>{el.chartInfo.type}</span>}<em>{labels.chartNote}</em></div>; break;
@@ -202,7 +318,11 @@ function ElementNode({ el, urls, hints, idPrefix, labels }) {
       inner = (
         <>
           <Geometry el={el} w={w} h={h} idPrefix={idPrefix} />
-          {el.text && <TextBody text={el.text} hint={hints && el.ph ? labels.placeholderHint : null} />}
+          {el.text && <TextBody text={el.text} hint={hints && el.ph ? labels.placeholderHint : null}
+            elementId={el.id} frameW={el.w} frameH={el.h} onAutoSize={onAutoSizeText}
+            editing={editingText?.id === el.id && editingText?.row === undefined}
+            onEditStart={() => onEditText?.(el.id)}
+            onCommit={(texts) => onTextCommit?.(el.id, texts)} onCancel={onTextCancel} />}
         </>
       );
   }
@@ -225,24 +345,29 @@ function backgroundStyle(bg, urls) {
  * canvas preview a drag without touching the document; groups are previewed
  * with a CSS transform so content and selection frame stay in lock-step.
  */
-export default function SlideView({ model, urls, overrides, hints = false, labels }) {
+export default function SlideView({ model, urls, overrides, geometryDrafts, hints = false, labels, editingText, tableSelection, onTableCellSelect, onAutoSizeText, onEditText, onTextCommit, onTextCancel }) {
   const idPrefix = React.useId().replace(/:/g, "");
   const W = px(model.size.w), H = px(model.size.h);
   const renderTop = (el) => {
+    if (el.hidden) return null;
     const ov = overrides?.get(el.id);
-    if (!ov) return <ElementNode key={el.id} el={el} urls={urls} hints={hints} idPrefix={idPrefix} labels={labels} />;
+    if (!ov) return <ElementNode key={el.id} el={el} urls={urls} hints={hints} idPrefix={idPrefix} labels={labels} editingText={editingText} tableSelection={tableSelection} onTableCellSelect={onTableCellSelect} onAutoSizeText={onAutoSizeText} onEditText={onEditText} onTextCommit={onTextCommit} onTextCancel={onTextCancel} />;
+    // `geometryDrafts` is only the active pointer drag/resize preview. A height
+    // override coming from textAutoSizeHeights is different: keep auto-sizing live
+    // so additional typing or wrapping can continue to grow the selected frame.
+    const suspendAutoSize = Boolean(geometryDrafts?.has(el.id));
     if (el.kind === "group") {
       const sx = el.w ? ov.w / el.w : 1, sy = el.h ? ov.h / el.h : 1;
       const dx = ov.x + ov.w / 2 - (el.x + el.w / 2), dy = ov.y + ov.h / 2 - (el.y + el.h / 2);
       return (
         <div key={el.id} className="pptx-group-preview" style={{ left: px(el.x), top: px(el.y), width: px(el.w), height: px(el.h), transform: `translate(${px(dx)}px,${px(dy)}px) rotate(${ov.rot - el.rot}deg) scale(${sx},${sy})` }}>
           <div style={{ position: "absolute", left: -px(el.x), top: -px(el.y) }}>
-            {el.children.map((c, ci) => <ElementNode key={`${c.id}-${ci}`} el={c} urls={urls} hints={hints} idPrefix={idPrefix} labels={labels} />)}
+            {el.children.map((c, ci) => <ElementNode key={`${c.id}-${ci}`} el={c} urls={urls} hints={hints} idPrefix={idPrefix} labels={labels} editingText={editingText} tableSelection={tableSelection} onTableCellSelect={onTableCellSelect} onAutoSizeText={null} onEditText={onEditText} onTextCommit={onTextCommit} onTextCancel={onTextCancel} />)}
           </div>
         </div>
       );
     }
-    return <ElementNode key={el.id} el={{ ...el, ...ov }} urls={urls} hints={hints} idPrefix={idPrefix} labels={labels} />;
+    return <ElementNode key={el.id} el={{ ...el, ...ov }} urls={urls} hints={hints} idPrefix={idPrefix} labels={labels} editingText={editingText} tableSelection={tableSelection} onTableCellSelect={onTableCellSelect} onAutoSizeText={suspendAutoSize ? null : onAutoSizeText} onEditText={onEditText} onTextCommit={onTextCommit} onTextCancel={onTextCancel} />;
   };
   return (
     <div className="pptx-slide" style={{ width: W, height: H, ...backgroundStyle(model.background, urls) }}>
