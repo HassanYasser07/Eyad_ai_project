@@ -1,6 +1,7 @@
 import React from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Slider } from "@/components/ui/slider";
+import { Pipette } from "lucide-react";
 
 export function IconButton({ icon: Icon, label, onClick, active, disabled, danger, text, size = 18, testId }) {
   return (
@@ -14,12 +15,13 @@ export function IconButton({ icon: Icon, label, onClick, active, disabled, dange
 const PRESETS = ["000000", "FFFFFF", "475569", "94A3B8", "DC2626", "EA580C", "F59E0B", "16A34A", "0D9488", "2563EB", "7C3AED", "DB2777"];
 const HEX = /^[0-9A-Fa-f]{6}$/;
 
-export function ColorField({ label, value, onChange, onNone, themeColors = [], noneLabel, testId }) {
+export function ColorField({ label, value, onChange, onNone, themeColors = [], noneLabel, testId, customColorLabel = "Choose any color" }) {
   const [open, setOpen] = React.useState(false);
   const [hex, setHex] = React.useState(value || "");
+  const pickerRef = React.useRef(null);
   React.useEffect(() => setHex(value || ""), [value]);
   const palette = [...new Set([...themeColors, ...PRESETS].map((c) => c.toUpperCase()))];
-  const pick = (c) => { onChange(c); setOpen(false); };
+  const pick = (c) => { onChange(c); setHex(c); setOpen(false); };
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -32,17 +34,20 @@ export function ColorField({ label, value, onChange, onNone, themeColors = [], n
         <div className="pe-palette">
           {palette.map((c) => <button key={c} type="button" className="pe-chip" style={{ background: `#${c}` }} aria-label={`#${c}`} onClick={() => pick(c)} />)}
         </div>
-        <div className="pe-row">
-          <input type="color" className="pe-colorinput" aria-label={label} value={`#${HEX.test(hex) ? hex : "000000"}`} onChange={(e) => onChange(e.target.value.slice(1).toUpperCase())} />
-          <input className="pe-input" value={hex} maxLength={6} aria-label="Hex" onChange={(e) => setHex(e.target.value.replace(/[^0-9a-f]/gi, ""))} onKeyDown={(e) => { if (e.key === "Enter" && HEX.test(hex)) pick(hex.toUpperCase()); }} onBlur={() => HEX.test(hex) && hex.toUpperCase() !== value && onChange(hex.toUpperCase())} />
-        </div>
+        <button type="button" className="pe-custom-color-button" onClick={() => pickerRef.current?.click()}>
+          <Pipette size={16} aria-hidden="true" />
+          <span>{customColorLabel}</span>
+          <span className="pe-custom-color-preview" style={{ background: value ? `#${value}` : "transparent" }} aria-hidden="true" />
+        </button>
+        <input ref={pickerRef} type="color" className="pe-colorinput pe-colorinput-native" aria-label={customColorLabel} value={`#${HEX.test(hex) ? hex : "000000"}`} onChange={(e) => { const next = e.target.value.slice(1).toUpperCase(); setHex(next); onChange(next); }} />
+        <label className="pe-hex-row"><span>HEX</span><input className="pe-input" value={hex} maxLength={6} aria-label="Hex" onChange={(e) => setHex(e.target.value.replace(/[^0-9a-f]/gi, ""))} onKeyDown={(e) => { if (e.key === "Enter" && HEX.test(hex)) pick(hex.toUpperCase()); }} onBlur={() => HEX.test(hex) && hex.toUpperCase() !== value && onChange(hex.toUpperCase())} /></label>
         {onNone && <button type="button" className="pe-link" onClick={() => { onNone(); setOpen(false); }}>{noneLabel}</button>}
       </PopoverContent>
     </Popover>
   );
 }
 
-export function NumberField({ label, value, onCommit, step = 1, min = -9999, max = 9999, suffix, decimals = 1, testId }) {
+export function NumberField({ label, value, onCommit, step = 1, min = -9999, max = 9999, suffix, decimals = 1, testId, disabled = false }) {
   const fmt = (v) => (Number.isFinite(v) ? String(Number(v.toFixed(decimals))) : "");
   const [text, setText] = React.useState(fmt(value));
   React.useEffect(() => setText(fmt(value)), [value]);  
@@ -54,9 +59,9 @@ export function NumberField({ label, value, onCommit, step = 1, min = -9999, max
     if (v !== value) onCommit(v);
   };
   return (
-    <label className="pe-num">
+    <label className={`pe-num ${disabled ? "is-disabled" : ""}`}>
       <span>{label}</span>
-      <input inputMode="decimal" value={text} data-testid={testId} aria-label={label}
+      <input inputMode="decimal" value={text} data-testid={testId} aria-label={label} disabled={disabled}
         onChange={(e) => setText(e.target.value)} onBlur={(e) => commit(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === "Enter") e.currentTarget.blur();

@@ -10,6 +10,7 @@ import {
   deleteElements, duplicateElements, reorderElements, moveElementToLayer, setElementsHidden, groupElements, ungroupElement, addTextBox, addShape,
   addPicture, setShapeStyle, setOpacity, tableRows, tableCols, addSlide, duplicateSlide, deleteSlide, moveSlide, listLayouts,
   computeAlign, computeDistribute, hitTest, copyElements, pasteElements, setSlideBackground, setPresentationBackground, SHAPE_PRESETS, applySlidePalette,
+  addTable, setTableOptions, setTableCellFill, capturePresentationBackgrounds, restorePresentationBackgrounds, captureSlidePaletteState, restoreSlidePaletteStates,
 } from "../../src/components/pptxEditor/engine/index.js";
 
 setXmlImpl({ DOMParser, XMLSerializer });
@@ -77,6 +78,106 @@ test("table and chart are recognised honestly", async () => {
   assert.deepEqual(ci.preview.series[0].values, [19, 24, 31]);
   assert.deepEqual(ci.preview.categories, ["Q1", "Q2", "Q3"]);
   assert.ok(m.warnings.some((w) => w.code === "chart-view-only"));
+});
+
+test("new tables support insertion, row/column edits, cell formatting, and valid PPTX export", async () => {
+  const pkg = await load("simple.pptx");
+  const { m } = slide(pkg);
+  const id = addTable(pkg, m.path, { x: 900000, y: 1100000, w: 5200000, h: 2800000, rows: 2, cols: 4 });
+  let table = slide(pkg).m.elements.find((element) => element.id === id);
+  assert.equal(table.kind, "table");
+  assert.equal(table.table.rows.length, 2);
+  assert.equal(table.table.cols.length, 4);
+
+  setTableCellFill(pkg, m.path, id, 1, 2, "0D9488");
+  setText(pkg, m.path, id, ["Editable cell"], { row: 1, col: 2 });
+  setTextProps(pkg, m.path, [id], { size: 22, bold: true, italic: true, underline: true, color: "123456", align: "ctr" }, { row: 1, col: 2 });
+  setTableOptions(pkg, m.path, id, { firstRow: false, bandRow: true, firstCol: true, lastCol: true, lastRow: true, bandCol: true });
+  table = slide(pkg).m.elements.find((element) => element.id === id);
+  assert.equal(table.table.firstRow, false);
+  assert.equal(table.table.bandRow, true);
+  assert.equal(table.table.firstCol, true);
+  assert.equal(table.table.lastCol, true);
+  assert.equal(table.table.lastRow, true);
+  assert.equal(table.table.bandCol, true);
+  assert.equal(table.table.rows[1].cells[2].fill.hex, "0D9488");
+  assert.equal(table.table.rows[1].cells[2].text.paragraphs[0].runs[0].style.size, 22);
+  assert.equal(table.table.rows[1].cells[2].text.paragraphs[0].runs[0].style.bold, true);
+
+  tableRows(pkg, m.path, id, "add", 1);
+  tableCols(pkg, m.path, id, "add", 3);
+  table = slide(pkg).m.elements.find((element) => element.id === id);
+  assert.equal(table.table.rows.length, 3);
+  assert.equal(table.table.cols.length, 5);
+  await roundTrip(pkg);
+});
+
+test("restoring an all-slides palette preserves content edits while reverting palette colours", async () => {
+  const pkg = await load("simple.pptx");
+  const { p, m } = slide(pkg);
+  const before = m.elements.find((element) => element.kind === "shape" && element.fill);
+  const textElement = m.elements.find((element) => element.kind === "text" && element.text?.plain?.some((line) => line.trim()));
+  const originalBackground = m.background;
+  const snapshots = p.slides.map((slideInfo) => captureSlidePaletteState(pkg, slideInfo.path));
+  const palette = { name: "Regression", colors: ["F8FAFC", "123047", "146C81", "0F766E", "B45309"] };
+  for (const slideInfo of p.slides) applySlidePalette(pkg, slideInfo.path, palette);
+  if (textElement) setText(pkg, m.path, textElement.id, ["Content preserved after palette toggle"]);
+  restoreSlidePaletteStates(pkg, snapshots);
+  const { m: restored } = slide(pkg);
+  assert.deepEqual(restored.background, originalBackground);
+  if (before) {
+    const restoredShape = restored.elements.find((element) => element.id === before.id);
+    assert.deepEqual(restoredShape?.fill, before.fill);
+    assert.deepEqual(restoredShape?.line, before.line);
+  }
+  if (textElement) assert.ok(restored.elements.find((element) => element.id === textElement.id).text.plain.some((line) => line.includes("Content preserved after palette toggle")));
+  await roundTrip(pkg);
+});
+
+test("restoring apply-to-all backgrounds preserves unrelated slide edits", async () => {
+  const pkg = await load("simple.pptx");
+  const before = readPresentation(pkg).slides.map((slideInfo) => ({ path: slideInfo.path, background: readSlide(pkg, slideInfo.path, readPresentation(pkg)).background }));
+  const snapshots = capturePresentationBackgrounds(pkg);
+  setPresentationBackground(pkg, "ABCDEF");
+  const { m } = slide(pkg);
+  const textElement = m.elements.find((element) => element.kind === "text" && element.text?.plain?.some((line) => line.trim()));
+  if (textElement) setText(pkg, m.path, textElement.id, ["Background restoration test"]);
+  restorePresentationBackgrounds(pkg, snapshots);
+  const after = readPresentation(pkg).slides.map((slideInfo) => ({ path: slideInfo.path, background: readSlide(pkg, slideInfo.path, readPresentation(pkg)).background }));
+  assert.deepEqual(after, before);
+  if (textElement) assert.ok(slide(pkg).m.elements.find((element) => element.id === textElement.id).text.plain.some((line) => line.includes("Background restoration test")));
+  await roundTrip(pkg);
+});
+
+test("resizing a text frame does not inject shrink-to-fit and change imported text size", async () => {
+  const pkg = await load("text_heavy_4x3.pptx");
+  const { m, p } = slide(pkg);
+  const item = m.elements.find((e) => e.text && e.text.paragraphs?.some((paragraph) => paragraph.runs.length));
+  assert.ok(item, "fixture should contain text");
+  const beforeType = item.text.body?.autofit?.type;
+  const beforeScale = item.text.body?.autofit?.fontScale;
+  setBounds(pkg, m.path, [{ id: item.id, x: item.x, y: item.y, w: Math.round(item.w * 0.65), h: Math.round(item.h * 1.25), rot: item.rot }], "Resize text frame");
+  const after = readSlide(pkg, m.path, p).elements.find((e) => e.id === item.id);
+  assert.equal(after.text.body?.autofit?.type, beforeType, "resizing must preserve the original fit mode");
+  assert.equal(after.text.body?.autofit?.fontScale, beforeScale, "resizing must preserve any existing fontScale");
+  assert.equal(after.text.paragraphs[0].runs[0].style.size, item.text.paragraphs[0].runs[0].style.size, "the imported font size must not be modified");
+});
+
+test("editing text and growing its frame are committed as one undoable transaction", async () => {
+  const pkg = await load("text_heavy_4x3.pptx");
+  const { m } = slide(pkg);
+  const item = m.elements.find((e) => e.text && e.text.plain?.some((line) => line.trim()) && e.kind !== "table");
+  assert.ok(item, "fixture should contain a text object");
+  const originalText = item.text.plain.slice();
+  const grownHeight = item.h + 250000;
+  setText(pkg, m.path, item.id, ["Adaptive frame regression text"], null, grownHeight, { x: item.x, y: item.y, w: item.w, h: item.h, rot: item.rot, flipH: item.flipH, flipV: item.flipV });
+  const updated = slide(pkg).m.elements.find((e) => e.id === item.id);
+  assert.equal(updated.h, grownHeight, "text edit should store the grown frame height");
+  assert.match(updated.text.plain.join("\n"), /Adaptive frame regression text/);
+  pkg.undo();
+  const restored = slide(pkg).m.elements.find((e) => e.id === item.id);
+  assert.equal(restored.h, item.h, "undo restores original frame height with the original text");
+  assert.deepEqual(restored.text.plain, originalText);
 });
 
 test("move/resize/rotate writes xfrm, undo restores identical XML", async () => {

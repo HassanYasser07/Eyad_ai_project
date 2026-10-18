@@ -119,3 +119,40 @@ The palette UI depends on all three shared files: `src/components/shared/ColorPa
 #### Stability note
 Text-fit measurements are only run for source text bodies explicitly marked with `normAutofit`, never for ordinary text boxes or table cells. Imported run sizes and DrawingML insets are preserved by default. When fitting is explicitly requested, measurements are scheduled against the fixed text frame and do not observe the scale-changing content; canvas/mobile viewport updates are idempotent.
 
+## Latest UX update — Design scopes, custom colours, and Tables
+
+- The Design background swatch has a larger visual preview. Its centered **Apply current background to every slide** checkbox applies the current solid background immediately and restores each slide's original background nodes when unchecked, without reverting other slide edits.
+- The Design palette group includes **Apply selected palette to all slides** beneath **Browse palettes**. Enabling it applies the selected coordinated palette to every slide; unchecking restores the prior background and palette-managed fill, outline, and text colours while preserving unrelated content, geometry, and table edits. Choose another palette while enabled to update all slides; the original snapshot remains the restore point until unchecked.
+- Custom-colour picking remains available anywhere the PPTX editor uses `ColorField` (background, text, highlight, fills, outlines and table cell formatting). SVG colour cards also have an explicit **Choose any color** button alongside HEX entry.
+- A dedicated **Tables** ribbon section and **Insert Table** command are available. Insert between 1 and 12 rows and columns; then edit cells, insert/delete rows and columns, choose first/header/total and banded-row/column options, set individual cell fills, and format selected cell text size, colour, highlight, bold, italic, underline and alignment. Row/column structural edits are disabled for tables containing merged cells to avoid damaging their grid.
+- Layer order buttons are ordered Bring to Front, Send to Back, Bring Forward, Send Backward.
+- Regression coverage includes table insertion, cell fill and text formatting, table design flags, row/column edits, valid PPTX round-trip, and background restoration that preserves unrelated slide edits.
+
+
+
+## Table editing
+
+The Insert ribbon and dedicated Tables ribbon can insert a 1–12 row/column table. The Table inspector edits cell contents and exposes row/column insertion and deletion, per-cell fill/text/highlight with the visible **Choose any color** picker, font family and size, bold/italic/underline/strikethrough, horizontal and vertical alignment, and table-design switches for header/total rows, first/last columns, and banded rows/columns. Formatting controls are disabled for locked tables; structural row/column edits are blocked for tables with merged cells.
+
+
+## In-place text and table editing (October 18, 2026)
+
+- Text boxes and text inside shapes are edited directly on the slide: select the object, then double-click its text (or use the Text ribbon's Edit command). The canvas becomes content-editable; Enter creates a line/paragraph and Ctrl/Cmd+Enter commits. Escape cancels. No value-entry dialog is used for normal text edits.
+- Tables remain selected as normal canvas objects. Click once inside a cell to select that cell; double-click the cell text to edit it in place. The Tables ribbon owns table editing: choose Cell, Row, Column, or Entire table as the formatting scope, then use font, emphasis, colour/highlight, cell fill, horizontal/vertical alignment, table style flags and row/column insertion/deletion controls. Clicking another cell returns the scope to Cell.
+- The Design palette picker and its adjacent apply-to-all checkbox share the same 66px card height as the slide-background picker and all-slide background checkbox. On compact/mobile layouts the palette picker and scope checkbox remain side-by-side inside the scrollable ribbon sheet.
+- Newly inserted shapes and tables use real empty DrawingML paragraphs/cells, not zero-width placeholder characters. Imported/editable text is sanitized to remove U+200B and U+FEFF before rendering, insertion, or save. Table-design flags now render first/last columns and total rows as well as header/banded rows and columns.
+- Regression checks cover inline editing paths, table selection scope localization, matched Design card heights, and zero-width placeholder cleanup. Run `npm run test:reliability` after changing these behaviors.
+
+## Text sizing and inline editing safeguards
+
+- Table ribbon top alignment imports the matching Lucide icon explicitly to avoid a runtime reference error when selecting a table.
+- Text rendering preserves run font sizes from the imported PPTX; it does not browser-shrink text when a text box is selected or resized.
+- Resizing a text object does not inject `a:normAutofit`. When wrapped or edited text needs additional vertical space, the editor grows the text frame while preserving its width and formatting.
+- During inline typing, frame-height growth is previewed locally with the selection frame and saved together with the text change as one undoable operation. Cancelling inline editing discards the preview.
+- Table-cell text remains governed by the table grid; cell text does not independently resize the table.
+- Inline editing preserves the imported paragraph line-height and font size so wrapped text metrics remain consistent; caret color is controlled separately.
+
+
+### Text-frame resizing and wrapping reliability
+
+Auto-fit measurement is suspended only during an active pointer drag/resize, not while the canvas is previewing an auto-grown text-frame height. This keeps the measurement callback active throughout inline typing, so adding more lines continues to grow the frame. During pointer previews, the prior measured dimensions are retained until the committed dimensions are available; otherwise a preview size could be mistaken for the committed baseline and the post-resize measurement would be skipped. Inline editing preserves imported paragraph line-height rather than overriding it to imitate a smaller caret, preventing mismatched text metrics and clipped wrapped lines.

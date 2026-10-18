@@ -65,72 +65,91 @@ function bulletText(b) {
   return "";
 }
 
-export function TextBody({ text, hint, cellMode = false }) {
+export function TextBody({ text, hint, cellMode = false, editing = false, elementId, frameW, frameH, onAutoSize, onEditStart, onCommit, onCancel }) {
   const containerRef = React.useRef(null);
   const contentRef = React.useRef(null);
-  const [autoScale, setAutoScale] = React.useState(1);
-  const autoScaleRef = React.useRef(autoScale);
+  const autoSizeFrameRef = React.useRef(0);
+  const previousBoundsRef = React.useRef({ w: frameW, h: frameH });
+  const makeTextLayoutKey = (value) => JSON.stringify((value?.paragraphs || []).map((p) => ({
+    plain: p.plain, endSize: p.end?.size, align: p.algn, indent: p.indent, margin: p.marL,
+    lineSpacing: p.lnSpc, spaceBefore: p.spcBef, spaceAfter: p.spcAft, bullet: p.bullet,
+    runs: p.runs.map((r) => ({ text: r.text, size: r.style.size, font: r.style.font, bold: r.style.bold, italic: r.style.italic, underline: r.style.underline, strike: r.style.strike, baseline: r.style.baseline })),
+  })));
+  const textLayoutKey = makeTextLayoutKey(text);
+  const previousTextLayoutKeyRef = React.useRef(textLayoutKey);
   const body = text?.body || {};
-  // PowerPoint only shrinks text when the source text body explicitly requests
-  // normAutofit. Applying browser-measured shrink to every object made titles,
-  // headings and ordinary text boxes change size simply by activating a slide.
-  // Already-applied OOXML fontScale values are not shrunk a second time. Table
-  // cells keep their imported run sizes: their dimensions are controlled by the
-  // table grid, not by an independent text-box fit pass.
-  const shouldAutoFit = !cellMode && body.autofit?.type === "shrink" && (body.autofit.fontScale ?? 1) >= 0.999;
-  const renderScale = shouldAutoFit ? autoScale : 1;
-  autoScaleRef.current = autoScale;
+  // Preserve the font sizes authored in the PPTX. Browser-measured shrink-to-fit
+  // was unreliable for titles and wrapped text and could make content suddenly
+  // tiny when a slide was selected. Overflow is handled by growing the text box.
+  const renderScale = 1;
+
+  // Grow text objects when wrapping or edited content exceeds their frame. We
+  // deliberately don't run this on first mount for unchanged imported objects;
+  // it activates on inline editing, text-style changes, or geometry changes.
+  // Cell geometry is owned by the table grid and must never be auto-resized.
+  const requestContentFit = React.useCallback(() => {
+    if (cellMode || !onAutoSize || !elementId || !Number.isFinite(frameH) || typeof window === "undefined") return;
+    if (autoSizeFrameRef.current) window.cancelAnimationFrame(autoSizeFrameRef.current);
+    autoSizeFrameRef.current = window.requestAnimationFrame(() => {
+      autoSizeFrameRef.current = 0;
+      const container = containerRef.current;
+      const content = contentRef.current;
+      if (!container || !content || !container.isConnected || !content.isConnected) return;
+      const css = window.getComputedStyle(container);
+      const verticalPadding = (Number.parseFloat(css.paddingTop) || 0) + (Number.parseFloat(css.paddingBottom) || 0);
+      const contentRect = content.getBoundingClientRect();
+      // scrollHeight captures wrapped lines and contenteditable-created line breaks;
+      // the bounding-box height covers fractional line metrics in Chromium/WebKit.
+      const naturalContentHeight = Math.max(content.scrollHeight, content.offsetHeight, contentRect.height);
+      if (!Number.isFinite(naturalContentHeight) || naturalContentHeight <= 0) return;
+      const requiredHeight = Math.ceil((naturalContentHeight + verticalPadding + 1) * EMU_PER_PX);
+      if (requiredHeight > frameH + 2 * EMU_PER_PX) onAutoSize(elementId, requiredHeight, editing);
+    });
+  }, [cellMode, onAutoSize, elementId, frameH, editing]);
 
   React.useLayoutEffect(() => {
-    if (!shouldAutoFit) {
-      setAutoScale((current) => current === 1 ? current : 1);
-      return undefined;
-    }
-    const container = containerRef.current;
-    const content = contentRef.current;
-    if (!container || !content || typeof window === "undefined") return undefined;
-    let frame = 0;
-    const measure = () => {
-      if (typeof window.requestAnimationFrame !== "function") return;
-      if (frame) window.cancelAnimationFrame(frame);
-      frame = window.requestAnimationFrame(() => {
-        frame = 0;
-        // A slide can briefly mount inside a hidden/off-canvas panel during
-        // navigation. Never infer a tiny text scale from those transient 0px
-        // dimensions; the frame observer will retry after it becomes measurable.
-        if (container.clientWidth < 8 || container.clientHeight < 8) return;
-        const css = window.getComputedStyle(container);
-        const horizontalPadding = (Number.parseFloat(css.paddingLeft) || 0) + (Number.parseFloat(css.paddingRight) || 0);
-        const verticalPadding = (Number.parseFloat(css.paddingTop) || 0) + (Number.parseFloat(css.paddingBottom) || 0);
-        const availableWidth = Math.max(1, container.clientWidth - horizontalPadding - 2);
-        const availableHeight = Math.max(1, container.clientHeight - verticalPadding - 3);
-        const contentWidth = content.clientWidth;
-        const contentScrollWidth = content.scrollWidth;
-        const contentHeight = content.scrollHeight;
-        if (!availableWidth || !availableHeight || !contentHeight) return;
+    // During a live resize Canvas deliberately suspends auto-sizing so that the
+    // user's pointer controls the frame. Do NOT consume the new dimensions while
+    // the callback is absent: after the drag commits, the callback returns and
+    // we must still detect the geometry change and measure the wrapped content.
+    // The previous implementation updated these refs before checking onAutoSize,
+    // making the final committed size look unchanged and leaving wrapped lines clipped.
+    if (cellMode || !onAutoSize) return undefined;
 
-        // The scale is only used for source bodies explicitly marked normAutofit.
-        // Padding remains fixed, and observing only the frame avoids feedback loops.
-        const currentScale = Math.max(0.05, autoScaleRef.current || 1);
-        const naturalHeight = contentHeight / currentScale;
-        const heightFit = Math.min(1, availableHeight / Math.max(1, naturalHeight));
-        const widthFit = contentScrollWidth > contentWidth + 1 && contentScrollWidth > 0
-          ? Math.min(1, currentScale * (Math.max(1, contentWidth - 2) / contentScrollWidth))
-          : 1;
-        const next = Math.max(0.05, Math.min(1, heightFit, widthFit));
-        setAutoScale((current) => Math.abs(next - current) < 0.01 ? current : next);
-      });
-    };
-    measure();
-    const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
-    observer?.observe(container);
-    window.addEventListener("resize", measure);
+    const previous = previousBoundsRef.current;
+    const boundsChanged = previous.w !== frameW || previous.h !== frameH;
+    const textChanged = previousTextLayoutKeyRef.current !== textLayoutKey;
+    previousBoundsRef.current = { w: frameW, h: frameH };
+    previousTextLayoutKeyRef.current = textLayoutKey;
+    if (!editing && !boundsChanged && !textChanged) return undefined;
+
+    requestContentFit();
     return () => {
-      if (frame) window.cancelAnimationFrame(frame);
-      observer?.disconnect();
-      window.removeEventListener("resize", measure);
+      if (autoSizeFrameRef.current && typeof window !== "undefined") {
+        window.cancelAnimationFrame(autoSizeFrameRef.current);
+        autoSizeFrameRef.current = 0;
+      }
     };
-  }, [text, hint, shouldAutoFit]);
+  }, [cellMode, onAutoSize, editing, frameW, frameH, textLayoutKey, requestContentFit]);
+
+  React.useEffect(() => () => {
+    if (autoSizeFrameRef.current && typeof window !== "undefined") window.cancelAnimationFrame(autoSizeFrameRef.current);
+  }, []);
+
+  React.useEffect(() => {
+    if (!editing || !contentRef.current) return undefined;
+    const editor = contentRef.current;
+    editor.focus({ preventScroll: true });
+    try {
+      const selection = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(editor);
+      range.collapse(false);
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+    } catch { /* Focus still works if selection APIs are unavailable. */ }
+    return undefined;
+  }, [editing]);
 
   if (!text) return null;
   const { paragraphs } = text;
@@ -139,8 +158,23 @@ export function TextBody({ text, hint, cellMode = false }) {
   const nowrap = body.wrap === "none";
   const empty = text.isEmpty;
   return (
-    <div ref={containerRef} className="pptx-text" style={{ padding: `${px(ins.t)}px ${px(ins.r)}px ${px(ins.b)}px ${px(ins.l)}px`, justifyContent: cellMode ? "flex-start" : justify, whiteSpace: nowrap ? "pre" : "pre-wrap" }}>
-      <div ref={contentRef} className="pptx-text-content" data-auto-fit={shouldAutoFit ? "shrink" : "none"} data-auto-scale={renderScale.toFixed(3)}>
+    <div ref={containerRef} className={`pptx-text ${editing ? "is-inline-editing" : ""}`} style={{ padding: `${px(ins.t)}px ${px(ins.r)}px ${px(ins.b)}px ${px(ins.l)}px`, justifyContent: cellMode ? "flex-start" : justify, whiteSpace: nowrap ? "pre" : "pre-wrap" }}
+      onDoubleClick={(event) => { if (!editing && onEditStart) { event.preventDefault(); event.stopPropagation(); onEditStart(); } }}>
+      <div key={editing ? "editing-content" : "view-content"} ref={contentRef} className="pptx-text-content" data-auto-fit="none" data-auto-scale="1.000"
+        contentEditable={editing} suppressContentEditableWarning={editing}
+        onPointerDown={(event) => { if (editing) event.stopPropagation(); }}
+        onInput={() => { if (editing) requestContentFit(); }}
+        onKeyDown={(event) => {
+          if (!editing) return;
+          if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onCancel?.(); }
+          else if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) { event.preventDefault(); event.currentTarget.blur(); }
+          else event.stopPropagation();
+        }}
+        onBlur={(event) => {
+          if (!editing || !onCommit) return;
+          const value = String(event.currentTarget.innerText ?? event.currentTarget.textContent ?? "").replace(/[\u200B\uFEFF]/g, "").replace(/\r\n?/g, "\n").replace(/\n+$/, "");
+          onCommit(value.split("\n"));
+        }}>
       {empty && hint ? <div className="pptx-hint">{hint}</div> : paragraphs.map((p, i) => {
         const maxPt = Math.max(p.end.size, ...p.runs.map((r) => r.style.size));
         const fs = ptToPx(maxPt) * renderScale;
@@ -153,9 +187,12 @@ export function TextBody({ text, hint, cellMode = false }) {
             {bt && <span className="pptx-bullet" style={{ display: "inline-block", minWidth: hang || fs, textIndent: 0, color: rgba(p.runs[0]?.style.color || p.end.color), fontFamily: "Arial, sans-serif" }}>{bt}</span>}
             {p.runs.map((r, j) => {
               const s = r.style;
-              return <span key={j} style={{ fontFamily: font(s.font), fontSize: ptToPx(s.size) * renderScale, fontWeight: s.bold ? 700 : 400, fontStyle: s.italic ? "italic" : "normal", textDecoration: [s.underline && "underline", s.strike && "line-through"].filter(Boolean).join(" ") || "none", color: rgba(s.color), backgroundColor: s.highlight ? rgba(s.highlight) : undefined, verticalAlign: s.baseline > 0 ? "super" : s.baseline < 0 ? "sub" : "baseline" }}>{r.text}</span>;
+              const visibleText = String(r.text ?? "").replace(/[\u200B\uFEFF]/g, "");
+              return <span key={j} style={{ fontFamily: font(s.font), fontSize: ptToPx(s.size) * renderScale, fontWeight: s.bold ? 700 : 400, fontStyle: s.italic ? "italic" : "normal", textDecoration: [s.underline && "underline", s.strike && "line-through"].filter(Boolean).join(" ") || "none", color: rgba(s.color), backgroundColor: s.highlight ? rgba(s.highlight) : undefined, verticalAlign: s.baseline > 0 ? "super" : s.baseline < 0 ? "sub" : "baseline" }}>{visibleText}</span>;
             })}
-            {!p.runs.length && <span style={{ fontSize: fs }}>\u200b</span>}
+            {/* An actual line break gives empty editable paragraphs a caret target;
+                it is not persisted as text and avoids zero-width placeholder characters. */}
+            {editing && p.runs.every((run) => !String(run.text ?? "").replace(/[\u200B\uFEFF]/g, "")) && <br data-empty-caret="true" aria-hidden="true" />}
           </div>
         );
       })}
@@ -211,7 +248,7 @@ function ChartPreview({ info, w, h, note }) {
   );
 }
 
-function TableView({ el, w, h }) {
+function TableView({ el, w, h, tableSelection, editingText, onTableCellSelect, onEditText, onTextCommit, onTextCancel }) {
   const t = el.table;
   if (!t) return <div className="pptx-object-card">Table</div>;
   const accent = t.accent.hex;
@@ -223,12 +260,23 @@ function TableView({ el, w, h }) {
           <tr key={ri} style={{ height: px(r.h) }}>
             {r.cells.map((c, ci) => {
               if (c.hMerge || c.vMerge) return null;
-              const head = t.firstRow && ri === 0;
-              const band = t.bandRow && !head && ri % 2 === 1;
-              const bg = c.fill?.type === "solid" ? rgba(c.fill) : head ? `#${accent}` : band ? `#${accent}22` : t.bandRow ? `#${accent}11` : "transparent";
+              const head = !!t.firstRow && ri === 0;
+              const firstCol = !!t.firstCol && ci === 0;
+              const lastCol = !!t.lastCol && ci === t.cols.length - 1;
+              const totalRow = !!t.lastRow && ri === t.rows.length - 1;
+              const bandRow = !!t.bandRow && ri % 2 === 1 && !head;
+              const bandCol = !!t.bandCol && ci % 2 === 1 && !head;
+              const emphasized = head || firstCol || lastCol || totalRow;
+              const bg = c.fill?.type === "solid" ? rgba(c.fill) : emphasized ? `#${accent}` : bandRow || bandCol ? `#${accent}22` : (t.bandRow || t.bandCol) ? `#${accent}0A` : "transparent";
               return (
-                <td key={ci} colSpan={c.gridSpan} rowSpan={c.rowSpan} style={{ background: bg, color: head ? "#fff" : undefined, fontWeight: head ? 700 : undefined }}>
-                  <TextBody text={c.text} cellMode />
+                <td key={ci} colSpan={c.gridSpan} rowSpan={c.rowSpan}
+                  className={tableSelection?.id === el.id && (tableSelection.scope === "table" || (tableSelection.scope === "row" && tableSelection.row === ri) || (tableSelection.scope === "column" && tableSelection.col === ci) || (tableSelection.scope === "cell" && tableSelection.row === ri && tableSelection.col === ci)) ? `is-table-${tableSelection.scope}-selected` : undefined}
+                  style={{ background: bg, color: emphasized ? "#fff" : undefined, fontWeight: emphasized ? 700 : undefined }}
+                  onClick={(event) => { event.stopPropagation(); onTableCellSelect?.(el.id, ri, ci); }}
+                  onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); onEditText?.(el.id, { row: ri, col: ci }); }}>
+                  <TextBody text={c.text} cellMode editing={editingText?.id === el.id && editingText?.row === ri && editingText?.col === ci}
+                    onEditStart={() => onEditText?.(el.id, { row: ri, col: ci })}
+                    onCommit={(texts) => onTextCommit?.(el.id, texts, { row: ri, col: ci })} onCancel={onTextCancel} />
                 </td>
               );
             })}
@@ -239,9 +287,9 @@ function TableView({ el, w, h }) {
   );
 }
 
-function ElementNode({ el, urls, hints, idPrefix, labels }) {
+function ElementNode({ el, urls, hints, idPrefix, labels, editingText, tableSelection, onTableCellSelect, onAutoSizeText, onEditText, onTextCommit, onTextCancel }) {
   if (el.hidden) return null;
-  if (el.kind === "group") return <>{el.children.map((c, ci) => <ElementNode key={`${c.id}-${ci}`} el={c} urls={urls} hints={hints} idPrefix={idPrefix} labels={labels} />)}</>;
+  if (el.kind === "group") return <>{el.children.map((c, ci) => <ElementNode key={`${c.id}-${ci}`} el={c} urls={urls} hints={hints} idPrefix={idPrefix} labels={labels} editingText={editingText} tableSelection={tableSelection} onTableCellSelect={onTableCellSelect} onAutoSizeText={onAutoSizeText} onEditText={onEditText} onTextCommit={onTextCommit} onTextCancel={onTextCancel} />)}</>;
   const w = px(el.w), h = px(el.h);
   const transforms = [el.rot ? `rotate(${el.rot}deg)` : "", el.flipH ? "scaleX(-1)" : "", el.flipV ? "scaleY(-1)" : ""].filter(Boolean).join(" ");
   const style = { left: px(el.x), top: px(el.y), width: w, height: h, transform: transforms || undefined, transformOrigin: "center center" };
@@ -260,7 +308,7 @@ function ElementNode({ el, urls, hints, idPrefix, labels }) {
       if (el.line && !el.line.none && el.line.hex) inner = <>{inner}<div className="pptx-img-border" style={{ borderColor: `#${el.line.hex}`, borderWidth: Math.max(1, px(el.line.w ?? 12700)), borderRadius: round, opacity: el.line.alpha ?? 1 }} /></>;
       break;
     }
-    case "table": inner = <TableView el={el} w={w} h={h} />; break;
+    case "table": inner = <TableView el={el} w={w} h={h} tableSelection={tableSelection} editingText={editingText} onTableCellSelect={onTableCellSelect} onEditText={onEditText} onTextCommit={onTextCommit} onTextCancel={onTextCancel} />; break;
     case "chart": inner = el.chartInfo.preview
       ? <ChartPreview info={el.chartInfo} w={w} h={h} note={labels.chartPreview} />
       : <div className="pptx-object-card"><strong>{el.chartInfo.title || el.chartInfo.type}</strong>{el.chartInfo.title && <span>{el.chartInfo.type}</span>}<em>{labels.chartNote}</em></div>; break;
@@ -270,7 +318,11 @@ function ElementNode({ el, urls, hints, idPrefix, labels }) {
       inner = (
         <>
           <Geometry el={el} w={w} h={h} idPrefix={idPrefix} />
-          {el.text && <TextBody text={el.text} hint={hints && el.ph ? labels.placeholderHint : null} />}
+          {el.text && <TextBody text={el.text} hint={hints && el.ph ? labels.placeholderHint : null}
+            elementId={el.id} frameW={el.w} frameH={el.h} onAutoSize={onAutoSizeText}
+            editing={editingText?.id === el.id && editingText?.row === undefined}
+            onEditStart={() => onEditText?.(el.id)}
+            onCommit={(texts) => onTextCommit?.(el.id, texts)} onCancel={onTextCancel} />}
         </>
       );
   }
@@ -293,25 +345,29 @@ function backgroundStyle(bg, urls) {
  * canvas preview a drag without touching the document; groups are previewed
  * with a CSS transform so content and selection frame stay in lock-step.
  */
-export default function SlideView({ model, urls, overrides, hints = false, labels }) {
+export default function SlideView({ model, urls, overrides, geometryDrafts, hints = false, labels, editingText, tableSelection, onTableCellSelect, onAutoSizeText, onEditText, onTextCommit, onTextCancel }) {
   const idPrefix = React.useId().replace(/:/g, "");
   const W = px(model.size.w), H = px(model.size.h);
   const renderTop = (el) => {
     if (el.hidden) return null;
     const ov = overrides?.get(el.id);
-    if (!ov) return <ElementNode key={el.id} el={el} urls={urls} hints={hints} idPrefix={idPrefix} labels={labels} />;
+    if (!ov) return <ElementNode key={el.id} el={el} urls={urls} hints={hints} idPrefix={idPrefix} labels={labels} editingText={editingText} tableSelection={tableSelection} onTableCellSelect={onTableCellSelect} onAutoSizeText={onAutoSizeText} onEditText={onEditText} onTextCommit={onTextCommit} onTextCancel={onTextCancel} />;
+    // `geometryDrafts` is only the active pointer drag/resize preview. A height
+    // override coming from textAutoSizeHeights is different: keep auto-sizing live
+    // so additional typing or wrapping can continue to grow the selected frame.
+    const suspendAutoSize = Boolean(geometryDrafts?.has(el.id));
     if (el.kind === "group") {
       const sx = el.w ? ov.w / el.w : 1, sy = el.h ? ov.h / el.h : 1;
       const dx = ov.x + ov.w / 2 - (el.x + el.w / 2), dy = ov.y + ov.h / 2 - (el.y + el.h / 2);
       return (
         <div key={el.id} className="pptx-group-preview" style={{ left: px(el.x), top: px(el.y), width: px(el.w), height: px(el.h), transform: `translate(${px(dx)}px,${px(dy)}px) rotate(${ov.rot - el.rot}deg) scale(${sx},${sy})` }}>
           <div style={{ position: "absolute", left: -px(el.x), top: -px(el.y) }}>
-            {el.children.map((c, ci) => <ElementNode key={`${c.id}-${ci}`} el={c} urls={urls} hints={hints} idPrefix={idPrefix} labels={labels} />)}
+            {el.children.map((c, ci) => <ElementNode key={`${c.id}-${ci}`} el={c} urls={urls} hints={hints} idPrefix={idPrefix} labels={labels} editingText={editingText} tableSelection={tableSelection} onTableCellSelect={onTableCellSelect} onAutoSizeText={null} onEditText={onEditText} onTextCommit={onTextCommit} onTextCancel={onTextCancel} />)}
           </div>
         </div>
       );
     }
-    return <ElementNode key={el.id} el={{ ...el, ...ov }} urls={urls} hints={hints} idPrefix={idPrefix} labels={labels} />;
+    return <ElementNode key={el.id} el={{ ...el, ...ov }} urls={urls} hints={hints} idPrefix={idPrefix} labels={labels} editingText={editingText} tableSelection={tableSelection} onTableCellSelect={onTableCellSelect} onAutoSizeText={suspendAutoSize ? null : onAutoSizeText} onEditText={onEditText} onTextCommit={onTextCommit} onTextCancel={onTextCancel} />;
   };
   return (
     <div className="pptx-slide" style={{ width: W, height: H, ...backgroundStyle(model.background, urls) }}>

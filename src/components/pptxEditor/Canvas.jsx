@@ -11,7 +11,7 @@ const HANDLES = [["nw", 0, 0], ["n", 0.5, 0], ["ne", 1, 0], ["e", 1, 0.5], ["se"
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const boundsOf = (e) => ({ x: e.x, y: e.y, w: e.w, h: e.h, rot: e.rot, flipH: e.flipH, flipV: e.flipV });
 
-const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelect, onSelectionComplete, onInteractionStart, onCommit, onEditText, onCopy, onDelete, onRotate, multi, grid, locked, labels, onZoom, compact }, ref) {
+const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelect, onSelectionComplete, onInteractionStart, onCommit, onEditText, onTextCommit, onTextCancel, onTableCellSelect, onAutoSizeText, textAutoSizeHeights, editingText, tableSelection, onCopy, onDelete, onRotate, multi, grid, locked, labels, onZoom, compact }, ref) {
   const stageRef = React.useRef(null);
   const [size, setSize] = React.useState({ w: 800, h: 600 });
   const [view, setView] = React.useState({ zoom: 1, pan: { x: 0, y: 0 } });
@@ -314,9 +314,20 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
     }
   };
 
-  const overrides = draft;
+  const overrides = React.useMemo(() => {
+    const combined = new Map(draft || []);
+    if (textAutoSizeHeights?.size) {
+      for (const element of model.elements) {
+        const pendingHeight = textAutoSizeHeights.get(element.id);
+        if (!Number.isFinite(pendingHeight) || pendingHeight <= element.h) continue;
+        const base = combined.get(element.id) || boundsOf(element);
+        if (pendingHeight > base.h) combined.set(element.id, { ...base, h: pendingHeight });
+      }
+    }
+    return combined;
+  }, [draft, textAutoSizeHeights, model]);
   const sel = model.elements.filter((e) => selection.includes(e.id));
-  const frames = sel.map((e) => ({ el: e, b: draft?.get(e.id) || boundsOf(e) }));
+  const frames = sel.map((e) => ({ el: e, b: overrides.get(e.id) || boundsOf(e) }));
   const toScreen = (b) => ({ cx: ox + ((b.x + b.w / 2) / EMU_PER_PX) * s, cy: oy + ((b.y + b.h / 2) / EMU_PER_PX) * s, w: (b.w / EMU_PER_PX) * s, h: (b.h / EMU_PER_PX) * s });
   const single = frames.length === 1 ? frames[0] : null;
   const union = frames.length > 1 ? unionBox(frames.map((f) => rotatedBox(f.b))) : null;
@@ -335,7 +346,8 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
     <div ref={stageRef} className="pptx-stage" tabIndex={0} role="application" aria-label={labels.canvas}
       onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={(e) => finish(e, false)} onPointerCancel={(e) => { cancelGesture(); finish(e, true); }} onContextMenu={(e) => e.preventDefault()}>
       <div className="pptx-holder" style={{ transform: `translate(${ox}px,${oy}px) scale(${s})` }}>
-        <SlideView model={model} urls={urls} overrides={overrides} hints labels={labels} />
+        <SlideView model={model} urls={urls} overrides={overrides} geometryDrafts={draft} hints labels={labels} editingText={editingText} tableSelection={tableSelection}
+          onTableCellSelect={onTableCellSelect} onAutoSizeText={onAutoSizeText} onEditText={onEditText} onTextCommit={onTextCommit} onTextCancel={onTextCancel} />
         {grid?.show && <div className="pptx-grid" style={{ backgroundSize: `${GRID / EMU_PER_PX}px ${GRID / EMU_PER_PX}px`, width: W, height: H }} />}
       </div>
       <div className="pptx-overlay" data-testid="pptx-overlay">

@@ -1,11 +1,35 @@
 import React from "react";
 import {
   ArrowDown, ArrowLeft, ArrowRight, ArrowUp, AlignStartVertical, AlignCenterVertical, AlignEndVertical,
-  AlignStartHorizontal, AlignCenterHorizontal, AlignEndHorizontal, BringToFront, SendToBack,
+  BringToFront, SendToBack,
   Group, Ungroup, Copy, Trash2, Lock, Unlock, FlipHorizontal2, FlipVertical2,
-  Type, Square, Table2, Minus, Eye, EyeOff, GripVertical, Plus, Image as ImageIcon,
+  Type, Square, Table2, Minus, Eye, EyeOff, GripVertical, Image as ImageIcon,
 } from "lucide-react";
 import { IconButton, NumberField, Section } from "./Controls.jsx";
+
+// Local table/object vertical-alignment icons. Do not import these names from
+// lucide-react: AlignCenterHorizontal and AlignEndHorizontal are not exports.
+const AlignStartHorizontal = ({ size = 16, strokeWidth = 2, ...props }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" {...props}>
+    <path d="M3 5H21" />
+    <rect x="5" y="9" width="5" height="10" rx="1" />
+    <rect x="14" y="9" width="5" height="6" rx="1" />
+  </svg>
+);
+const AlignCenterHorizontal = ({ size = 16, strokeWidth = 2, ...props }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" {...props}>
+    <path d="M3 12H21" />
+    <rect x="5" y="7" width="5" height="10" rx="1" />
+    <rect x="14" y="9" width="5" height="6" rx="1" />
+  </svg>
+);
+const AlignEndHorizontal = ({ size = 16, strokeWidth = 2, ...props }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" {...props}>
+    <path d="M3 19H21" />
+    <rect x="5" y="9" width="5" height="10" rx="1" />
+    <rect x="14" y="13" width="5" height="6" rx="1" />
+  </svg>
+);
 
 const EMU_PT = 12700;
 const NUDGE_EMU = 12700; // one PowerPoint point per precise nudge
@@ -20,11 +44,7 @@ export function elementLabel(el, t) {
 
 export default function Inspector({ tab = "arrange", sel = [], model, a, t, locked = new Set() }) {
   if (tab === "layers") return <LayersPanel model={model} sel={sel} a={a} t={t} locked={locked} />;
-  if (tab === "table") {
-    const el = sel[0];
-    return el?.kind === "table" ? <TableEditor el={el} a={a} t={t} /> : <p className="pe-note">{t("pptxEditor.selectTableHint")}</p>;
-  }
-  return <ArrangePanel sel={sel} model={model} a={a} t={t} locked={locked} />;
+  return <ArrangePanel sel={sel} a={a} t={t} locked={locked} />;
 }
 
 function ArrangePanel({ sel, a, t, locked }) {
@@ -155,9 +175,9 @@ function LayersPanel({ model, sel, a, t, locked }) {
     <Section title={t("pptxEditor.section.layers")}>
       <div className="pe-layer-order-tools">
         <IconButton icon={BringToFront} text label={t("pptxEditor.toFront")} onClick={() => a.order("front")} disabled={!sel.some((item) => !locked.has(item.id) && !item.readOnlyGeometry)} testId="pptx-front" />
+        <IconButton icon={SendToBack} text label={t("pptxEditor.toBack")} onClick={() => a.order("back")} disabled={!sel.some((item) => !locked.has(item.id) && !item.readOnlyGeometry)} testId="pptx-back" />
         <IconButton icon={ArrowUp} text label={t("pptxEditor.forward")} onClick={() => a.order("forward")} disabled={!sel.some((item) => !locked.has(item.id) && !item.readOnlyGeometry)} testId="pptx-forward" />
         <IconButton icon={ArrowDown} text label={t("pptxEditor.backward")} onClick={() => a.order("backward")} disabled={!sel.some((item) => !locked.has(item.id) && !item.readOnlyGeometry)} testId="pptx-backward" />
-        <IconButton icon={SendToBack} text label={t("pptxEditor.toBack")} onClick={() => a.order("back")} disabled={!sel.some((item) => !locked.has(item.id) && !item.readOnlyGeometry)} testId="pptx-back" />
       </div>
       <p className="pe-note">{t("pptxEditor.layerHint")}</p>
       <ul className="pe-layers" data-testid="pptx-layers">
@@ -190,19 +210,4 @@ function LayersPanel({ model, sel, a, t, locked }) {
       {!list.length && <p className="pe-note">{t("pptxEditor.noLayers")}</p>}
     </Section>
   </div>;
-}
-
-function TableEditor({ el, a, t }) {
-  const tb = el.table;
-  return <Section title={t("pptxEditor.section.table")}>
-    <div className="pe-table-wrap" data-testid="pptx-table-editor"><table><tbody>
-      {tb.rows.map((r, ri) => <tr key={ri}>{r.cells.map((c, ci) => <td key={ci}>
-        <input className="pe-input" defaultValue={c.text?.plain?.join("\n") || ""} key={`${el.id}-${ri}-${ci}-${c.text?.plain?.join("|")}`} aria-label={`${ri + 1},${ci + 1}`} disabled={c.hMerge || c.vMerge}
-          onBlur={(e) => { const v = e.target.value; if (v !== (c.text?.plain?.join("\n") || "")) a.cell(ri, ci, v.split("\n")); }} />
-      </td>)}</tr>)}
-    </tbody></table></div>
-    {tb.hasMerge && <p className="pe-note">{t("pptxEditor.tableMerged")}</p>}
-    <div className="pe-row pe-tools"><IconButton icon={Plus} label={t("pptxEditor.addRow")} text disabled={tb.hasMerge} onClick={() => a.tableRows("add", tb.rows.length - 1)} testId="pptx-add-row" /><IconButton icon={Minus} label={t("pptxEditor.delRow")} text disabled={tb.hasMerge || tb.rows.length < 2} onClick={() => a.tableRows("delete", tb.rows.length - 1)} /></div>
-    <div className="pe-row pe-tools"><IconButton icon={Plus} label={t("pptxEditor.addCol")} text disabled={tb.hasMerge} onClick={() => a.tableCols("add", tb.cols.length - 1)} /><IconButton icon={Minus} label={t("pptxEditor.delCol")} text disabled={tb.hasMerge || tb.cols.length < 2} onClick={() => a.tableCols("delete", tb.cols.length - 1)} /></div>
-  </Section>;
 }

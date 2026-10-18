@@ -3,7 +3,7 @@ import {
   SlidersHorizontal, FlipHorizontal, FlipVertical, Copy, Trash2,
   Group, Ungroup, ArrowUp, ArrowRight, ArrowDown, ArrowLeft, Bold, Italic,
   ChevronLeft, ChevronRight, MoveHorizontal, RotateCcw, Palette, Type,
-  RotateCw, Blend, Paintbrush, Maximize2, Image, Sparkles, Upload,
+  RotateCw, Blend, Paintbrush, Maximize2, Image, Sparkles, Upload, Pipette,
 } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 
@@ -220,6 +220,7 @@ function ColorPickerCard({ label, value, onChange, disabled = false, t }) {
   const rawValue = String(value || "").trim();
   const hasSolidHexValue = /^#[0-9a-f]{3}(?:[0-9a-f]{3})?$/i.test(rawValue);
   const [draft, setDraft] = React.useState(normalized.toUpperCase());
+  const pickerRef = React.useRef(null);
   React.useEffect(() => setDraft(normalizeColor(value).toUpperCase()), [value]);
   const commitHex = () => {
     const candidate = draft.trim().replace(/^#/, "");
@@ -234,13 +235,16 @@ function ColorPickerCard({ label, value, onChange, disabled = false, t }) {
   return (
     <div className="svg-editor-color-picker-card">
       <span className="svg-editor-large-color-swatch" style={{ background: normalized }}>
-        <input aria-label={label} type="color" value={normalized} onChange={(event) => { setDraft(event.target.value.toUpperCase()); onChange(event.target.value); }} disabled={disabled} />
+        <input ref={pickerRef} className="svg-editor-native-color-picker" aria-label={label} type="color" value={normalized} onChange={(event) => { setDraft(event.target.value.toUpperCase()); onChange(event.target.value); }} disabled={disabled} />
       </span>
       <span className="svg-editor-color-value-copy">
         <strong>{label}</strong>
         <input className="svg-editor-color-hex-field" aria-label={`${label} HEX`} value={draft} maxLength={7} spellCheck={false} disabled={disabled} onChange={(event) => setDraft(event.target.value.toUpperCase())} onBlur={commitHex} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); commitHex(); event.currentTarget.blur(); } }} />
       </span>
-      <span className="svg-editor-color-picker-edit">{t?.("svgEditor.chooseColor") || "Choose color"}</span>
+      <button type="button" className="svg-editor-color-picker-edit" onClick={() => pickerRef.current?.click()} disabled={disabled} aria-label={t?.("svgEditor.chooseColor") || "Choose any color"}>
+        <Pipette size={13} aria-hidden="true" />
+        <span>{t?.("svgEditor.chooseColor") || "Choose any color"}</span>
+      </button>
     </div>
   );
 }

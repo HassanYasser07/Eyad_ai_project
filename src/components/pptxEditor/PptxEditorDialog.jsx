@@ -9,17 +9,41 @@ import {
 } from "lucide-react";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
 import { useI18n } from "@/i18n/I18nContext";
-import { PptxPackage, PptxError, readPresentation, readSlide, setSlideBackground, setPresentationBackground, setBounds, deleteElements, duplicateElements, reorderElements, moveElementToLayer, setElementsHidden, groupElements, ungroupElement, setText, setTextProps, setShapeStyle, setOpacity, addTextBox, addShape, addPicture, replacePicture, setAltText, tableRows, tableCols, copyElements, pasteElements, addSlide, duplicateSlide, deleteSlide, moveSlide, listLayouts, hasSections, computeAlign, computeDistribute, rotatedBox, unionBox, applySlidePalette } from "./engine/index.js";
+import { PptxPackage, PptxError, readPresentation, readSlide, setSlideBackground, setPresentationBackground, capturePresentationBackgrounds, restorePresentationBackgrounds, captureSlidePaletteState, restoreSlidePaletteStates, setBounds, deleteElements, duplicateElements, reorderElements, moveElementToLayer, setElementsHidden, groupElements, ungroupElement, setText, setTextProps, setShapeStyle, setOpacity, addTextBox, addShape, addTable, addPicture, replacePicture, setAltText, tableRows, tableCols, setTableOptions, setTableRangeTextProps, setTableRangeCellFill, copyElements, pasteElements, addSlide, duplicateSlide, deleteSlide, moveSlide, listLayouts, hasSections, computeAlign, computeDistribute, rotatedBox, unionBox, applySlidePalette } from "./engine/index.js";
 import { checkPptxFile, readFile, saveBytes, pickFile, PPTX_ACCEPT, IMAGE_ACCEPT, safeName, saveDraft, loadDraft, clearDraft, imageInfo } from "./fileIO.js";
 import { disposeMediaUrls, useMediaUrls } from "./useMediaUrls.js";
 import Canvas from "./Canvas.jsx";
 import SlideView, { collectImagePaths } from "./SlideView.jsx";
-import Inspector, { elementLabel } from "./Inspector.jsx";
+import Inspector from "./Inspector.jsx";
 import ColorPalettePicker from "../shared/ColorPalettePicker.jsx";
 import { PRESENTATION_PALETTES } from "../shared/presentationPalettes.js";
-import { BottomSheet, TextSheet, SlidesPanel, useVisualViewport } from "./Sheets.jsx";
+import { BottomSheet, SlidesPanel, useVisualViewport } from "./Sheets.jsx";
 import { IconButton, ColorField, NumberField, SliderField, SelectField } from "./Controls.jsx";
 import "./pptxEditor.css";
+
+// Local table-cell vertical-alignment icons. Keep these local rather than
+// importing nonexistent Align*Horizontal names from lucide-react.
+const AlignStartHorizontal = ({ size = 16, strokeWidth = 2, ...props }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" {...props}>
+    <path d="M3 5H21" />
+    <rect x="5" y="9" width="5" height="10" rx="1" />
+    <rect x="14" y="9" width="5" height="6" rx="1" />
+  </svg>
+);
+const AlignCenterHorizontal = ({ size = 16, strokeWidth = 2, ...props }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" {...props}>
+    <path d="M3 12H21" />
+    <rect x="5" y="7" width="5" height="10" rx="1" />
+    <rect x="14" y="9" width="5" height="6" rx="1" />
+  </svg>
+);
+const AlignEndHorizontal = ({ size = 16, strokeWidth = 2, ...props }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" {...props}>
+    <path d="M3 19H21" />
+    <rect x="5" y="9" width="5" height="10" rx="1" />
+    <rect x="14" y="13" width="5" height="6" rx="1" />
+  </svg>
+);
 
 const bounds = (e) => ({ x: e.x, y: e.y, w: e.w, h: e.h, rot: e.rot, flipH: e.flipH, flipV: e.flipV });
 
@@ -53,12 +77,20 @@ export default function PptxEditorDialog({ onClose }) {
   const [sheet, setSheet] = React.useState(null); // responsive command sheet / properties / shapes / layouts / report
   const [activeRibbon, setActiveRibbon] = React.useState("home");
   const [allSlidesBackground, setAllSlidesBackground] = React.useState(false);
+  const backgroundSnapshotsRef = React.useRef(null);
+  const [allSlidesPalette, setAllSlidesPalette] = React.useState(false);
+  const paletteSnapshotsRef = React.useRef(null);
   const [selectedPaletteId, setSelectedPaletteId] = React.useState("ocean-mist");
+  const [tableInsertConfig, setTableInsertConfig] = React.useState({ rows: 3, cols: 3 });
+  const [tableFocus, setTableFocus] = React.useState({ id: null, row: 0, col: 0, scope: "cell" });
   const [previewHiddenIds, setPreviewHiddenIds] = React.useState(() => new Set());
   const [clipboardReady, setClipboardReady] = React.useState(false);
   const [shapeQuery, setShapeQuery] = React.useState("");
   const [altTextDraft, setAltTextDraft] = React.useState("");
   const [textEdit, setTextEdit] = React.useState(null);
+  const [textAutoSizeDrafts, setTextAutoSizeDrafts] = React.useState(() => new Map());
+  const textAutoSizeDraftsRef = React.useRef(textAutoSizeDrafts);
+  textAutoSizeDraftsRef.current = textAutoSizeDrafts;
   const [slidesOpen, setSlidesOpen] = React.useState(false);
   const [confirm, setConfirm] = React.useState(null);
   const [report, setReport] = React.useState(null);
@@ -95,12 +127,18 @@ export default function PptxEditorDialog({ onClose }) {
     else sel.forEach((item) => next.add(item.id));
     return next;
   });
+  const applyPaletteToSlides = (palette, slides = pres?.slides || []) => {
+    if (!pkg || !slides.length) return;
+    pkg.transact(`Apply ${String(palette.name || "color")} palette to all slides`, () => {
+      for (const slide of slides) applySlidePalette(pkg, slide.path, palette);
+    });
+  };
   const applyColorPalette = (palette) => {
     try {
-      applySlidePalette(pkg, path, palette);
-      setFeedback({ kind: "ok", text: t("palette.applied") });
+      if (allSlidesPalette) applyPaletteToSlides(palette);
+      else if (path) applySlidePalette(pkg, path, palette);
+      setFeedback({ kind: "ok", text: allSlidesPalette ? t("palette.appliedAll") : t("palette.applied") });
       setSelectedPaletteId(palette.id);
-      setAllSlidesBackground(false);
       setSheet(null);
     } catch (err) {
       // Keep the gallery open if a particular imported slide cannot be styled safely.
@@ -108,6 +146,29 @@ export default function PptxEditorDialog({ onClose }) {
       const message = err?.code && t(key) !== key ? t(key) : t("pptxEditor.err.generic");
       setFeedback({ kind: "error", text: message });
     }
+  };
+  const toggleAllSlidesPalette = (checked) => {
+    if (checked) {
+      if (!pkg || !pres?.slides?.length) return;
+      paletteSnapshotsRef.current = pres.slides.map((slide) => captureSlidePaletteState(pkg, slide.path));
+      setAllSlidesPalette(true);
+      try {
+        const palette = PRESENTATION_PALETTES.find((item) => item.id === selectedPaletteId) || PRESENTATION_PALETTES[0];
+        applyPaletteToSlides(palette, pres.slides);
+        setFeedback({ kind: "ok", text: t("palette.appliedAll") });
+      } catch (err) {
+        paletteSnapshotsRef.current = null;
+        setAllSlidesPalette(false);
+        setFeedback({ kind: "error", text: errText(err) });
+      }
+      return;
+    }
+    const snapshot = paletteSnapshotsRef.current;
+    try {
+      if (snapshot?.length) restoreSlidePaletteStates(pkg, snapshot);
+      setFeedback({ kind: "ok", text: t("palette.restoredAll") });
+    } catch (err) { setFeedback({ kind: "error", text: errText(err) }); }
+    finally { paletteSnapshotsRef.current = null; setAllSlidesPalette(false); }
   };
   const lockedIds = React.useMemo(() => new Set([...locked].filter((k) => okModel && k.startsWith(`${okModel.path}#`)).map((k) => k.split("#")[1])), [locked, okModel]);
   const labels = React.useMemo(() => ({ canvas: t("pptxEditor.canvas"), locked: t("pptxEditor.locked"), loading: t("pptxEditor.loadingImage"), imageUnavailable: t("pptxEditor.imageUnavailable"), chartNote: t("pptxEditor.chartNote"), chartPreview: t("pptxEditor.chartPreview"), viewOnly: t("pptxEditor.viewOnly"), placeholderHint: t("pptxEditor.placeholderHint"), selectionActions: t("pptxEditor.selectionActions"), quickCopy: t("pptxEditor.quickCopyHint"), quickRotate: t("pptxEditor.quickRotateHint"), quickDelete: t("pptxEditor.quickDeleteHint") }), [t]);
@@ -120,18 +181,25 @@ export default function PptxEditorDialog({ onClose }) {
     const kinds = new Set(sel.map((item) => item.kind));
     if (kinds.size > 1) { setActiveRibbon("home"); return; }
     const kind = sel[0].kind;
-    if (kind === "text" || kind === "table") setActiveRibbon("text");
+    if (kind === "table") setActiveRibbon("table");
+    else if (kind === "text") setActiveRibbon("text");
     else if (kind === "shape" || kind === "line") setActiveRibbon("shapes");
     else if (kind === "image") setActiveRibbon("image");
     else setActiveRibbon("home");
   // Only selection identity triggers contextual ribbon navigation, not style/model updates.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectionKey, safeIdx]);
+  React.useEffect(() => {
+    const table = sel.length === 1 && sel[0].kind === "table" ? sel[0] : null;
+    if (table && tableFocus.id !== table.id) setTableFocus({ id: table.id, row: 0, col: 0, scope: "cell" });
+  // Selection identity, not cell formatting updates, controls default table focus.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectionKey, safeIdx]);
   const activateContextForSelection = React.useCallback((ids) => {
     const items = okModel?.elements.filter((item) => ids.includes(item.id)) || [];
     if (!items.length) return;
     const kinds = new Set(items.map((item) => item.kind));
-    const next = kinds.size > 1 ? "home" : (["text", "table"].includes(items[0].kind) ? "text" : (["shape", "line"].includes(items[0].kind) ? "shapes" : (items[0].kind === "image" ? "image" : "home")));
+    const next = kinds.size > 1 ? "home" : (items[0].kind === "table" ? "table" : (items[0].kind === "text" ? "text" : (["shape", "line"].includes(items[0].kind) ? "shapes" : (items[0].kind === "image" ? "image" : "home"))));
     setActiveRibbon(next);
     if (compact && !textEdit) {
       clearContextSheetTimer();
@@ -169,7 +237,7 @@ export default function PptxEditorDialog({ onClose }) {
       original.current = orig || new Uint8Array(buf).slice();
       if (pkgRef.current) disposeMediaUrls(pkgRef.current);
       if (fromDraft) p.savedVersion = -1;
-      setPkg(p); setFileName(name); setIdx(0); setSelection([]); setLocked(new Set()); setSheet(null); setTextEdit(null); setActiveRibbon("home"); setAllSlidesBackground(false); setPreviewHiddenIds(new Set()); setSelectedPaletteId("ocean-mist"); clipboard.current = null; setClipboardReady(false); setShapeQuery("");
+      setPkg(p); setFileName(name); setIdx(0); setSelection([]); setLocked(new Set()); setSheet(null); setTextEdit(null); setTextAutoSizeDrafts(new Map()); setActiveRibbon("home"); setAllSlidesBackground(false); backgroundSnapshotsRef.current = null; setAllSlidesPalette(false); paletteSnapshotsRef.current = null; setPreviewHiddenIds(new Set()); setSelectedPaletteId("ocean-mist"); setTableInsertConfig({ rows: 3, cols: 3 }); setTableFocus({ id: null, row: 0, col: 0, scope: "cell" }); clipboard.current = null; setClipboardReady(false); setShapeQuery("");
       setReport({ slides: pr.slides.length, warnings, sections: hasSections(p), problems: p.validate() });
     } catch (err) { setFeedback({ kind: "error", text: errText(err) }); } finally { setBusy(null); }
   };
@@ -241,9 +309,11 @@ export default function PptxEditorDialog({ onClose }) {
     shape: (style) => run(() => { const editable = sel.filter((item) => !lockedIds.has(item.id) && !item.readOnlyGeometry).map((item) => item.id); if (editable.length) setShapeStyle(pkg, path, editable, style); }),
     opacity: (v) => run(() => { const editable = sel.filter((item) => !lockedIds.has(item.id)).map((item) => item.id); if (editable.length) setOpacity(pkg, path, editable, v); }),
     editText: () => openText(ids[0]),
-    cell: (r, c, texts) => run(() => { if (ids[0] && !lockedIds.has(ids[0])) setText(pkg, path, ids[0], texts, { row: r, col: c }); }),
     tableRows: (op, i) => run(() => { if (ids[0] && !lockedIds.has(ids[0])) tableRows(pkg, path, ids[0], op, i); }),
     tableCols: (op, i) => run(() => { if (ids[0] && !lockedIds.has(ids[0])) tableCols(pkg, path, ids[0], op, i); }),
+    tableOptions: (options) => run(() => { if (ids[0] && !lockedIds.has(ids[0])) setTableOptions(pkg, path, ids[0], options); }),
+    tableRangeText: (row, col, scope, props) => run(() => { if (ids[0] && !lockedIds.has(ids[0])) setTableRangeTextProps(pkg, path, ids[0], row, col, scope, props); }),
+    tableRangeFill: (row, col, scope, hex) => run(() => { if (ids[0] && !lockedIds.has(ids[0])) setTableRangeCellFill(pkg, path, ids[0], row, col, scope, hex); }),
     alt: (txt) => run(() => { const image = sel.find((item) => item.kind === "image" && !lockedIds.has(item.id)); if (image) setAltText(pkg, path, image.id, txt); }),
     replaceImage: () => pickFile({ accept: IMAGE_ACCEPT, onPick: async (f) => {
       if (!f) return;
@@ -253,18 +323,72 @@ export default function PptxEditorDialog({ onClose }) {
     } }),
   }), [pkg, path, ids, sel, lockedIds, okModel, run, t]);  
 
-  function openText(id) {
+  function openText(id, cell = null) {
     clearContextSheetTimer();
     const el = okModel?.elements.find((e) => e.id === id);
     if (!el) return;
-    if (el.kind === "table") { setSelection([id]); setActiveRibbon("text"); setSheet("table"); return; }
-    if (!el.text && el.kind !== "shape" && el.kind !== "text") return;
+    if (el.kind === "table" && !cell) { setSelection([id]); setActiveRibbon("table"); setSheet(compact ? "ribbon" : null); return; }
+    if (!cell && !el.text && el.kind !== "shape" && el.kind !== "text") return;
     if (lockedIds.has(id)) { setFeedback({ kind: "error", text: t("pptxEditor.lockedHint") }); return; }
-    setSelection([id]); setActiveRibbon("text"); setSheet(null); setTextEdit({ id });
+    setSelection([id]);
+    if (cell) setTableFocus({ id, row: cell.row, col: cell.col, scope: "cell" });
+    setActiveRibbon(cell ? "table" : "text"); setSheet(null); setTextEdit({ id, ...(cell || {}) });
   }
+  const commitInlineText = (id, texts, cell = null) => {
+    const cleaned = (Array.isArray(texts) ? texts : [texts]).map((value) => String(value ?? "").replace(/[\u200B\uFEFF]/g, ""));
+    const nextText = cleaned.join("\n").replace(/\n+$/, "");
+    const target = okModel?.elements.find((item) => item.id === id);
+    const existing = cell
+      ? target?.table?.rows?.[cell.row]?.cells?.[cell.col]?.text?.plain?.join("\n")
+      : target?.text?.plain?.join("\n");
+    const pendingHeight = !cell ? textAutoSizeDraftsRef.current.get(id) : null;
+    const needsHeight = Number.isFinite(pendingHeight) && target && pendingHeight > target.h + 2 * 9525;
+    if (nextText !== String(existing ?? "").replace(/[\u200B\uFEFF]/g, "").replace(/\n+$/, "")) {
+      run(() => setText(pkg, path, id, cleaned, cell, needsHeight ? pendingHeight : null, needsHeight ? bounds(target) : null));
+    } else if (needsHeight) {
+      run(() => setBounds(pkg, path, [{ ...bounds(target), h: pendingHeight }], "Fit text to content"));
+    }
+    setTextAutoSizeDrafts((current) => {
+      if (!current.has(id)) return current;
+      const next = new Map(current); next.delete(id); return next;
+    });
+    setTextEdit(null);
+  };
+  const selectTableCell = (id, row, col) => {
+    setSelection([id]);
+    setTableFocus({ id, row, col, scope: "cell" });
+    setActiveRibbon("table");
+    setTextEdit(null);
+    if (compact) setSheet("ribbon");
+  };
+  const cancelInlineText = () => {
+    const id = textEdit?.id;
+    if (id) setTextAutoSizeDrafts((current) => { if (!current.has(id)) return current; const next = new Map(current); next.delete(id); return next; });
+    setTextEdit(null);
+  };
   const commitBounds = (changes, label) => run(() => setBounds(pkg, path, changes, label));
+  const autoSizeTextHeight = React.useCallback((id, suggestedHeight, isEditing = false) => {
+    const element = okModel?.elements.find((item) => item.id === id);
+    if (!pkg || !path || !element || element.kind === "table" || lockedIds.has(id) || element.readOnlyGeometry) return;
+    const targetHeight = Math.ceil(Number(suggestedHeight) || 0);
+    const draftHeight = textAutoSizeDraftsRef.current.get(id) || 0;
+    const currentHeight = Math.max(element.h, draftHeight);
+    // Auto-sizing is strictly grow-only: it fixes clipped wrapped text without
+    // changing the user's width or shrinking existing text/boxes unexpectedly.
+    if (!Number.isFinite(targetHeight) || targetHeight <= currentHeight + 2 * 9525) return;
+    if (isEditing) {
+      setTextAutoSizeDrafts((current) => {
+        const oldHeight = Math.max(element.h, current.get(id) || 0);
+        if (targetHeight <= oldHeight + 2 * 9525) return current;
+        const next = new Map(current); next.set(id, targetHeight); return next;
+      });
+      return;
+    }
+    try { setBounds(pkg, path, [{ ...bounds(element), h: targetHeight }], "Fit text to content"); }
+    catch { setFeedback({ kind: "error", text: t("pptxEditor.err.generic") }); }
+  }, [okModel, pkg, path, lockedIds, t]);
   const center = (w, h) => ({ x: (okModel.size.w - w) / 2, y: (okModel.size.h - h) / 2 });
-  const insertText = () => run(() => { const w = okModel.size.w * 0.4, h = okModel.size.h * 0.14; const id = addTextBox(pkg, path, { ...center(w, h), w, h, text: t("pptxEditor.newText") }); setSelection([id]); setActiveRibbon("text"); setPanel("arrange"); setTextEdit({ id }); });
+  const insertText = () => run(() => { const w = okModel.size.w * 0.4, h = okModel.size.h * 0.14; const id = addTextBox(pkg, path, { ...center(w, h), w, h, text: t("pptxEditor.newText") }); setSelection([id]); setActiveRibbon("text"); setPanel("arrange"); setSheet(null); setTextEdit({ id }); });
   const insertShape = (prst) => run(() => {
     const square = ["diamond", "triangle", "rtTriangle", "pentagon", "hexagon", "octagon", "plus", "heart", "lightningBolt", "sun", "moon", "star4", "star5", "star6", "star8", "flowChartProcess", "flowChartPredefinedProcess", "flowChartAlternateProcess", "flowChartTerminator", "flowChartDecision", "flowChartConnector", "flowChartPreparation", "flowChartOffpageConnector"].includes(prst);
     const verticalArrow = ["upArrow", "downArrow", "upDownArrow"].includes(prst);
@@ -272,6 +396,15 @@ export default function PptxEditorDialog({ onClose }) {
     const h = prst === "line" ? 0 : verticalArrow ? okModel.size.h * 0.28 : square ? w : w * 0.7;
     const id = addShape(pkg, path, { prst, ...center(w, h), w, h }); setSelection([id]); setActiveRibbon("shapes"); setPanel("arrange"); setSheet(compact ? "ribbon" : null);
   });
+  const insertTable = (rows = tableInsertConfig.rows, cols = tableInsertConfig.cols) => {
+    const rowCount = Math.max(1, Math.min(12, Math.trunc(Number(rows) || 3)));
+    const colCount = Math.max(1, Math.min(12, Math.trunc(Number(cols) || 3)));
+    run(() => {
+      const w = okModel.size.w * 0.62, h = okModel.size.h * 0.44;
+      const id = addTable(pkg, path, { ...center(w, h), w, h, rows: rowCount, cols: colCount });
+      setSelection([id]); setTableFocus({ id, row: 0, col: 0, scope: "cell" }); setActiveRibbon("table"); setPanel("arrange"); setSheet(compact ? "ribbon" : null);
+    }, t("pptxEditor.tableInserted"));
+  };
   const insertImage = () => pickFile({ accept: IMAGE_ACCEPT, onPick: async (f) => {
     if (!f) return;
     if (f.size > 25 * 1024 * 1024) { setFeedback({ kind: "error", text: t("pptxEditor.err.FILE_TOO_LARGE") }); return; }
@@ -324,7 +457,6 @@ export default function PptxEditorDialog({ onClose }) {
     setActiveRibbon(key);
     if (!compact) return;
     if (key === "arrange" || key === "layers") { setPanel(key); setSheet("panel"); }
-    else if (key === "table") setSheet("table");
     else setSheet("ribbon");
   };
   const requestDeleteCurrentSlide = () => setConfirm({
@@ -334,9 +466,15 @@ export default function PptxEditorDialog({ onClose }) {
   const toggleAllSlidesBackground = (checked) => {
     if (checked) {
       if (okModel?.background?.type !== "solid") return;
+      backgroundSnapshotsRef.current = capturePresentationBackgrounds(pkg);
       a.background(okModel.background.hex, true);
+      setAllSlidesBackground(true);
+      return;
     }
-    setAllSlidesBackground(checked);
+    const snapshots = backgroundSnapshotsRef.current;
+    if (snapshots) run(() => restorePresentationBackgrounds(pkg, snapshots), t("pptxEditor.backgroundRestoredAll"));
+    backgroundSnapshotsRef.current = null;
+    setAllSlidesBackground(false);
   };
   const setBackgroundColor = (hex) => a.background(hex, allSlidesBackground);
   const resetBackground = () => a.background(null, allSlidesBackground);
@@ -381,7 +519,6 @@ export default function PptxEditorDialog({ onClose }) {
 
   const onDrop = (e) => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer?.files?.[0]; if (f) openFile(f); };
   const Zoom = <><IconButton icon={ZoomOut} label={t("pptxEditor.zoomOut")} onClick={() => canvasRef.current?.zoomBy(0.8)} /><span className="pe-zoom" data-testid="pptx-zoom">{zoom}%</span><IconButton icon={ZoomIn} label={t("pptxEditor.zoomIn")} onClick={() => canvasRef.current?.zoomBy(1.25)} /><IconButton icon={Maximize} label={t("pptxEditor.fitScreen")} onClick={() => canvasRef.current?.fit()} testId="pptx-fit" /></>;
-  const textEl = textEdit && okModel?.elements.find((e) => e.id === textEdit.id);
   const style = vp.h ? { height: vp.h, transform: vp.top ? `translateY(${vp.top}px)` : undefined } : undefined;
   const selectedEl = sel[0] || null;
   const selectedOpacity = selectedEl?.kind === "image"
@@ -392,6 +529,11 @@ export default function PptxEditorDialog({ onClose }) {
   React.useEffect(() => { setAltTextDraft(selectedEl?.kind === "image" ? (selectedEl.alt || "") : ""); }, [selectedEl?.id, selectedEl?.kind, selectedEl?.alt]);
   const ribbonColors = okModel ? ["accent1", "accent2", "accent3", "accent4", "accent5", "accent6", "dk2", "lt2"].map((k) => okModel.theme.colors[k]).filter(Boolean) : [];
   const textStyle = selectedEl?.text?.paragraphs?.find((p) => p.runs.length)?.runs[0]?.style || selectedEl?.text?.paragraphs?.[0]?.end || null;
+  const focusIsTable = selectedEl?.kind === "table" && tableFocus.id === selectedEl.id;
+  const tableRowIndex = focusIsTable ? Math.max(0, Math.min(tableFocus.row, (selectedEl.table?.rows?.length || 1) - 1)) : 0;
+  const tableColIndex = focusIsTable ? Math.max(0, Math.min(tableFocus.col, (selectedEl.table?.cols?.length || 1) - 1)) : 0;
+  const selectedTableCell = focusIsTable ? selectedEl.table?.rows?.[tableRowIndex]?.cells?.[tableColIndex] : null;
+  const tableTextStyle = selectedTableCell?.text?.paragraphs?.find((p) => p.runs.length)?.runs[0]?.style || selectedTableCell?.text?.paragraphs?.[0]?.end || null;
   const textHasContent = (e) => !!e?.text?.plain?.some((v) => String(v).trim());
   const canTextEdit = sel.length > 0 && sel.every((e) => e.kind !== "table" && (e.kind === "text" || textHasContent(e)));
   const canShapeEdit = sel.length > 0 && sel.every((e) => e.kind === "shape" || e.kind === "line");
@@ -405,7 +547,7 @@ export default function PptxEditorDialog({ onClose }) {
   const flipDisabled = !canFlipSelection;
   const canEditImageAlt = sel.length === 1 && selectedEl?.kind === "image" && !imageDisabled;
   const disabledField = (disabled, child) => <fieldset disabled={disabled} className={`pe-disabled-control ${disabled ? "is-disabled" : ""}`} aria-disabled={disabled || undefined}>{child}</fieldset>;
-  const ribbonTabs = ["home", "insert", "design", "text", "shapes", "image", "view"];
+  const ribbonTabs = ["home", "insert", "design", "text", "shapes", "image", "table", "view"];
   const ribbonContent = (() => {
     if (activeRibbon === "home") return <>
       <RibbonGroup title={t("pptxEditor.ribbon.group.slides")}>
@@ -424,10 +566,10 @@ export default function PptxEditorDialog({ onClose }) {
         <RibbonButton icon={Copy} label={t("pptxEditor.duplicate")} onClick={a.duplicate} disabled={!ids.length || sel.every((e) => lockedIds.has(e.id) || e.readOnlyGeometry)} testId="pptx-duplicate" />
         <RibbonButton icon={Trash2} label={t("pptxEditor.delete")} onClick={a.remove} disabled={!ids.length || sel.every((e) => lockedIds.has(e.id) || e.readOnlyGeometry)} danger testId="pptx-delete" />
       </RibbonGroup>
-      {selectedEl?.kind === "table" && <RibbonGroup title={t("pptxEditor.section.table")}><RibbonButton icon={Table2} label={t("pptxEditor.editTable")} onClick={() => setSheet("table")} /></RibbonGroup>}
     </>;
     if (activeRibbon === "insert") return <>
       <RibbonGroup title={t("pptxEditor.ribbon.group.slides")}><RibbonButton icon={LayoutGrid} label={t("pptxEditor.addSlide")} onClick={slideOps.add} /></RibbonGroup>
+      <RibbonGroup title={t("pptxEditor.ribbon.group.tables")}><RibbonButton icon={Table2} label={t("pptxEditor.insertTable")} onClick={() => { setTableInsertConfig({ rows: 3, cols: 3 }); setSheet("insertTable"); }} testId="pptx-insert-table" /></RibbonGroup>
       <RibbonGroup title={t("pptxEditor.ribbon.group.shapes")}>
         <RibbonButton icon={Shapes} label={t("pptxEditor.allShapes")} onClick={() => { setShapeQuery(""); setSheet("insertShape"); }} testId="pptx-all-shapes" />
         <RibbonButton icon={Square} label={t("pptxEditor.shape.rect")} onClick={() => insertShape("rect")} testId="pptx-add-rect" />
@@ -438,9 +580,9 @@ export default function PptxEditorDialog({ onClose }) {
     </>;
     if (activeRibbon === "design") return <>
       <RibbonGroup title={t("pptxEditor.ribbon.group.background")}>
-        <ColorField label={t("pptxEditor.backgroundColor")} value={okModel?.background?.type === "solid" ? okModel.background.hex : null} themeColors={ribbonColors} testId="pptx-ribbon-background"
-          onChange={setBackgroundColor} onNone={resetBackground} />
-        <label className="pe-checkbox-row pe-background-scope" title={t("pptxEditor.backgroundAllHint")}>
+        <div className="pe-design-background-color"><ColorField label={t("pptxEditor.backgroundColor")} value={okModel?.background?.type === "solid" ? okModel.background.hex : null} themeColors={ribbonColors} testId="pptx-ribbon-background" customColorLabel={t("pptxEditor.customColor")}
+          onChange={setBackgroundColor} onNone={resetBackground} /></div>
+        <label className="pe-checkbox-row pe-scope-card pe-background-scope" title={t("pptxEditor.backgroundAllHint")}>
           <input type="checkbox" checked={allSlidesBackground} disabled={okModel?.background?.type !== "solid" && !allSlidesBackground} data-testid="pptx-apply-background-all"
             onChange={(event) => toggleAllSlidesBackground(event.target.checked)} />
           <span>{t("pptxEditor.applyBackgroundAllNow")}</span>
@@ -462,10 +604,16 @@ export default function PptxEditorDialog({ onClose }) {
         <RibbonButton icon={RotateCcw} label={t("pptxEditor.backgroundResetAllNow")} onClick={() => a.background(null, true)} />
       </RibbonGroup>
       <RibbonGroup title={t("palette.title")}>
-        <button type="button" className="pe-palette-open-button" onClick={() => setSheet("palettes")} data-testid="pptx-open-palettes" aria-label={t("palette.open")}>
-          <span className="pe-palette-circle" aria-hidden="true">{PRESENTATION_PALETTES.find((item) => item.id === selectedPaletteId)?.colors.slice(0, 5).map((color) => <i key={color} style={{ background: color }} />)}</span>
-          <span>{t("palette.open")}</span>
-        </button>
+        <div className="pe-palette-control-stack">
+          <button type="button" className="pe-palette-open-button" onClick={() => setSheet("palettes")} data-testid="pptx-open-palettes" aria-label={t("palette.open")}>
+            <span className="pe-palette-circle" aria-hidden="true">{PRESENTATION_PALETTES.find((item) => item.id === selectedPaletteId)?.colors.slice(0, 5).map((color) => <i key={color} style={{ background: color }} />)}</span>
+            <span>{t("palette.open")}</span>
+          </button>
+          <label className="pe-checkbox-row pe-scope-card pe-palette-scope" title={t("palette.applyAllHint")}>
+            <input type="checkbox" checked={allSlidesPalette} data-testid="pptx-apply-palette-all" onChange={(event) => toggleAllSlidesPalette(event.target.checked)} />
+            <span>{t("palette.applyAllSlides")}</span>
+          </label>
+        </div>
       </RibbonGroup>
     </>;
     if (activeRibbon === "text") return <>
@@ -483,13 +631,12 @@ export default function PptxEditorDialog({ onClose }) {
         <RibbonButton icon={Strikethrough} label={t("pptxEditor.strike")} active={!!textStyle?.strike} onClick={() => a.text({ strike: !textStyle?.strike })} disabled={formatDisabled} />
       </RibbonGroup>
       <RibbonGroup title={t("pptxEditor.ribbon.group.textColor")}>
-        {disabledField(formatDisabled, <ColorField label={t("pptxEditor.textColor")} value={textStyle?.color?.hex} themeColors={ribbonColors} onChange={(hex) => a.text({ color: hex })} />)}
-        {disabledField(formatDisabled, <ColorField label={t("pptxEditor.highlight")} value={textStyle?.highlight?.hex} themeColors={ribbonColors} onChange={(hex) => a.text({ highlight: hex })} onNone={() => a.text({ highlight: null })} />)}
+        {disabledField(formatDisabled, <ColorField label={t("pptxEditor.textColor")} value={textStyle?.color?.hex} themeColors={ribbonColors} customColorLabel={t("pptxEditor.customColor")} onChange={(hex) => a.text({ color: hex })} />)}
+        {disabledField(formatDisabled, <ColorField label={t("pptxEditor.highlight")} value={textStyle?.highlight?.hex} themeColors={ribbonColors} customColorLabel={t("pptxEditor.customColor")} onChange={(hex) => a.text({ highlight: hex })} onNone={() => a.text({ highlight: null })} />)}
       </RibbonGroup>
       <RibbonGroup title={t("pptxEditor.ribbon.group.paragraph")}>
         {[ ["l", AlignStartVertical, "alignLeft"], ["ctr", AlignCenterVertical, "alignCenter"], ["r", AlignEndVertical, "alignRight"] ].map(([v, I, k]) => <RibbonButton key={v} icon={I} label={t(`pptxEditor.${k}`)} onClick={() => a.text({ align: v })} disabled={formatDisabled} />)}
         <RibbonButton icon={List} label={t("pptxEditor.bullets")} onClick={() => a.text({ bullet: selectedEl?.text?.paragraphs?.[0]?.bullet?.kind === "none" })} disabled={formatDisabled} />
-        <RibbonButton icon={Table2} label={t("pptxEditor.editTable")} onClick={() => setSheet("table")} disabled={selectedEl?.kind !== "table"} />
       </RibbonGroup>
       <RibbonGroup title={t("pptxEditor.ribbon.group.transform")}>
         <RibbonButton icon={FlipHorizontal2} label={t("pptxEditor.flipH")} onClick={a.flipH} disabled={flipDisabled} />
@@ -505,8 +652,8 @@ export default function PptxEditorDialog({ onClose }) {
         <RibbonButton icon={Trash2} label={t("pptxEditor.delete")} danger onClick={a.remove} disabled={!canShapeEdit || shapeDisabled} />
       </RibbonGroup>
       <RibbonGroup title={t("pptxEditor.section.appearance")}>
-        {disabledField(!canShapeFill || shapeDisabled, <ColorField label={t("pptxEditor.fill")} value={selectedEl?.fill?.type === "solid" ? selectedEl.fill.hex : null} themeColors={ribbonColors} testId="pptx-ribbon-fill" onChange={(hex) => a.shape({ fill: { hex, alpha: selectedEl?.fill?.alpha ?? (selectedEl?.fill?.type === "gradient" ? selectedEl.fill.stops?.[0]?.alpha : 1) ?? 1 } })} onNone={() => a.shape({ fill: { none: true } })} />)}
-        {disabledField(!canShapeLine || shapeDisabled, <ColorField label={t("pptxEditor.line")} value={selectedEl?.line && !selectedEl.line.none ? selectedEl.line.hex : null} themeColors={ribbonColors} testId="pptx-ribbon-line" onChange={(hex) => a.shape({ line: { hex, w: selectedEl?.line?.w || 12700, alpha: selectedEl?.line?.alpha ?? 1 } })} onNone={() => a.shape({ line: { none: true } })} />)}
+        {disabledField(!canShapeFill || shapeDisabled, <ColorField label={t("pptxEditor.fill")} value={selectedEl?.fill?.type === "solid" ? selectedEl.fill.hex : null} themeColors={ribbonColors} customColorLabel={t("pptxEditor.customColor")} testId="pptx-ribbon-fill" onChange={(hex) => a.shape({ fill: { hex, alpha: selectedEl?.fill?.alpha ?? (selectedEl?.fill?.type === "gradient" ? selectedEl.fill.stops?.[0]?.alpha : 1) ?? 1 } })} onNone={() => a.shape({ fill: { none: true } })} />)}
+        {disabledField(!canShapeLine || shapeDisabled, <ColorField label={t("pptxEditor.line")} value={selectedEl?.line && !selectedEl.line.none ? selectedEl.line.hex : null} themeColors={ribbonColors} customColorLabel={t("pptxEditor.customColor")} testId="pptx-ribbon-line" onChange={(hex) => a.shape({ line: { hex, w: selectedEl?.line?.w || 12700, alpha: selectedEl?.line?.alpha ?? 1 } })} onNone={() => a.shape({ line: { none: true } })} />)}
         {disabledField(!canShapeLine || shapeDisabled, <NumberField label={t("pptxEditor.width")} suffix="pt" value={(selectedEl?.line?.w ?? 12700) / 12700} min={0} max={50} step={0.5} onCommit={(v) => a.shape({ line: v === 0 ? { none: true } : { w: v * 12700, hex: selectedEl?.line?.hex || "000000", alpha: selectedEl?.line?.alpha ?? 1 } })} />)}
         {disabledField(!canShapeLine || shapeDisabled, <SelectField label={t("pptxEditor.lineStyle")} value={selectedEl?.line?.dash || "solid"} onChange={(dash) => a.shape({ line: { dash } })} testId="pptx-line-style" options={[["solid","solid"],["dash","dash"],["dot","dot"],["dashDot","dashDot"],["lgDash","longDash"],["lgDashDot","longDashDot"],["lgDashDotDot","longDashDotDot"],["sysDash","systemDash"],["sysDot","systemDot"],["sysDashDot","systemDashDot"],["sysDashDotDot","systemDashDotDot"]].map(([value,key]) => ({ value, label: t(`pptxEditor.lineStyle.${key}`) }))} />)}
         {disabledField(shapeDisabled || !(canShapeFill || canShapeLine), <SliderField label={t("pptxEditor.opacity")} value={Math.round(selectedOpacity * 100)} onCommit={(v) => a.opacity(v / 100)} testId="pptx-opacity" />)}
@@ -534,6 +681,59 @@ export default function PptxEditorDialog({ onClose }) {
         {disabledField(!canEditImageAlt, <label className="pe-sel pe-ribbon-select pe-alt-text-field"><span>{t("pptxEditor.altText")}</span><input className="pe-input" value={altTextDraft} onChange={(e) => setAltTextDraft(e.target.value)} onBlur={() => { if (selectedEl?.kind === "image" && altTextDraft !== (selectedEl.alt || "")) a.alt(altTextDraft); }} onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }} /></label>)}
       </RibbonGroup>
     </>;
+    if (activeRibbon === "table") {
+      const table = selectedEl?.kind === "table" ? selectedEl.table : null;
+      const tableLocked = selectedEl?.kind !== "table" || lockedIds.has(selectedEl?.id);
+      const tableTextDisabled = tableLocked || !selectedTableCell;
+      const applyTableText = (props) => a.tableRangeText(tableRowIndex, tableColIndex, tableFocus.scope, props);
+      const tableFill = (hex) => a.tableRangeFill(tableRowIndex, tableColIndex, tableFocus.scope, hex);
+      const scopeOptions = [
+        { value: "cell", label: t("pptxEditor.tableScope.cell") },
+        { value: "row", label: t("pptxEditor.tableScope.row") },
+        { value: "column", label: t("pptxEditor.tableScope.column") },
+        { value: "table", label: t("pptxEditor.tableScope.table") },
+      ];
+      return <>
+        <RibbonGroup title={t("pptxEditor.ribbon.group.tables")}>
+          <RibbonButton icon={Table2} label={t("pptxEditor.insertTable")} onClick={() => { setTableInsertConfig({ rows: 3, cols: 3 }); setSheet("insertTable"); }} testId="pptx-insert-table-ribbon" />
+          <RibbonButton icon={Plus} label={t("pptxEditor.addRow")} onClick={() => a.tableRows("add", tableRowIndex)} disabled={tableLocked || table?.hasMerge} testId="pptx-add-row" />
+          <RibbonButton icon={Minus} label={t("pptxEditor.delRow")} onClick={() => a.tableRows("delete", tableRowIndex)} disabled={tableLocked || table?.hasMerge || table?.rows?.length < 2} testId="pptx-del-row" />
+          <RibbonButton icon={Plus} label={t("pptxEditor.addCol")} onClick={() => a.tableCols("add", tableColIndex)} disabled={tableLocked || table?.hasMerge} testId="pptx-add-col" />
+          <RibbonButton icon={Minus} label={t("pptxEditor.delCol")} onClick={() => a.tableCols("delete", tableColIndex)} disabled={tableLocked || table?.hasMerge || table?.cols?.length < 2} testId="pptx-del-col" />
+        </RibbonGroup>
+        <RibbonGroup title={t("pptxEditor.tableSelectionScope")}>
+          <SelectField label={t("pptxEditor.tableApplyTo")} value={table ? tableFocus.scope : "cell"} options={scopeOptions} disabled={tableLocked} onChange={(scope) => setTableFocus((current) => ({ ...current, id: selectedEl?.id || null, scope }))} testId="pptx-table-scope" />
+          <span className="pe-table-focus-label">{table ? t("pptxEditor.tableCellSelected", { cell: `${tableRowIndex + 1}, ${tableColIndex + 1}` }) : t("pptxEditor.selectTableHint")}</span>
+        </RibbonGroup>
+        <RibbonGroup title={t("pptxEditor.ribbon.group.font")}>
+          {disabledField(tableTextDisabled, <SelectField label={t("pptxEditor.font")} value={tableTextStyle?.font || "Arial"} options={["Arial", "Calibri", "Verdana", "Georgia", "Times New Roman", "Courier New", "Inter", "Roboto", "Montserrat", "Poppins", "Cairo", "Tajawal", "Almarai"].map((font) => ({ value: font, label: font }))} onChange={(font) => applyTableText({ font })} testId="pptx-table-font" />)}
+          {disabledField(tableTextDisabled, <NumberField label={t("pptxEditor.size")} suffix="pt" value={tableTextStyle?.size ?? 14} min={1} max={400} step={1} onCommit={(size) => applyTableText({ size })} testId="pptx-table-font-size" />)}
+          <RibbonButton icon={Bold} label={t("pptxEditor.bold")} active={!!tableTextStyle?.bold} onClick={() => applyTableText({ bold: !tableTextStyle?.bold })} disabled={tableTextDisabled} />
+          <RibbonButton icon={Italic} label={t("pptxEditor.italic")} active={!!tableTextStyle?.italic} onClick={() => applyTableText({ italic: !tableTextStyle?.italic })} disabled={tableTextDisabled} />
+          <RibbonButton icon={Underline} label={t("pptxEditor.underline")} active={!!tableTextStyle?.underline} onClick={() => applyTableText({ underline: !tableTextStyle?.underline })} disabled={tableTextDisabled} />
+          <RibbonButton icon={Strikethrough} label={t("pptxEditor.strike")} active={!!tableTextStyle?.strike} onClick={() => applyTableText({ strike: !tableTextStyle?.strike })} disabled={tableTextDisabled} />
+        </RibbonGroup>
+        <RibbonGroup title={t("pptxEditor.ribbon.group.textColor")}>
+          {disabledField(tableTextDisabled, <ColorField label={t("pptxEditor.textColor")} value={tableTextStyle?.color?.hex || null} themeColors={ribbonColors} customColorLabel={t("pptxEditor.customColor")} onChange={(hex) => applyTableText({ color: hex })} />)}
+          {disabledField(tableTextDisabled, <ColorField label={t("pptxEditor.highlight")} value={tableTextStyle?.highlight?.hex || null} themeColors={ribbonColors} customColorLabel={t("pptxEditor.customColor")} onChange={(hex) => applyTableText({ highlight: hex })} onNone={() => applyTableText({ highlight: null })} noneLabel={t("pptxEditor.noHighlight")} />)}
+          {disabledField(tableLocked || !selectedTableCell, <ColorField label={t("pptxEditor.tableCellFill")} value={selectedTableCell?.fill?.type === "solid" ? selectedTableCell.fill.hex : null} themeColors={ribbonColors} customColorLabel={t("pptxEditor.customColor")} onChange={tableFill} onNone={() => tableFill(null)} noneLabel={t("pptxEditor.noFill")} />)}
+        </RibbonGroup>
+        <RibbonGroup title={t("pptxEditor.ribbon.group.paragraph")}>
+          {[["l", AlignStartVertical, "alignLeft"], ["ctr", AlignCenterVertical, "alignCenter"], ["r", AlignEndVertical, "alignRight"]].map(([value, Icon, key]) => <RibbonButton key={value} icon={Icon} label={t(`pptxEditor.${key}`)} onClick={() => applyTableText({ align: value })} disabled={tableTextDisabled} />)}
+          <RibbonButton icon={AlignStartHorizontal} label={t("pptxEditor.top")} onClick={() => applyTableText({ anchor: "t" })} disabled={tableTextDisabled} />
+          <RibbonButton icon={AlignCenterHorizontal} label={t("pptxEditor.middle")} onClick={() => applyTableText({ anchor: "ctr" })} disabled={tableTextDisabled} />
+          <RibbonButton icon={AlignEndHorizontal} label={t("pptxEditor.bottom")} onClick={() => applyTableText({ anchor: "b" })} disabled={tableTextDisabled} />
+        </RibbonGroup>
+        <RibbonGroup title={t("pptxEditor.ribbon.group.tableDesign")}>
+          <label className="pe-checkbox-row"><input type="checkbox" checked={!!table?.firstRow} disabled={tableLocked} onChange={(e) => a.tableOptions({ firstRow: e.target.checked })} /><span>{t("pptxEditor.tableHeaderRow")}</span></label>
+          <label className="pe-checkbox-row"><input type="checkbox" checked={!!table?.bandRow} disabled={tableLocked} onChange={(e) => a.tableOptions({ bandRow: e.target.checked })} /><span>{t("pptxEditor.tableBandedRows")}</span></label>
+          <label className="pe-checkbox-row"><input type="checkbox" checked={!!table?.firstCol} disabled={tableLocked} onChange={(e) => a.tableOptions({ firstCol: e.target.checked })} /><span>{t("pptxEditor.tableFirstColumn")}</span></label>
+          <label className="pe-checkbox-row"><input type="checkbox" checked={!!table?.lastCol} disabled={tableLocked} onChange={(e) => a.tableOptions({ lastCol: e.target.checked })} /><span>{t("pptxEditor.tableLastColumn")}</span></label>
+          <label className="pe-checkbox-row"><input type="checkbox" checked={!!table?.lastRow} disabled={tableLocked} onChange={(e) => a.tableOptions({ lastRow: e.target.checked })} /><span>{t("pptxEditor.tableLastRow")}</span></label>
+          <label className="pe-checkbox-row"><input type="checkbox" checked={!!table?.bandCol} disabled={tableLocked} onChange={(e) => a.tableOptions({ bandCol: e.target.checked })} /><span>{t("pptxEditor.tableBandedColumns")}</span></label>
+        </RibbonGroup>
+      </>;
+    }
     if (activeRibbon === "view") return <>
       <RibbonGroup title={t("pptxEditor.ribbon.group.zoom")}>
         <RibbonButton icon={ZoomOut} label={t("pptxEditor.zoomOut")} onClick={() => canvasRef.current?.zoomBy(0.8)} />
@@ -595,7 +795,7 @@ export default function PptxEditorDialog({ onClose }) {
             {!compact && <aside className="pe-left"><SlidesPanel pkg={pkg} pres={pres} idx={safeIdx} onSelect={slideOps.select} onAdd={slideOps.add} onDuplicate={dupSlide} onDelete={slideOps.del} onMove={slideOps.move} t={t} labels={labels} /></aside>}
             <main className="pe-main" dir="ltr">
               {okModel ? (
-                <Canvas ref={canvasRef} pkg={pkg} model={canvasModel} selection={selection} onSelect={setSelection} onSelectionComplete={activateContextForSelection} onInteractionStart={clearContextSheetTimer} onCommit={commitBounds} onEditText={openText} onCopy={copyNow} onDelete={a.remove} onRotate={() => a.rotate(90)} multi={multi} grid={grid} locked={lockedIds} labels={labels} onZoom={setZoom} compact={compact} />
+                <Canvas ref={canvasRef} pkg={pkg} model={canvasModel} selection={selection} onSelect={setSelection} onSelectionComplete={activateContextForSelection} onInteractionStart={clearContextSheetTimer} onCommit={commitBounds} onEditText={openText} editingText={textEdit} tableSelection={tableFocus} textAutoSizeHeights={textAutoSizeDrafts} onTableCellSelect={selectTableCell} onAutoSizeText={autoSizeTextHeight} onTextCommit={commitInlineText} onTextCancel={cancelInlineText} onCopy={copyNow} onDelete={a.remove} onRotate={() => a.rotate(90)} multi={multi} grid={grid} locked={lockedIds} labels={labels} onZoom={setZoom} compact={compact} />
               ) : <div className="pe-error"><AlertTriangle aria-hidden="true" />{t("pptxEditor.slideUnreadable")}</div>}
               {compact && pres && (
                 <div className="pe-slidenav">
@@ -624,6 +824,7 @@ export default function PptxEditorDialog({ onClose }) {
               <TB icon={Type} label={t("pptxEditor.ribbon.text")} active={activeRibbon === "text"} onClick={() => openRibbon("text")} />
               <TB icon={Square} label={t("pptxEditor.ribbon.shapes")} active={activeRibbon === "shapes"} onClick={() => openRibbon("shapes")} />
               <TB icon={ImageIcon} label={t("pptxEditor.ribbon.image")} active={activeRibbon === "image"} onClick={() => openRibbon("image")} />
+              <TB icon={Table2} label={t("pptxEditor.ribbon.table")} active={activeRibbon === "table"} onClick={() => openRibbon("table")} />
               <TB icon={Move3d} label={t("pptxEditor.tab.arrange")} active={sheet === "panel" && panel === "arrange"} onClick={() => openRibbon("arrange")} />
               <TB icon={Layers} label={t("pptxEditor.tab.layers")} active={sheet === "panel" && panel === "layers"} onClick={() => openRibbon("layers")} />
               <TB icon={LayoutGrid} label={t("pptxEditor.slides")} onClick={() => setSlidesOpen(true)} />
@@ -637,9 +838,14 @@ export default function PptxEditorDialog({ onClose }) {
               <Inspector tab={panel} sel={sel} model={okModel} a={a} t={t} locked={lockedIds} />
             </BottomSheet>
           )}
-          {sheet === "table" && (
-            <BottomSheet title={t("pptxEditor.section.table")} onClose={() => setSheet(null)} testId="pptx-table-sheet" tall>
-              <Inspector tab="table" sel={sel} model={okModel} a={a} t={t} locked={lockedIds} />
+          {sheet === "insertTable" && (
+            <BottomSheet title={t("pptxEditor.insertTableTitle")} onClose={() => setSheet(null)} testId="pptx-insert-table-sheet">
+              <p className="pe-note">{t("pptxEditor.insertTableHint")}</p>
+              <div className="pe-table-insert-fields">
+                <label className="pe-num"><span>{t("pptxEditor.tableRows")}</span><input type="number" min="1" max="12" value={tableInsertConfig.rows} onChange={(e) => setTableInsertConfig((value) => ({ ...value, rows: Math.max(1, Math.min(12, Number(e.target.value) || 1)) }))} /></label>
+                <label className="pe-num"><span>{t("pptxEditor.tableColumns")}</span><input type="number" min="1" max="12" value={tableInsertConfig.cols} onChange={(e) => setTableInsertConfig((value) => ({ ...value, cols: Math.max(1, Math.min(12, Number(e.target.value) || 1)) }))} /></label>
+              </div>
+              <div className="pe-row pe-tools"><button type="button" className="pe-btn-primary" onClick={() => insertTable(tableInsertConfig.rows, tableInsertConfig.cols)} data-testid="pptx-create-table"><Table2 size={16} aria-hidden="true" />{t("pptxEditor.insertTable")}</button></div>
             </BottomSheet>
           )}
 
@@ -684,10 +890,6 @@ export default function PptxEditorDialog({ onClose }) {
           )}
           {sheet === "report" && report && <ReportSheet report={report} t={t} onClose={() => setSheet(null)} />}
           {presenting && pres && <PresentationPreview pkg={pkg} pres={pres} idx={safeIdx} onClose={() => setPresenting(false)} onSelect={(i) => { const next = Math.max(0, Math.min(pres.slides.length - 1, i)); if (next !== safeIdx) setPreviewHiddenIds(new Set()); setIdx(next); }} previewHiddenIds={previewHiddenIds} t={t} labels={labels} />}
-          {textEdit && textEl && (
-            <TextSheet key={textEl.id} title={elementLabel(textEl, t)} initial={(textEl.text?.plain || [""]).join("\n")} hint={t("pptxEditor.placeholderHint")} t={t} rtl={direction === "rtl"}
-              onCancel={() => { setTextEdit(null); if (compact) setSheet("ribbon"); }} onDone={(texts) => { run(() => setText(pkg, path, textEl.id, texts)); setTextEdit(null); if (compact) setSheet("ribbon"); }} />
-          )}
           {compact && (
             <Drawer open={slidesOpen} onOpenChange={setSlidesOpen} shouldScaleBackground={false}>
               <DrawerContent container={rootRef.current} className="pe-drawer" aria-describedby={undefined}>

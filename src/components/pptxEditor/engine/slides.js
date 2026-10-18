@@ -197,6 +197,36 @@ export function setPresentationBackground(pkg, hex) {
   });
 }
 
+/** Capture each slide's exact existing background XML before a reversible bulk background edit. */
+export function capturePresentationBackgrounds(pkg) {
+  const presentation = readPresentation(pkg);
+  return presentation.slides.map((slide) => {
+    const doc = pkg.doc(slide.path);
+    const cSld = doc && kid(doc.documentElement, "cSld");
+    const bg = cSld && kid(cSld, "bg");
+    return { path: slide.path, node: bg ? bg.cloneNode(true) : null };
+  });
+}
+
+/** Restore captured background nodes only, preserving other edits made to each slide. */
+export function restorePresentationBackgrounds(pkg, snapshots) {
+  if (!Array.isArray(snapshots) || !snapshots.length) return;
+  return pkg.transact("Restore slide backgrounds", () => {
+    for (const snapshot of snapshots) {
+      if (!pkg.exists(snapshot.path)) continue;
+      const doc = pkg.edit(snapshot.path);
+      const cSld = kid(doc.documentElement, "cSld");
+      if (!cSld) continue;
+      const existing = kid(cSld, "bg");
+      if (existing) cSld.removeChild(existing);
+      if (snapshot.node) {
+        const restored = doc.importNode(snapshot.node, true);
+        cSld.insertBefore(restored, kid(cSld, "spTree") || cSld.firstChild);
+      }
+    }
+  });
+}
+
 /** Set a slide's explicit solid background. Pass null to inherit the layout/master background. */
 export function setSlideBackground(pkg, slidePath, hex) {
   if (hex !== null && hex !== undefined && !/^[0-9a-f]{6}$/i.test(String(hex))) {

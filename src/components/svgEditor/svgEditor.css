@@ -740,13 +740,16 @@
 .svg-editor-color-picker-card { display: flex; min-width: 0; align-items: center; gap: 9px; margin: 8px 0; padding: 8px; background: hsl(var(--card)); border: 1px solid hsl(var(--border)); border-radius: 10px; cursor: pointer; }
 .svg-editor-large-color-swatch { display: block; width: 36px; height: 36px; flex: 0 0 36px; overflow: hidden; border: 1px solid hsl(var(--border)); border-radius: 8px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.2); }
 .svg-editor-large-color-swatch input { display: block; width: 100%; height: 100%; padding: 0; opacity: 0; cursor: pointer; }
+.svg-editor-large-color-swatch .svg-editor-native-color-picker { display: block; width: 100%; height: 100%; padding: 0; opacity: 0; cursor: pointer; }
 .svg-editor-color-value-copy { display: flex; min-width: 0; flex: 1 1 auto; flex-direction: column; gap: 3px; }
 .svg-editor-color-value-copy strong { color: hsl(var(--foreground)); font-size: 10px; font-weight: 800; }
 .svg-editor-color-value-copy code { overflow: hidden; color: hsl(var(--muted-foreground)); font: 10px var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
 .svg-editor-color-hex-field { width: 100%; min-width: 0; height: 25px; padding: 3px 6px; color: hsl(var(--foreground)); background: hsl(var(--background)); border: 1px solid hsl(var(--border)); border-radius: 6px; font: 10px var(--font-mono); letter-spacing: .02em; }
 .svg-editor-color-hex-field:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
 .svg-editor-color-hex-field:disabled { opacity: .55; cursor: not-allowed; }
-.svg-editor-color-picker-edit { flex: 0 0 auto; color: hsl(var(--primary)); font-size: 9px; font-weight: 800; }
+.svg-editor-color-picker-edit { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; gap: 5px; min-height: 30px; padding: 5px 8px; border: 1px solid hsl(var(--primary) / .28); border-radius: 7px; background: hsl(var(--primary) / .07); color: hsl(var(--primary)); font: inherit; font-size: 9px; font-weight: 800; cursor: pointer; }
+.svg-editor-color-picker-edit:hover:not(:disabled) { background: hsl(var(--primary) / .13); }
+.svg-editor-color-picker-edit:disabled { opacity: .5; cursor: not-allowed; }
 .svg-editor-swatches-label { margin: 12px 0 7px; color: hsl(var(--muted-foreground)); font-size: 10px; font-weight: 750; }
 .svg-editor-color-swatches { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 6px; margin-bottom: 12px; }
 .svg-editor-color-swatch { display: grid; min-width: 0; aspect-ratio: 1; place-items: center; padding: 3px; background: transparent; border: 1px solid transparent; border-radius: 7px; cursor: pointer; }
