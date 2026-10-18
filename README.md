@@ -1,62 +1,82 @@
-# Base44 Project
+# EYAD AI
 
-Use this repository to run and edit the app locally, then publish changes back through Base44.
+AI creative workspace (logo, image, SVG, presentation, voice and transcription studios).
+React + Vite web app, packaged for Android/iOS with Capacitor, backed by Supabase
+(Auth, Postgres, Storage, Edge Functions) and external AI providers (OpenAI, Recraft).
 
-Any change pushed to the repo will also be reflected in the Base44 Builder.
+The project no longer depends on Base44 in any way (no SDK, CLI, build plugin, hosted
+assets or platform OAuth/MCP endpoints).
+
+## Architecture
+
+| Concern | Provided by |
+| --- | --- |
+| UI | React 18 + Vite + Tailwind (this repo, `src/`) |
+| Auth (email/password, OTP, anonymous, Google) | Supabase Auth |
+| Data (projects, assets, chat, jobs, credits) | Supabase Postgres (`supabase/migrations/`) |
+| File storage | Supabase Storage bucket `eyad-assets` |
+| AI generation / voice / transcription | Supabase Edge Functions `eyad-engine`, `eyad-voice`, `eyad-transcribe` → OpenAI, Recraft |
+| Web push | Edge Function(s) + VAPID keys |
+| Mobile | Capacitor (`android/`, `ios/`, `capacitor.config.ts`) |
+| Static brand images | `public/images`, `public/icons` (served by whatever hosts the web build) |
 
 ## Prerequisites
 
-1. Clone the repository using the project's Git URL.
-2. Navigate to the project directory.
-3. Install dependencies: `npm install`.
-4. Install the Base44 CLI: `npm install -g base44@latest`.
-5. Install [Deno](https://docs.deno.com/runtime/getting_started/installation/) — the local Base44 backend runs on it.
+- Node.js 22+ and npm
+- [Supabase CLI](https://supabase.com/docs/guides/cli) (for functions/migrations)
+- Android Studio / Xcode for native builds
 
-Run `base44 --help` (or see the [CLI reference](https://docs.base44.com/developers/references/cli/commands/introduction)) for the full command surface.
-
-## Run Locally
-
-Three commands, from the project root:
+## Local development
 
 ```bash
-base44 login   # one-time per machine
-base44 link    # one-time per clone
-base44 dev     # local backend + frontend together
+npm ci
+cp .env.example .env      # optional: defaults point to the production Supabase project
+npm run dev               # http://localhost:5173
 ```
 
-Open the frontend URL that `base44 dev` prints (typically `http://localhost:5173`).
+Brand images must be present in `public/` (see **Brand assets**). `npm run build` runs a
+guard (`prebuild`) that fails if any are missing.
 
-Notes:
+## Brand assets (one-time migration step)
 
-- **Every fresh clone needs `base44 link`.** It writes `base44/.app.jsonc` (the app-id pointer), which is deliberately gitignored. Your app id is in the Builder URL (`app.base44.com/apps/<id>/...`); `base44 link --help` shows the non-interactive flags.
-- **`base44 dev` runs the frontend for you** (via `site.serveCommand` in this repo's `base44/config.jsonc`) — never run `npm run dev` yourself: alone it serves a UI with no backend behind it (`[base44] Proxy not enabled`, every `/api` call fails), and alongside `base44 dev` the second Vite silently takes the next port and you end up looking at the wrong one.
-- **The app must be published at least once for the UI to load under `base44 dev`.** The frontend boots by fetching app settings from the hosted app; before the first publish that fails and every page redirects to login. The local API works regardless.
-- Entities, functions, and auth run locally — entity data is **in-memory only**, wiped when `base44 dev` restarts. Everything else (Core integrations, OAuth login) is forwarded to your deployed app. Full breakdown: [Local development overview](https://docs.base44.com/developers/backend/overview/local-dev/local-development-overview).
-
-## Frontend Only, Hosted Backend
-
-To work on just the frontend against your app's live hosted backend:
+The images that used to live on `media.base44.com` are now referenced as local files
+(`/images/...`, `/icons/eyad-icon.png`). If `public/images` / `public/icons` are empty in
+your checkout, populate them once while the old URLs still resolve, then commit:
 
 ```bash
-base44 dev --remote
+npm run assets:fetch
+git add public/images public/icons
 ```
 
-⚠️ In this mode writes go to your app's **production data** — plain `base44 dev` keeps everything local.
-
-## Publish Your Changes
-
-After pushing your changes to git, open the Base44 dashboard and publish the app:
+## Tests and checks
 
 ```bash
-base44 dashboard open
+npm run test:reliability
+npm run test:pptx
+npm run lint
+npm run typecheck
+npm run build
 ```
 
-This repo syncs to Base44 through git, so publish from the dashboard rather than `base44 deploy` — a CLI deploy ships your local tree directly, bypassing the sync, and the deployed state silently diverges from the repo.
+## Supabase backend
 
-## Docs & Support
+See [`supabase/README.md`](supabase/README.md) for secrets, deployment commands and the
+list of backend pieces that must be verified/recovered from the live project.
 
-GitHub integration: [https://docs.base44.com/developers/app-code/local-development/github](https://docs.base44.com/developers/app-code/local-development/github)
+## Deploying the web app (static hosting)
 
-Local development: [https://docs.base44.com/developers/backend/overview/local-dev/local-development-overview](https://docs.base44.com/developers/backend/overview/local-dev/local-development-overview)
+`npm run build` outputs `dist/`. Host it on any static host (Cloudflare Pages, Netlify,
+Vercel, S3+CDN, nginx) with an SPA fallback so every route serves `index.html`.
+Add the deployed origin to Supabase **Auth → URL Configuration** (Site URL and Redirect
+URLs) and to the Google OAuth client's authorized origins/redirects.
 
-Support: [https://app.base44.com/support](https://app.base44.com/support)
+## Mobile (Capacitor)
+
+```bash
+npm run build
+npx cap sync android   # or: npx cap sync ios
+npx cap open android   # or: npx cap open ios
+```
+
+`codemagic.yaml` contains an unsigned iOS simulator build; CI for the web app is in
+`.github/workflows/ci.yml`.

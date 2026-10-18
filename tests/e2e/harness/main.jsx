@@ -1,4 +1,4 @@
-// Dev-only harness: mounts the real editor dialog without the Base44 auth shell. Not part of the build.
+// Dev-only harness: mounts the real editor dialog without the app auth shell. Not part of the build.
 import React from "react";
 import { createRoot } from "react-dom/client";
 import "@/index.css";

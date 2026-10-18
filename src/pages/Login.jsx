@@ -73,8 +73,8 @@ export default function Login() {
       setError(oauthError.message);
       return;
     }
-    // Google blocks its OAuth consent screen inside iframes (Base44 Preview
-    // runs the app in an iframe, causing a 403). Break out to the top-level
+    // Google blocks its OAuth consent screen inside iframes (an embedded
+    // preview causes a 403). Break out to the top-level
     // window so Google loads normally. In production (no iframe)
     // window.top === window, so behavior is unchanged.
     window.top.location.href = data.url;

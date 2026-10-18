@@ -1,0 +1,13 @@
+{
+  "name": "EYAD AI — AI Creative Workspace",
+  "short_name": "EYAD AI",
+  "description": "AI Creative Workspace. Idea → Create → Refine → Production.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f4f7fb",
+  "theme_color": "#f4f7fb",
+  "icons": [
+    { "src": "/icons/eyad-icon.png", "sizes": "any", "type": "image/png", "purpose": "any" }
+  ]
+}

@@ -1,11 +1,13 @@
 {
-  "name": "base44-app",
+  "name": "eyad-ai",
   "private": true,
   "version": "0.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "prebuild": "node scripts/check-brand-assets.mjs",
     "build": "vite build",
+    "assets:fetch": "node scripts/fetch-brand-assets.mjs",
     "lint": "eslint . --quiet",
     "lint:fix": "eslint . --fix",
     "test:reliability": "node --test tests/reliability/*.test.js",
@@ -14,8 +16,6 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@base44/sdk": "^0.8.53",
-    "@base44/vite-plugin": "^1.0.44",
     "@capacitor/android": "^8.5.3",
     "@capacitor/core": "^8.5.3",
     "@capacitor/filesystem": "^8.1.5",

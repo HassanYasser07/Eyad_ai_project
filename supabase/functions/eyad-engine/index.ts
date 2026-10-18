@@ -1506,6 +1506,9 @@ Deno.serve(async (req: Request) => {
       : (language === "ar" ? "إياد خلص طلبك. النتيجة جاهزة." : "EYAD finished your request. Your result is ready.");
     const url = `/chat?project=${encodeURIComponent(projectId)}`;
 
+    const appOrigin = (Deno.env.get("PUBLIC_APP_URL") ?? "https://eyad-ai.com").replace(/\/+$/, "");
+    const pushIconUrl = `${appOrigin}/icons/eyad-icon.png`;
+
     for (const subscription of subscriptions) {
       try {
         await webpush.sendNotification(
@@ -1514,8 +1517,8 @@ Deno.serve(async (req: Request) => {
             title,
             body,
             url,
-            icon: "https://media.base44.com/images/public/user_6a338f83f97317e51c543273/291e45aa9_eyad-iconpng.png",
-            badge: "https://media.base44.com/images/public/user_6a338f83f97317e51c543273/291e45aa9_eyad-iconpng.png",
+            icon: pushIconUrl,
+            badge: pushIconUrl,
             tag: `eyad-job-${projectId}`,
           }),
         );

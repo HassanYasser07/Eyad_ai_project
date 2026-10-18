@@ -7,7 +7,7 @@
   EYAD AI — Design System Foundation (Phase 0)
   Light-first, premium, soft-glass / Apple-inspired visual language.
   Tokens are framework-agnostic CSS variables so the design system can travel
-  outside Base44 (GitHub → Cloudflare → Android) without Tailwind coupling.
+  outside any one host (GitHub → Cloudflare → Android) without Tailwind coupling.
 */
 
 @layer base {

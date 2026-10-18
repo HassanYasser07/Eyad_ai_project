@@ -5,8 +5,7 @@
  * and setLanguage/toggleLanguage. Persists choice in localStorage and
  * reflects <html lang> + <html dir> so the whole app reflows correctly.
  *
- * This module is framework-agnostic React (no Base44 imports) and can be
- * reused outside Base44 unchanged.
+ * This module is framework-agnostic React and can be reused elsewhere unchanged.
  */
 import React, { createContext, useContext, useEffect, useMemo, useState, useCallback } from "react";
 import { translations } from "./translations";

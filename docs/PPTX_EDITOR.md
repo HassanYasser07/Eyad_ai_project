@@ -23,8 +23,8 @@ This is the same principle SlideWise moved to after finding its lossy round-trip
 
 **Recommended upgrade path for full fidelity** (charts, SmartArt, full text-run editing, animations UI):
 ONLYOFFICE Docs Developer Edition behind the same button. Cost/infra: licence + a VM running Document
-Server (Docker) reachable over HTTPS + a storage/callback endpoint + JWT secret kept server-side. Base44
-cannot host Document Server, so this is a separate deployment decision.
+Server (Docker) reachable over HTTPS + a storage/callback endpoint + JWT secret kept server-side. Static
+hosting cannot run Document Server, so this is a separate deployment decision.
 
 ## Architecture
 

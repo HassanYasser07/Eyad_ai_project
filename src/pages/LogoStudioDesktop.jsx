@@ -26,9 +26,9 @@ const SECONDARY_NAV = [
   { to: "/studios", key: "nav.more", icon: MoreHorizontal },
 ];
 
-const HERO_VISUAL = "https://media.base44.com/images/public/6aaccb85de3f09bc7bd4646f/17181d05c_lOGOSTUDIO.png";
-const HERO_BANNER_RTL = "https://media.base44.com/images/public/6aaccb85de3f09bc7bd4646f/9f2db0a91_image4.png";
-const HERO_BANNER_LTR = "https://media.base44.com/images/public/6aaccb85de3f09bc7bd4646f/28eb9cd30_generated_image.png";
+const HERO_VISUAL = "/images/studios/logo-studio.png";
+const HERO_BANNER_RTL = "/images/logo-studio/hero-banner-rtl.png";
+const HERO_BANNER_LTR = "/images/logo-studio/hero-banner-ltr.png";
 
 const INDUSTRIES = [
   ["tech", "تقنية", Cpu],
