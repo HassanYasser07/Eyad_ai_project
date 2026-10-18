@@ -17,8 +17,21 @@ const FALLBACK_IMAGE_URL =
  * crops server-side, optionally anchored at a focal point. Other URLs render
  * as a plain <img>. Failed transforms retry the original URL; only a broken
  * original swaps to the generic fallback image.
+ *
+ * @type {React.ForwardRefExoticComponent<React.ImgHTMLAttributes<HTMLImageElement> & {
+ *   fittingType?: "fill" | "fit",
+ *   originWidth?: number,
+ *   originHeight?: number,
+ *   focalPointX?: number,
+ *   focalPointY?: number,
+ *   quality?: number,
+ * } & React.RefAttributes<HTMLImageElement>>}
  */
 const Image = React.forwardRef(
+  /**
+   * @param {any} props
+   * @param {any} ref
+   */
   (
     {
       src: source,

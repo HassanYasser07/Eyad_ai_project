@@ -14,8 +14,8 @@ import StudioNextActions from "@/components/studios/StudioNextActions";
 import { Image as UIImage } from "@/components/ui/image";
 import "./aiImagesStudio.css";
 
-const EYAD_AI_HEADER_LOGO = "https://media.base44.com/images/public/6aaccb85de3f09bc7bd4646f/c8538f241_IMG-20260928-WA0001.jpg";
-const AI_IMAGES_HERO_IPHONE = "https://media.base44.com/images/public/6aaccb85de3f09bc7bd4646f/937d7e6f9_file_000000005bf482109828e683bd514bb1.png";
+const EYAD_AI_HEADER_LOGO = "/images/brand/eyad-ai-header-logo.jpg";
+const AI_IMAGES_HERO_IPHONE = "/images/ai-images/hero-iphone.png";
 
 const PRESETS = [
   { id: "all", ar: "الكل", en: "All", icon: Sparkles, prompt: "premium creative image" },
