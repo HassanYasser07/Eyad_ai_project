@@ -1,5 +1,5 @@
 import React from "react";
-import { ArrowLeft, ArrowRight, Check, Presentation, Sparkles, Wand2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, PencilRuler, Presentation, Sparkles, Wand2 } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useI18n } from "@/i18n/I18nContext";
 import { useAuth } from "@/lib/AuthContext";
@@ -7,9 +7,11 @@ import { runEyadEngine } from "@/services/eyadEngineService";
 import { projectService } from "@/services/projectService";
 import { getBrandIdentity } from "@/services/brandService";
 import StudioNextActions from "@/components/studios/StudioNextActions";
+// Separate, lazily loaded editing environment; it does not touch the generation workflow below.
+const PptxEditorDialog = React.lazy(() => import("@/components/pptxEditor/PptxEditorDialog"));
 
 export default function PresentationsStudio() {
-  const { loc, direction } = useI18n();
+  const { t, loc, direction } = useI18n();
   const { isAnonymous, requireAccount } = useAuth();
   const navigate = useNavigate();
   const [params] = useSearchParams();
@@ -21,6 +23,7 @@ export default function PresentationsStudio() {
   const [generating, setGenerating] = React.useState(false);
   const [saved, setSaved] = React.useState(false);
   const [error, setError] = React.useState("");
+  const [pptxEditorOpen, setPptxEditorOpen] = React.useState(false);
 
   React.useEffect(() => {
     let active = true;
@@ -95,9 +98,15 @@ export default function PresentationsStudio() {
             {direction === "rtl" ? <ArrowRight className="w-4 h-4" /> : <ArrowLeft className="w-4 h-4" />}
             {loc({ ar: "رجوع", en: "Back" })}
           </button>
-          <div className="inline-flex items-center gap-2 px-3 py-2 rounded-full bg-white/70 border border-white shadow-sm text-xs font-bold text-indigo-700">
-            <Presentation className="w-4 h-4" />
-            {loc({ ar: "ستوديو العروض التقديمية", en: "Presentation Studio" })}
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={() => setPptxEditorOpen(true)} data-testid="open-pptx-editor" className="inline-flex items-center gap-1.5 rounded-full border border-primary/20 bg-white px-3 py-2 text-xs font-extrabold text-primary shadow-sm hover:bg-primary/5">
+              <PencilRuler className="h-4 w-4" />
+              <span>{t("pptxEditor.title")}</span>
+            </button>
+            <div className="inline-flex items-center gap-2 px-3 py-2 rounded-full bg-white/70 border border-white shadow-sm text-xs font-bold text-indigo-700">
+              <Presentation className="w-4 h-4" />
+              {loc({ ar: "ستوديو العروض التقديمية", en: "Presentation Studio" })}
+            </div>
           </div>
         </header>
 
@@ -138,6 +147,7 @@ export default function PresentationsStudio() {
 
         {projectId && slides.length > 0 && <StudioNextActions projectId={projectId} fromStudio="presentations" asset={null} title={loc({ ar: "تم تجهيز هيكل العرض. اختر الخطوة التالية", en: "Presentation structure is ready. Choose the next step" })} description={loc({ ar: "بيانات الشركة والهوية تظل مرتبطة بالمشروع.", en: "Company data and brand identity remain attached to the project." })} />}
       </div>
+      {pptxEditorOpen && (<React.Suspense fallback={null}><PptxEditorDialog onClose={() => setPptxEditorOpen(false)} /></React.Suspense>)}
     </div>
   );
 }
