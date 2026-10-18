@@ -16,13 +16,13 @@ export const HOME_STUDIO_IDS = [
 export const STUDIO_VISUALS = {
   logo: {
     image:
-      "https://media.base44.com/images/public/6aaccb85de3f09bc7bd4646f/17181d05c_lOGOSTUDIO.png",
+      "/images/studios/logo-studio.png",
     title: "home.studio.logo.title",
     line: "home.studio.logo.line",
   },
   "brand-kit": {
     image:
-      "https://media.base44.com/images/public/6aaccb85de3f09bc7bd4646f/938a9d9f7_vISUALIDENTITY.png",
+      "/images/studios/visual-identity.png",
     title: "home.studio.brand.title",
     line: "home.studio.brand.line",
   },

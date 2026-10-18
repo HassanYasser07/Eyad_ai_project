@@ -44,7 +44,7 @@ const SECONDARY_NAV = [
 ];
 
 const HERO_VISUAL =
-  "https://media.base44.com/images/public/6aaccb85de3f09bc7bd4646f/17181d05c_lOGOSTUDIO.png";
+  "/images/studios/logo-studio.png";
 
 const PASTEL = {
   logo: "#E0F2FE",

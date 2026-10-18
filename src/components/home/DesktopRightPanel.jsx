@@ -10,7 +10,7 @@ import { useI18n } from "@/i18n/I18nContext";
 import Logo from "@/components/Logo";
 
 const TEMPLATE_THUMBS = [
-  "https://media.base44.com/images/public/6aaccb85de3f09bc7bd4646f/938a9d9f7_vISUALIDENTITY.png",
+  "/images/studios/visual-identity.png",
   "https://images.unsplash.com/photo-1545235617-9465d2a55698?auto=format&fit=crop&w=400&q=80",
   "https://images.unsplash.com/photo-1556761175-b413da4baf72?auto=format&fit=crop&w=400&q=80",
 ];

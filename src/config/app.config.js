@@ -15,9 +15,9 @@ export const appConfig = {
   // Official EYAD AI brand assets — used as-is, never redrawn or recolored.
   assets: {
     logoIcon:
-      "https://media.base44.com/images/public/6aaccb85de3f09bc7bd4646f/643f750d2_file_000000006f8481fa8acafb1d46cd52eb.png",
+      "/images/brand/logo-icon.png",
     logoFull:
-      "https://media.base44.com/images/public/6aaccb85de3f09bc7bd4646f/517ebeddd_file_000000006fbc81f5a8180764c61e9f6f.png",
+      "/images/brand/logo-full.png",
   },
   // Core product flow: Idea → Create → Refine → Production
   flow: ["idea", "create", "refine", "production"],
