@@ -3,7 +3,7 @@ import {
   SlidersHorizontal, FlipHorizontal, FlipVertical, Copy, Trash2,
   Group, Ungroup, ArrowUp, ArrowRight, ArrowDown, ArrowLeft, Bold, Italic,
   ChevronLeft, ChevronRight, ChevronUp, ChevronDown, MoveHorizontal, RotateCcw, Palette, Type,
-  RotateCw, Blend, Paintbrush, Maximize2, Image, Sparkles, Upload, Pipette,
+  RotateCw, Blend, Paintbrush, Maximize2, Image, Sparkles, Upload, Pipette, AlignLeft, AlignCenter, AlignRight,
 } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 
@@ -300,7 +300,7 @@ export default function SvgPropertiesPanel({
   onDelete,
   onGroup,
   onUngroup,
-  onAddText,
+  onEditText,
   activeMobileTab,
   onSetSolidBackground,
   onSetGradientBackground,
@@ -657,54 +657,48 @@ export default function SvgPropertiesPanel({
             </div>
             {error && <p className="svg-editor-inline-error" role="alert">{error}</p>}
           </div>
-        ) : activeMobileTab === "text" ? (
+        ) : ["text", "fontFamily", "letterSpacing", "textStyle"].includes(activeMobileTab) ? (
           <div className="svg-editor-properties-scroll">
-            <div className="svg-editor-property-section" data-section="text">
-              <h3><Type size={14} /> {t("svgEditor.text") || "Text"}</h3>
-              <button
-                type="button"
-                className="svg-editor-primary-btn svg-editor-add-text-action"
-                onClick={onAddText}
-              >
-                <Type size={16} />
-                <span>{t("svgEditor.addTextToLogo") || "Add text to logo"}</span>
-              </button>
-
-              {details?.textEditable || isTextElement ? (
-                <>
+            {activeMobileTab === "text" ? (
+              <div className="svg-editor-property-section" data-section="text">
+                <h3><Type size={14} /> {t("svgEditor.text") || "Text"}</h3>
+                {details?.textEditable || isTextElement ? (
                   <label className="svg-editor-field svg-editor-text-field" style={{ marginTop: 12 }}>
                     <span>{t("svgEditor.textContent")}</span>
-                    <textarea
-                      key={`${details.id}-${details.textContent}`}
-                      defaultValue={details.textContent}
-                      rows={3}
-                      maxLength={1000}
-                      disabled={locked}
-                      onBlur={(event) => { if (event.target.value !== details.textContent) onText(event.target.value); }}
-                    />
+                    <textarea key={`${details.id}-${details.textContent}`} defaultValue={details.textContent} rows={3} maxLength={1000} disabled={locked} onBlur={(event) => { if (event.target.value !== details.textContent) onText(event.target.value); }} />
                   </label>
-                  <label className="svg-editor-field svg-editor-font-family-field" style={{ marginTop: 8 }}>
-                    <span>{t("svgEditor.fontFamily")}</span>
-                    <select value={fontFamily} disabled={locked} onChange={(event) => onAttribute("font-family", event.target.value)}>
-                      {!FONT_PRESETS.some(([font]) => font === fontFamily) && <option value={fontFamily}>{fontFamily}</option>}
-                      {FONT_PRESETS.map(([font, label]) => <option key={font} value={font}>{label}</option>)}
-                    </select>
-                  </label>
-                  <RangeControl label={t("svgEditor.fontSize")} value={fontSize} min={1} max={Math.max(200, Math.min(2000, Math.ceil(fontSize * 2)))} step={1} suffix=" px" onCommit={(value) => onAttribute("font-size", value)} disabled={locked} icon={Type} />
-                  <RangeControl label={t("svgEditor.fontWeight")} value={fontWeight} min={100} max={900} step={100} onCommit={(value) => onAttribute("font-weight", String(value))} disabled={locked} />
-                  <RangeControl label={t("svgEditor.letterSpacing")} value={letterSpacing} min={-40} max={Math.max(40, Math.min(400, Math.ceil(Math.abs(letterSpacing) * 2)))} step={0.5} suffix=" px" onCommit={(value) => onAttribute("letter-spacing", value)} disabled={locked} />
-                  <div className="svg-editor-text-style-actions">
-                    <button type="button" className={`svg-editor-style-toggle ${bold ? "is-active" : ""}`} onClick={() => onAttribute("font-weight", bold ? "400" : "700")} disabled={locked} aria-pressed={bold} title={t("svgEditor.bold")}><Bold size={15} /><span>{t("svgEditor.bold")}</span></button>
-                    <button type="button" className={`svg-editor-style-toggle ${italic ? "is-active" : ""}`} onClick={() => onAttribute("font-style", italic ? "normal" : "italic")} disabled={locked} aria-pressed={italic} title={t("svgEditor.italic")}><Italic size={15} /><span>{t("svgEditor.italic")}</span></button>
-                    <label className="svg-editor-field svg-editor-text-align-field"><span>{t("svgEditor.textAlign")}</span><select value={attrs["text-anchor"] || "start"} disabled={locked} onChange={(event) => onAttribute("text-anchor", event.target.value)}><option value="start">{t("svgEditor.alignStart")}</option><option value="middle">{t("svgEditor.alignCenter")}</option><option value="end">{t("svgEditor.alignEnd")}</option></select></label>
-                  </div>
-                </>
-              ) : (
-                <p className="svg-editor-help" style={{ marginTop: 10 }}>
-                  {t("svgEditor.addTextHelp")}
-                </p>
-              )}
-            </div>
+                ) : <p className="svg-editor-help" style={{ marginTop: 10 }}>{t("svgEditor.addTextHelp")}</p>}
+              </div>
+            ) : !details || selectedCount !== 1 || !isTextElement ? (
+              <div className="svg-editor-property-empty"><strong>{t("svgEditor.selectElement")}</strong><p>{t("svgEditor.addTextHelp")}</p></div>
+            ) : activeMobileTab === "fontFamily" ? (
+              <div className="svg-editor-property-section" data-section="font-family">
+                <h3><Type size={14} /> {t("svgEditor.fontFamily") || "Font family"}</h3>
+                <div className="svg-editor-font-family-strip" role="group" aria-label={t("svgEditor.fontFamily") || "Font family"}>
+                  {FONT_PRESETS.map(([font, label]) => (
+                    <button key={font} type="button" className={`svg-editor-font-choice ${fontFamily === font ? "is-active" : ""}`} style={{ fontFamily: font }} onClick={() => onAttribute("font-family", font)} disabled={locked} aria-pressed={fontFamily === font}>{label}</button>
+                  ))}
+                </div>
+              </div>
+            ) : activeMobileTab === "letterSpacing" ? (
+              <div className="svg-editor-property-section" data-section="letter-spacing">
+                <h3>{t("svgEditor.letterSpacing") || "Letter spacing"}</h3>
+                <RangeControl label={t("svgEditor.letterSpacing")} value={letterSpacing} min={-40} max={Math.max(40, Math.min(400, Math.ceil(Math.abs(letterSpacing) * 2)))} step={0.5} suffix=" px" onCommit={(value) => onAttribute("letter-spacing", value)} disabled={locked} />
+              </div>
+            ) : (
+              <div className="svg-editor-property-section" data-section="text-style">
+                <h3>{t("svgEditor.typography") || "Text style"}</h3>
+                <RangeControl label={t("svgEditor.fontWeight")} value={fontWeight} min={100} max={900} step={100} onCommit={(value) => onAttribute("font-weight", String(value))} disabled={locked} />
+                <div className="svg-editor-text-style-icon-row">
+                  <button type="button" className={`svg-editor-style-icon-button ${bold ? "is-active" : ""}`} onClick={() => onAttribute("font-weight", bold ? "400" : "700")} disabled={locked} aria-pressed={bold} title={t("svgEditor.bold")} aria-label={t("svgEditor.bold")}><Bold size={17} /></button>
+                  <button type="button" className={`svg-editor-style-icon-button ${italic ? "is-active" : ""}`} onClick={() => onAttribute("font-style", italic ? "normal" : "italic")} disabled={locked} aria-pressed={italic} title={t("svgEditor.italic")} aria-label={t("svgEditor.italic")}><Italic size={17} /></button>
+                  <span className="svg-editor-style-icon-divider" />
+                  <button type="button" className={`svg-editor-style-icon-button ${(attrs["text-anchor"] || "start") === "start" ? "is-active" : ""}`} onClick={() => onAttribute("text-anchor", "start")} disabled={locked} title={t("svgEditor.alignStart")} aria-label={t("svgEditor.alignStart")} aria-pressed={(attrs["text-anchor"] || "start") === "start"}><AlignLeft size={17} /></button>
+                  <button type="button" className={`svg-editor-style-icon-button ${attrs["text-anchor"] === "middle" ? "is-active" : ""}`} onClick={() => onAttribute("text-anchor", "middle")} disabled={locked} title={t("svgEditor.alignCenter")} aria-label={t("svgEditor.alignCenter")} aria-pressed={attrs["text-anchor"] === "middle"}><AlignCenter size={17} /></button>
+                  <button type="button" className={`svg-editor-style-icon-button ${attrs["text-anchor"] === "end" ? "is-active" : ""}`} onClick={() => onAttribute("text-anchor", "end")} disabled={locked} title={t("svgEditor.alignEnd")} aria-label={t("svgEditor.alignEnd")} aria-pressed={attrs["text-anchor"] === "end"}><AlignRight size={17} /></button>
+                </div>
+              </div>
+            )}
             {error && <p className="svg-editor-inline-error" role="alert">{error}</p>}
           </div>
         ) : !details || selectedCount !== 1 ? (
@@ -729,6 +723,11 @@ export default function SvgPropertiesPanel({
             {/* 1. CONTROLS: delete, duplicate, flip and 4 icons of moving */}
             <div className="svg-editor-property-section" data-section="controls">
               <h3><SlidersHorizontal size={13} />{t("svgEditor.controls") || "Controls"}</h3>
+              {activeMobileTab === "controls" && isTextElement && (
+                <button type="button" className="svg-editor-primary-btn svg-editor-edit-text-action" onClick={onEditText} disabled={locked}>
+                  <Type size={16} /><span>{t("svgEditor.editText") || "Edit text"}</span>
+                </button>
+              )}
               <div className="svg-editor-action-grid">
                 <QuickAction icon={Copy} label={t("svgEditor.duplicate")} onClick={onDuplicate} disabled={locked} />
                 {tag === "g" ? <QuickAction icon={Ungroup} label={t("svgEditor.ungroup")} onClick={onUngroup} disabled={locked} /> : <QuickAction icon={Group} label={t("svgEditor.groupSelection")} onClick={onGroup} disabled={locked || selectedCount < 2} />}
@@ -765,6 +764,7 @@ export default function SvgPropertiesPanel({
             {supportsPosition && supportsSize && (
               <div className="svg-editor-property-section" data-section="size">
                 <h3><Maximize2 size={13} />{t("svgEditor.size") || "Size"}</h3>
+                {activeMobileTab === "size" && isTextElement && <RangeControl label={t("svgEditor.fontSize")} value={fontSize} min={1} max={Math.max(200, Math.min(2000, Math.ceil(fontSize * 2)))} step={1} suffix=" px" onCommit={(value) => onAttribute("font-size", value)} disabled={locked} icon={Type} />}
                 <div className="svg-editor-dimensions-card">
                   <RangeControl
                     key={`uniform-scale-${details.id}-${Math.round(width * 100) / 100}-${Math.round(height * 100) / 100}`}

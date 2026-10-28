@@ -108,3 +108,28 @@ test("SVG Controls removes X/Y fields and adjusts move step with compact arrow b
   assert.match(panel, /setNudgeStep\(Math\.max\(0\.1/);
   assert.match(css, /\.svg-editor-nudge-step-arrows button\s*\{/);
 });
+
+test("SVG text editing uses a mobile-only text composer and separate typography tabs", async () => {
+  const dialog = await read("src/components/svgEditor/SvgEditorDialog.jsx");
+  const panel = await read("src/components/svgEditor/SvgPropertiesPanel.jsx");
+  const css = await read("src/components/svgEditor/svgEditor.css");
+  assert.match(dialog, /window\.matchMedia\("\(max-width: 660px\)"\)/);
+  assert.match(dialog, /mobileTextComposerOpen &&/);
+  assert.match(dialog, /createTextSelection\(value\)/);
+  assert.match(dialog, /setMobileTextComposerMode\("edit"\)/);
+  assert.match(dialog, /setMobileTextDraft\(details\.textContent \|\| ""\)/);
+  assert.match(dialog, /mobileTextComposerMode === "edit" && selectedId/);
+  assert.match(dialog, /onClick=\{requestAddText\}/);
+  assert.match(dialog, /onEditText=\{requestEditText\}/);
+  assert.match(panel, /activeMobileTab === "controls" && isTextElement/);
+  assert.match(panel, /t\("svgEditor\.editText"\) \|\| "Edit text"/);
+  assert.match(dialog, /mobileEditorTab === "fontFamily"/);
+  assert.match(dialog, /mobileEditorTab === "letterSpacing"/);
+  assert.match(dialog, /mobileEditorTab === "textStyle"/);
+  assert.match(panel, /svg-editor-font-family-strip/);
+  assert.match(panel, /data-section="letter-spacing"/);
+  assert.match(panel, /data-section="text-style"/);
+  assert.match(panel, /activeMobileTab === "size" && isTextElement/);
+  assert.match(css, /\.svg-editor-mobile-text-composer\s*\{\s*display:\s*none/);
+  assert.match(css, /\.svg-editor-mobile-text-composer\s*\{[^}]*display:\s*flex/s);
+});

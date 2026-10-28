@@ -6,7 +6,7 @@ import {
   Copy, Trash2, Group, Ungroup, FileCode2,
   MousePointer2, Type, CircleAlert, CheckCircle2, FileUp,
   SlidersHorizontal, Maximize2, Layers, Palette, Eye, EyeOff,
-  Blend, RotateCw, Paintbrush, Image, Sparkles, ChevronLeft,
+  Blend, RotateCw, Paintbrush, Image, Sparkles, ChevronLeft, Check, Bold,
 } from "lucide-react";
 import SvgLayersPanel from "@/components/svgEditor/SvgLayersPanel";
 import SvgPropertiesPanel from "@/components/svgEditor/SvgPropertiesPanel";
@@ -293,6 +293,9 @@ export default function SvgEditorDialog({ onClose, direction = "ltr" }) {
   const [layersCollapsed, setLayersCollapsed] = React.useState(false);
   const [propertiesCollapsed, setPropertiesCollapsed] = React.useState(false);
   const [mobileEditorTab, setMobileEditorTab] = React.useState(null);
+  const [mobileTextComposerOpen, setMobileTextComposerOpen] = React.useState(false);
+  const [mobileTextDraft, setMobileTextDraft] = React.useState("");
+  const [mobileTextComposerMode, setMobileTextComposerMode] = React.useState("add");
   const [backgroundSubTab, setBackgroundSubTab] = React.useState("solid");
   const [palettePickerOpen, setPalettePickerOpen] = React.useState(false);
   const [selectedPaletteId, setSelectedPaletteId] = React.useState("ocean-mist");
@@ -505,13 +508,45 @@ export default function SvgEditorDialog({ onClose, direction = "ltr" }) {
     if (duplicated.length) setSelectedIds(duplicated);
   };
 
-  const createTextSelection = () => {
+  const createTextSelection = (textValue) => {
     if (!markupRef.current) return;
     let newId = null;
     const succeeded = performEdit(t("svgEditor.textAdded"), (root) => {
-      newId = addTextElement(root, t("svgEditor.newText"));
+      newId = addTextElement(root, textValue ?? t("svgEditor.newText"));
     });
     if (succeeded && newId) setSelectedIds([newId]);
+  };
+
+  const requestAddText = () => {
+    if (!markupRef.current) return;
+    if (typeof window !== "undefined" && window.matchMedia("(max-width: 660px)").matches) {
+      setMobileTextComposerMode("add");
+      setMobileTextDraft("");
+      setMobileTextComposerOpen(true);
+      setMobileEditorTab(null);
+      return;
+    }
+    createTextSelection();
+  };
+
+  const requestEditText = () => {
+    if (!details || !["text", "tspan"].includes(details.tag) || locked) return;
+    setMobileTextComposerMode("edit");
+    setMobileTextDraft(details.textContent || "");
+    setMobileTextComposerOpen(true);
+    setMobileEditorTab(null);
+  };
+
+  const confirmMobileText = () => {
+    const value = mobileTextDraft.trim();
+    if (!value) return;
+    if (mobileTextComposerMode === "edit" && selectedId) {
+      performEdit(t("svgEditor.textUpdated"), (root) => updateElementText(root, selectedId, value));
+    } else {
+      createTextSelection(value);
+    }
+    setMobileTextComposerOpen(false);
+    setMobileEditorTab(null);
   };
 
   const getParentDeltaForRootMove = React.useCallback((element, dx, dy) => {
@@ -957,7 +992,7 @@ export default function SvgEditorDialog({ onClose, direction = "ltr" }) {
           <div className="svg-editor-tool-group svg-editor-arrange-tools">
             <ToolbarButton icon={Palette} label={t("palette.open")} onClick={() => setPalettePickerOpen(true)} disabled={!svgMarkup} />
             <ToolbarButton icon={previewSelectedHidden ? Eye : EyeOff} label={previewSelectedHidden ? t("palette.showSelectedInEditor") : t("palette.hideSelectedInEditor")} onClick={togglePreviewVisibility} disabled={!selectedIds.length} active={previewSelectedHidden} />
-            <ToolbarButton icon={Type} label={t("svgEditor.addText")} onClick={createTextSelection} disabled={!svgMarkup} />
+            <ToolbarButton icon={Type} label={t("svgEditor.addText")} onClick={requestAddText} disabled={!svgMarkup} />
             <ToolbarButton
               icon={Image}
               label={t("svgEditor.background") || "Background"}
@@ -982,6 +1017,24 @@ export default function SvgEditorDialog({ onClose, direction = "ltr" }) {
               <header><div><Palette size={18} /><div><strong>{t("palette.galleryTitle")}</strong><small>{t("palette.galleryHint")}</small></div></div><button type="button" onClick={() => setPalettePickerOpen(false)} aria-label={t("svgEditor.close")}><X size={18} /></button></header>
               <ColorPalettePicker onSelect={choosePalette} selectedPaletteId={selectedPaletteId} t={t} />
             </section>
+          </div>
+        )}
+
+        {mobileTextComposerOpen && (
+          <div className="svg-editor-mobile-text-composer" role="dialog" aria-modal="true" aria-label={mobileTextComposerMode === "edit" ? (t("svgEditor.editText") || "Edit text") : (t("svgEditor.addText") || "Add text")}>
+            <header className="svg-editor-mobile-text-composer-header">
+              <button type="button" className="svg-editor-mobile-text-back" onClick={() => setMobileTextComposerOpen(false)} aria-label={t("svgEditor.backToTabs") || "Back"}><ChevronLeft size={20} /></button>
+              <strong>{mobileTextComposerMode === "edit" ? (t("svgEditor.editText") || "Edit text") : (t("svgEditor.addText") || "Add text")}</strong>
+              <span />
+            </header>
+            <div className="svg-editor-mobile-text-composer-body">
+              <div className="svg-editor-mobile-text-input-card">
+                <Type size={22} />
+                <textarea autoFocus value={mobileTextDraft} onChange={(event) => setMobileTextDraft(event.target.value)} maxLength={1000} placeholder={t("svgEditor.newText") || "Type your text..."} aria-label={t("svgEditor.textContent") || "Text content"} />
+                <small>{mobileTextDraft.length}/1000</small>
+              </div>
+              <button type="button" className="svg-editor-mobile-text-confirm" onClick={confirmMobileText} disabled={!mobileTextDraft.trim()}><Check size={18} />{t("svgEditor.confirmText") || "OK"}</button>
+            </div>
           </div>
         )}
 
@@ -1028,7 +1081,7 @@ export default function SvgEditorDialog({ onClose, direction = "ltr" }) {
             onDelete={deleteSelection}
             onGroup={groupSelection}
             onUngroup={ungroupSelection}
-            onAddText={createTextSelection}
+            onEditText={requestEditText}
             activeMobileTab={mobileEditorTab}
             onSetSolidBackground={handleSetSolidBackground}
             onSetGradientBackground={handleSetGradientBackground}
@@ -1095,10 +1148,13 @@ export default function SvgEditorDialog({ onClose, direction = "ltr" }) {
               <SlidersHorizontal size={20} />
               <span>{t("svgEditor.controls") || "Controls"}</span>
             </button>
-            <button type="button" className={`svg-editor-mobile-tab ${mobileEditorTab === "text" ? "is-active" : ""}`} onClick={() => setMobileEditorTab(prev => prev === "text" ? null : "text")}>
+            <button type="button" className="svg-editor-mobile-tab" onClick={requestAddText}>
               <Type size={20} />
               <span>{t("svgEditor.text") || "Text"}</span>
             </button>
+            <button type="button" className={`svg-editor-mobile-tab ${mobileEditorTab === "fontFamily" ? "is-active" : ""}`} onClick={() => setMobileEditorTab("fontFamily")}><Type size={20} /><span>{t("svgEditor.fontFamily") || "Font"}</span></button>
+            <button type="button" className={`svg-editor-mobile-tab ${mobileEditorTab === "letterSpacing" ? "is-active" : ""}`} onClick={() => setMobileEditorTab("letterSpacing")}><span className="svg-editor-spacing-tab-icon">A↔</span><span>{t("svgEditor.letterSpacing") || "Spacing"}</span></button>
+            <button type="button" className={`svg-editor-mobile-tab ${mobileEditorTab === "textStyle" ? "is-active" : ""}`} onClick={() => setMobileEditorTab("textStyle")}><Bold size={20} /><span>{t("svgEditor.typography") || "Style"}</span></button>
             <button type="button" className={`svg-editor-mobile-tab ${mobileEditorTab === "size" ? "is-active" : ""}`} onClick={() => setMobileEditorTab(prev => prev === "size" ? null : "size")}>
               <Maximize2 size={20} />
               <span>{t("svgEditor.size") || "Size"}</span>
