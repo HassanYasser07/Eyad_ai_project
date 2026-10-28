@@ -138,7 +138,6 @@
 .svg-editor-tool.is-active { color: hsl(var(--primary)); background: hsl(var(--accent)); }
 .svg-editor-tool.is-danger { color: #be123c; }
 .svg-editor-toolbar-divider { display: inline-block; width: 1px; height: 21px; margin: 0 4px; background: hsl(var(--border)); }
-.svg-editor-zoom-value { min-width: 42px; text-align: center; color: hsl(var(--muted-foreground)); font-size: 10px; font-weight: 800; font-variant-numeric: tabular-nums; }
 
 .svg-editor-feedback {
   gap: 8px;
@@ -372,7 +371,6 @@
   .svg-editor-workspace { grid-template-columns: 230px minmax(0, 1fr) 250px; }
   .svg-editor-tool > span { display: none; }
   .svg-editor-tool { width: 32px; padding: 0; }
-  .svg-editor-zoom-value { min-width: 36px; }
 }
 
 @media (max-width: 1000px) {
@@ -491,7 +489,7 @@
   display: block;
   min-width: 1px;
   min-height: 1px;
-  overflow: hidden;
+  overflow: visible;
   background: #fff;
   border: 1px solid #cbd5e1;
   border-radius: 1px;
@@ -799,19 +797,6 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .svg-editor-dialog *, .svg-editor-dialog *::before, .svg-editor-dialog *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
-}
-
-.svg-editor-zoom-slider-wrap { display: flex; width: 96px; align-items: center; padding: 0 5px; }
-.svg-editor-zoom-slider { width: 100%; cursor: pointer; }
-.svg-editor-zoom-slider [data-radix-slider-track] { height: 4px; background: hsl(var(--border)); }
-.svg-editor-zoom-slider [data-radix-slider-range] { background: hsl(var(--primary)); }
-.svg-editor-zoom-slider [data-radix-slider-thumb] { width: 12px; height: 12px; background: hsl(var(--card)); border: 2px solid hsl(var(--primary)); box-shadow: 0 1px 4px rgba(15,23,42,.16); }
-@media (max-width: 1280px) {
-  .svg-editor-zoom-slider-wrap { width: 74px; }
-}
-@media (max-width: 660px) {
-  .svg-editor-zoom-slider-wrap { width: clamp(56px, 22vw, 100px); margin-inline: auto; }
-  .svg-editor-zoom-value { min-width: 34px; }
 }
 
 /* Precise sizing controls and SVG selection-frame handles. */
@@ -1162,17 +1147,65 @@
 
   /* ── 1. Workspace: hide side panels by default, show via tabs ── */
   .svg-editor-workspace {
-    overflow: hidden !important;          /* no page-level scroll */
+    position: relative !important;
+    display: flex !important;
+    flex: 1 1 0 !important;
+    flex-direction: column !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+    overflow: hidden !important; /* fixed mobile viewport; child panels overlay it */
+    isolation: isolate;
+    transition: none !important;
   }
   .svg-editor-center-panel {
-    flex: 1 1 auto !important;
+    display: flex !important;
+    flex: 1 1 0 !important;
+    width: 100% !important;
+    min-width: 0 !important;
     min-height: 0 !important;
     max-height: none !important;
+    overflow: hidden !important;
   }
   .svg-editor-canvas {
+    position: relative !important;
+    display: flex !important;
+    flex: 1 1 0 !important;
+    width: 100% !important;
+    min-width: 0 !important;
     min-height: 0 !important;
     max-height: none !important;
-    flex: 1 1 auto;
+    overflow: hidden !important;
+    padding: 0 !important;
+  }
+  /* Anchor the artboard to the top of the canvas, immediately below the
+     editor header/toolbar, instead of vertically centering it behind controls. */
+  .svg-editor-artboard {
+    top: 0 !important;
+    left: 50% !important;
+    transform: translate(-50%, 0) !important;
+    max-width: 100%;
+    max-height: none;
+  }
+  .svg-editor-artboard > svg {
+    width: 100% !important;
+    height: 100% !important;
+    /* Uploaded SVGs may carry overflow="hidden" themselves. Override that
+       only in the live editor so mobile users can position artwork beyond
+       the artboard; exportSvgMarkup applies clipping to the exported copy. */
+    overflow: visible !important;
+  }
+
+  /* Some mobile builds render toolbar controls through alternate wrappers.
+     Hide any zoom controls in the SVG editor on mobile, without touching the
+     desktop toolbar or unrelated editors. */
+  .svg-editor-overlay button[aria-label*="zoom" i],
+  .svg-editor-overlay button[title*="zoom" i],
+  .svg-editor-overlay [data-testid*="zoom" i],
+  .svg-editor-overlay .svg-editor-zoom-controls,
+  .svg-editor-overlay .svg-editor-zoom-in,
+  .svg-editor-overlay .svg-editor-zoom-out {
+    display: none !important;
   }
 
   /* Hide canvas heading to save space */
@@ -1181,13 +1214,25 @@
   /* Side panels: hidden by default */
   .svg-editor-layers-panel,
   .svg-editor-properties-panel {
+    /* Keep panels out of flex sizing: selecting an element must never resize
+       or reposition the canvas/workspace. Panels float above its lower edge. */
+    position: absolute !important;
+    inset-inline: 0 !important;
+    bottom: 0 !important;
+    z-index: 30 !important;
     display: none !important;
-    order: 2;
-    flex: 0 0 auto !important;
-    max-height: 38vh !important;
+    order: initial !important;
+    flex: none !important;
+    width: 100% !important;
+    height: min(24vh, 190px) !important;
+    max-height: min(24vh, 190px) !important;
     min-height: 0 !important;
+    overflow-x: hidden !important;
     overflow-y: auto !important;
+    overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
+    background: hsl(var(--card)) !important;
+    box-shadow: 0 -8px 24px rgba(0, 0, 0, .16);
     border-top: 1px solid hsl(var(--border)) !important;
     border-inline: none !important;
   }
@@ -1276,7 +1321,10 @@
   /* Properties scroll: single column on mobile */
   .svg-editor-properties-scroll {
     display: flex !important;
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
     flex-direction: column !important;
+    overflow-y: auto !important;
     padding: 10px !important;
   }
 
