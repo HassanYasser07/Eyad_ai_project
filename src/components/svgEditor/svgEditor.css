@@ -1597,6 +1597,39 @@
   .svg-editor-style-icon-button.is-active { border-color: hsl(var(--primary)); background: hsl(var(--primary) / .11); color: hsl(var(--primary)); }
   .svg-editor-style-icon-divider { width: 1px; height: 26px; margin: 0 3px; background: hsl(var(--border)); }
   .svg-editor-mobile-tab .svg-editor-spacing-tab-icon { font-size: 15px; font-weight: 800; line-height: 1; }
+
+  /* Additional mobile-only visual polish; no behavior changes. */
+
+  .svg-editor-dialog { border: 1px solid hsl(var(--border) / .85); border-radius: 16px; box-shadow: 0 18px 56px rgba(15, 23, 42, .28); }
+  .svg-editor-header { padding: 10px 12px; gap: 8px; box-shadow: 0 2px 8px rgba(15, 23, 42, .035); }
+  .svg-editor-brand-icon { width: 34px; height: 34px; border-radius: 10px; }
+  .svg-editor-header-brand h1 { font-size: 14px; }
+  .svg-editor-header-brand p { font-size: 10px; }
+  .svg-editor-header-actions { gap: 5px; }
+  .svg-editor-secondary-button, .svg-editor-export-button { min-height: 33px; padding-inline: 9px; border-radius: 9px; }
+  .svg-editor-toolbar { padding: 6px 8px; gap: 5px; }
+  .svg-editor-tool-group { gap: 3px; }
+  .svg-editor-tool { width: 31px; height: 31px; min-height: 31px; border-radius: 8px; }
+  .svg-editor-workspace { background: hsl(var(--background)); }
+  .svg-editor-center-panel { background: #f5f7fb; }
+  .svg-editor-canvas { background-size: 16px 16px; background-position: 0 0, 0 8px, 8px -8px, -8px 0; }
+  .svg-editor-layers-panel, .svg-editor-properties-panel { border-top: 1px solid hsl(var(--primary) / .2) !important; border-radius: 16px 16px 0 0; background: hsl(var(--card)) !important; box-shadow: 0 -12px 34px rgba(15, 23, 42, .18), 0 -1px 0 rgba(255,255,255,.8); }
+  .svg-editor-layer-list { padding: 7px 9px 10px; background: hsl(var(--background) / .35); }
+  .svg-editor-layer-row { min-height: 42px; margin: 2px 0; }
+  .svg-editor-layer-thumbnail { width: 29px; height: 29px; }
+  .svg-editor-properties-scroll { padding: 9px 10px 12px !important; gap: 0; }
+  .svg-editor-selected-heading { flex-direction: row; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; margin-bottom: 8px; }
+  .svg-editor-property-section { margin-top: 7px; padding: 10px; border-radius: 11px; box-shadow: 0 1px 4px rgba(15, 23, 42, .025); }
+  .svg-editor-property-section h3 { margin-bottom: 9px; font-size: 10px; }
+  .svg-editor-action { min-height: 34px; border-radius: 9px; }
+  .svg-editor-mobile-tabbar, .svg-editor-background-tabbar { gap: 5px; padding: 7px 8px; padding-bottom: calc(7px + env(safe-area-inset-bottom, 0px)); background: hsl(var(--card)); border-top: 1px solid hsl(var(--border)); box-shadow: 0 -5px 18px rgba(15, 23, 42, .07); }
+  .svg-editor-mobile-tab { position: relative; min-width: 58px; padding: 7px 9px 6px; border: 1px solid transparent; border-radius: 11px; font-size: 10px; }
+  .svg-editor-mobile-tab svg { width: 19px; height: 19px; stroke-width: 1.9; }
+  .svg-editor-mobile-tab.is-active { color: hsl(var(--primary)); background: hsl(var(--primary) / .085); border-color: hsl(var(--primary) / .16); box-shadow: inset 0 0 0 1px hsl(var(--primary) / .025); }
+  .svg-editor-mobile-tab:active { transform: scale(.97); }
+  .svg-editor-background-tabbar .svg-editor-bg-tab { border-radius: 11px; }
+  .svg-editor-mobile-text-composer { border-color: hsl(var(--border)); background: hsl(var(--background)); }
+
 }
 
 .svg-editor-palette-overlay { position: fixed; inset: 0; z-index: 1200; display: grid; place-items: center; padding: max(14px, env(safe-area-inset-top)) 14px max(14px, env(safe-area-inset-bottom)); background: rgba(15, 23, 42, .56); backdrop-filter: blur(5px); }
@@ -1610,3 +1643,9 @@
 @media (max-width: 600px) { .svg-editor-palette-dialog { padding: 12px; max-height: min(88dvh, 900px); border-radius: 16px; } .svg-editor-palette-dialog > .presentation-palette-gallery { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; } }
 
 
+
+
+
+@media (prefers-reduced-motion: reduce) {
+  .svg-editor-tool, .svg-editor-layer-row, .svg-editor-layer-actions button, .svg-editor-action, .svg-editor-mobile-tab { transition: none !important; }
+}
