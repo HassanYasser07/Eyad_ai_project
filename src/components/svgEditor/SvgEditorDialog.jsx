@@ -28,7 +28,6 @@ import {
   toggleElementLock,
   ungroupElement,
   updateElementAttribute,
-  updateElementPosition,
   nudgeElement,
   updateElementSize,
   updateElementText,
@@ -1017,7 +1016,6 @@ export default function SvgEditorDialog({ onClose, direction = "ltr" }) {
             locked={locked}
             error={error}
             onRename={(label) => performEdit(t("svgEditor.labelUpdated"), (root) => renameElement(root, selectedId, label))}
-            onPosition={(axis, value, bounds) => performEdit(t("svgEditor.positionUpdated"), (root) => updateElementPosition(root, selectedId, axis, value, bounds))}
             onText={(value) => performEdit(t("svgEditor.textUpdated"), (root) => updateElementText(root, selectedId, value))}
             onSize={(dimension, value, bounds) => performEdit(t("svgEditor.dimensionsUpdated"), (root) => updateElementSize(root, selectedId, dimension, value, bounds))}
             onRotate={(value, bounds) => performEdit(t("svgEditor.rotationUpdated"), (root) => rotateElement(root, selectedId, value, bounds))}

@@ -94,3 +94,17 @@ test("mobile control panels stay compact so they do not dominate the workspace",
   assert.match(mobileBlock, /max-height:\s*min\(24vh, 190px\) !important/);
   assert.match(mobileBlock, /overflow-y:\s*auto !important/);
 });
+
+
+test("SVG Controls removes X/Y fields and adjusts move step with compact arrow buttons", async () => {
+  const panel = await read("src/components/svgEditor/SvgPropertiesPanel.jsx");
+  const dialog = await read("src/components/svgEditor/SvgEditorDialog.jsx");
+  const css = await read("src/components/svgEditor/svgEditor.css");
+  assert.doesNotMatch(panel, /svg-editor-position-number-fields|NumberField label=\{t\("svgEditor\.x"\)\}|NumberField label=\{t\("svgEditor\.y"\)\}/);
+  assert.doesNotMatch(dialog, /onPosition=\{/);
+  assert.match(panel, /aria-label="Increase move step"/);
+  assert.match(panel, /aria-label="Decrease move step"/);
+  assert.match(panel, /setNudgeStep\(Math\.min\(1000/);
+  assert.match(panel, /setNudgeStep\(Math\.max\(0\.1/);
+  assert.match(css, /\.svg-editor-nudge-step-arrows button\s*\{/);
+});

@@ -2,7 +2,7 @@ import React from "react";
 import {
   SlidersHorizontal, FlipHorizontal, FlipVertical, Copy, Trash2,
   Group, Ungroup, ArrowUp, ArrowRight, ArrowDown, ArrowLeft, Bold, Italic,
-  ChevronLeft, ChevronRight, MoveHorizontal, RotateCcw, Palette, Type,
+  ChevronLeft, ChevronRight, ChevronUp, ChevronDown, MoveHorizontal, RotateCcw, Palette, Type,
   RotateCw, Blend, Paintbrush, Maximize2, Image, Sparkles, Upload, Pipette,
 } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
@@ -291,7 +291,6 @@ export default function SvgPropertiesPanel({
   bounds,
   onRename,
   onText,
-  onPosition,
   onSize,
   onRotate,
   onFlip,
@@ -346,8 +345,6 @@ export default function SvgPropertiesPanel({
   const supportsPosition = !!details && !details.definition && tag !== "style";
   const supportsSize = supportsPosition && !["line", "textPath", "tspan", "a"].includes(tag);
   const isTextElement = ["text", "tspan"].includes(tag);
-  const positionX = bounds?.x ?? attrs.x ?? attrs.cx ?? attrs.x1 ?? 0;
-  const positionY = bounds?.y ?? attrs.y ?? attrs.cy ?? attrs.y1 ?? 0;
   const width = bounds?.width ?? attrs.width ?? (tag === "circle" ? numericValue(attrs.r) * 2 : tag === "ellipse" ? numericValue(attrs.rx) * 2 : 0);
   const height = bounds?.height ?? attrs.height ?? (tag === "circle" ? numericValue(attrs.r) * 2 : tag === "ellipse" ? numericValue(attrs.ry) * 2 : 0);
   const rotation = normalizeAngle(attrs["data-editor-rotation"] ?? parseRotation(attrs.transform));
@@ -743,10 +740,14 @@ export default function SvgPropertiesPanel({
                 <div className="svg-editor-nudge-wrap">
                   <div className="svg-editor-nudge-heading">
                     <strong>{t("svgEditor.preciseMove")}</strong>
-                    <label className="svg-editor-nudge-step">
+                    <div className="svg-editor-nudge-step">
                       <span>{t("svgEditor.moveStep")}</span>
-                      <input type="number" min="0.1" step="0.1" value={nudgeStep} disabled={locked} onChange={(event) => setNudgeStep(Math.max(0.1, Math.min(1000, Number(event.target.value) || 1)))} />
-                    </label>
+                      <output className="svg-editor-nudge-step-value" aria-live="polite">{Number(nudgeStep.toFixed(1))}</output>
+                      <span className="svg-editor-nudge-step-arrows">
+                        <button type="button" aria-label="Increase move step" title="Increase move step" disabled={locked || nudgeStep >= 1000} onClick={() => setNudgeStep(Math.min(1000, Math.round((nudgeStep + 0.1) * 10) / 10))}><ChevronUp size={11} /></button>
+                        <button type="button" aria-label="Decrease move step" title="Decrease move step" disabled={locked || nudgeStep <= 0.1} onClick={() => setNudgeStep(Math.max(0.1, Math.round((nudgeStep - 0.1) * 10) / 10))}><ChevronDown size={11} /></button>
+                      </span>
+                    </div>
                   </div>
                   <div className="svg-editor-nudge-grid">
                     <span />
@@ -755,10 +756,6 @@ export default function SvgPropertiesPanel({
                     <NudgeButton icon={ArrowLeft} label={t("svgEditor.moveLeft")} onClick={() => onNudge(-nudgeStep, 0)} disabled={locked} />
                     <NudgeButton icon={ArrowDown} label={t("svgEditor.moveDown")} onClick={() => onNudge(0, nudgeStep)} disabled={locked} />
                     <NudgeButton icon={ArrowRight} label={t("svgEditor.moveRight")} onClick={() => onNudge(nudgeStep, 0)} disabled={locked} />
-                  </div>
-                  <div className="svg-editor-fields-2 svg-editor-position-number-fields">
-                    <NumberField label={t("svgEditor.x")} value={positionX} onCommit={(value) => onPosition("x", value, bounds)} disabled={locked} />
-                    <NumberField label={t("svgEditor.y")} value={positionY} onCommit={(value) => onPosition("y", value, bounds)} disabled={locked} />
                   </div>
                 </div>
               )}
