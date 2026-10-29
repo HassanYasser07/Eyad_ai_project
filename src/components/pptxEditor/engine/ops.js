@@ -1083,7 +1083,8 @@ function growFrame(doc, node, dx, dy) {
   const b = readBoundsFromNode(node);
   if (b) writeBounds(doc, node, { ...b, w: b.w + dx, h: b.h + dy });
 }
-export function tableRows(pkg, slidePath, id, op, index) {
+/** `before` inserts the new row above `index` instead of below it (used by the top-edge "+" handle). */
+export function tableRows(pkg, slidePath, id, op, index, before = false) {
   return mutateSlide(pkg, slidePath, "Table rows", (doc, tree) => {
     const node = findNode(tree, id), tbl = tblOf(node);
     guardMerge(tbl);
@@ -1093,7 +1094,7 @@ export function tableRows(pkg, slidePath, id, op, index) {
       const clone = src.cloneNode(true);
       stripExt(clone);
       for (const tc of kids(clone, "tc")) { clearCell(tc); stripExt(tc); }
-      tbl.insertBefore(clone, src.nextSibling);
+      tbl.insertBefore(clone, before ? src : src.nextSibling);
       growFrame(doc, node, 0, num(src, "h"));
     } else {
       if (rows.length <= 1) throw new PptxError("TABLE_MIN", "A table needs at least one row.");
@@ -1103,7 +1104,8 @@ export function tableRows(pkg, slidePath, id, op, index) {
     }
   });
 }
-export function tableCols(pkg, slidePath, id, op, index) {
+/** `before` inserts the new column left of `index` instead of right of it (used by the edge "+" handle). */
+export function tableCols(pkg, slidePath, id, op, index, before = false) {
   return mutateSlide(pkg, slidePath, "Table columns", (doc, tree) => {
     const node = findNode(tree, id), tbl = tblOf(node);
     guardMerge(tbl);
@@ -1112,11 +1114,11 @@ export function tableCols(pkg, slidePath, id, op, index) {
       const src = cols[Math.min(index, cols.length - 1)];
       const c = src.cloneNode(true);
       stripExt(c);
-      grid.insertBefore(c, src.nextSibling);
+      grid.insertBefore(c, before ? src : src.nextSibling);
       for (const tr of kids(tbl, "tr")) {
-        const tcs = kids(tr, "tc"), t = tcs[Math.min(index, tcs.length - 1)].cloneNode(true);
+        const tcs = kids(tr, "tc"), at = tcs[Math.min(index, tcs.length - 1)], t = at.cloneNode(true);
         clearCell(t); stripExt(t);
-        tr.insertBefore(t, tcs[Math.min(index, tcs.length - 1)].nextSibling);
+        tr.insertBefore(t, before ? at : at.nextSibling);
       }
       growFrame(doc, node, num(src, "w"), 0);
     } else {

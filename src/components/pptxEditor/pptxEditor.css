@@ -266,6 +266,23 @@
 .pptx-cell-color .pe-color { min-height: 30px; padding: 0 4px; gap: 0; border-radius: 8px; }
 .pptx-cell-color .pe-color-label { display: none; }
 .pptx-cell-color .pe-swatch { width: 18px; height: 18px; }
+/* Table border controls: select-all corner, drag-to-resize strips, "+" insert points. */
+.pptx-tbl-select { position: absolute; z-index: 7; display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 1px solid hsl(var(--border)); border-radius: 7px; background: hsl(var(--card)); color: hsl(var(--foreground)); box-shadow: 0 2px 8px rgba(15,23,42,.2); cursor: pointer; pointer-events: auto; }
+.pptx-tbl-select:hover, .pptx-tbl-select.is-active { background: hsl(var(--primary)); border-color: hsl(var(--primary)); color: hsl(var(--primary-foreground)); }
+.pptx-tbl-resize { position: absolute; z-index: 7; display: flex; align-items: center; justify-content: center; pointer-events: auto; touch-action: none; }
+.pptx-tbl-resize.is-col { width: 14px; cursor: col-resize; }
+.pptx-tbl-resize.is-row { height: 14px; cursor: row-resize; }
+.pptx-tbl-resize i { display: block; border-radius: 2px; background: hsl(var(--primary)); opacity: 0; transition: opacity .12s; }
+.pptx-tbl-resize.is-col i { width: 3px; height: 100%; }
+.pptx-tbl-resize.is-row i { height: 3px; width: 100%; }
+.pptx-tbl-resize:hover i, .pptx-tbl-resize.is-dragging i { opacity: .85; }
+.pptx-tbl-add { position: absolute; z-index: 7; display: grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 999px; background: transparent; color: hsl(var(--primary-foreground)); transform: translate(-50%, -50%); cursor: pointer; pointer-events: auto; }
+.pptx-tbl-add::before { content: ""; position: absolute; width: 6px; height: 6px; border-radius: 999px; background: hsl(var(--primary) / .55); transition: opacity .1s; }
+.pptx-tbl-add svg { position: relative; opacity: 0; transform: scale(.5); transition: opacity .1s, transform .1s; }
+.pptx-tbl-add:hover, .pptx-tbl-add:focus-visible { background: hsl(var(--primary)); box-shadow: 0 2px 8px rgba(15,23,42,.3); }
+.pptx-tbl-add:hover::before, .pptx-tbl-add:focus-visible::before { opacity: 0; }
+.pptx-tbl-add:hover svg, .pptx-tbl-add:focus-visible svg { opacity: 1; transform: scale(1); }
+@media (hover: none) { .pptx-tbl-add { width: 24px; height: 24px; background: hsl(var(--primary) / .85); } .pptx-tbl-add::before { display: none; } .pptx-tbl-add svg { opacity: 1; transform: none; } .pptx-tbl-resize.is-col { width: 22px; } .pptx-tbl-resize.is-row { height: 22px; } }
 @media (max-width: 640px) { .pptx-cell-toolbar { min-height: 50px; } .pptx-cell-btn { width: 36px; height: 36px; } .pptx-cell-font { height: 36px; } }
 .pptx-handle { position: absolute; width: 44px; height: 44px; transform: translate(-50%, -50%); display: flex; align-items: center; justify-content: center; pointer-events: auto; touch-action: none; }
 .pptx-handle i { display: block; width: 12px; height: 12px; background: #fff; border: 2px solid hsl(var(--primary)); border-radius: 3px; box-shadow: 0 1px 4px rgba(0,0,0,.35); }

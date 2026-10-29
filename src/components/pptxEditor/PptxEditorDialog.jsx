@@ -173,7 +173,7 @@ export default function PptxEditorDialog({ onClose }) {
     finally { paletteSnapshotsRef.current = null; setAllSlidesPalette(false); }
   };
   const lockedIds = React.useMemo(() => new Set([...locked].filter((k) => okModel && k.startsWith(`${okModel.path}#`)).map((k) => k.split("#")[1])), [locked, okModel]);
-  const labels = React.useMemo(() => ({ canvas: t("pptxEditor.canvas"), locked: t("pptxEditor.locked"), loading: t("pptxEditor.loadingImage"), imageUnavailable: t("pptxEditor.imageUnavailable"), chartNote: t("pptxEditor.chartNote"), chartPreview: t("pptxEditor.chartPreview"), viewOnly: t("pptxEditor.viewOnly"), placeholderHint: t("pptxEditor.placeholderHint"), selectionActions: t("pptxEditor.selectionActions"), quickCopy: t("pptxEditor.quickCopyHint"), quickRotate: t("pptxEditor.quickRotateHint"), quickDelete: t("pptxEditor.quickDeleteHint"), cellToolbar: t("pptxEditor.cellToolbar") }), [t]);
+  const labels = React.useMemo(() => ({ canvas: t("pptxEditor.canvas"), locked: t("pptxEditor.locked"), loading: t("pptxEditor.loadingImage"), imageUnavailable: t("pptxEditor.imageUnavailable"), chartNote: t("pptxEditor.chartNote"), chartPreview: t("pptxEditor.chartPreview"), viewOnly: t("pptxEditor.viewOnly"), placeholderHint: t("pptxEditor.placeholderHint"), selectionActions: t("pptxEditor.selectionActions"), quickCopy: t("pptxEditor.quickCopyHint"), quickRotate: t("pptxEditor.quickRotateHint"), quickDelete: t("pptxEditor.quickDeleteHint"), cellToolbar: t("pptxEditor.cellToolbar"), selectTable: t("pptxEditor.selectWholeTable"), addColumn: t("pptxEditor.insertColumnHere"), addRow: t("pptxEditor.insertRowHere"), resizeColumn: t("pptxEditor.resizeColumn"), resizeRow: t("pptxEditor.resizeRow") }), [t]);
 
   React.useEffect(() => { if (pkg) return pkg.subscribe(() => force()); return undefined; }, [pkg]);
   React.useEffect(() => { if (okModel) setSelection((s) => { const n = s.filter((id) => okModel.elements.some((e) => e.id === id)); return n.length === s.length ? s : n; }); }, [okModel]);
@@ -320,8 +320,8 @@ export default function PptxEditorDialog({ onClose }) {
     shape: (style) => run(() => { const editable = sel.filter((item) => !lockedIds.has(item.id) && !item.readOnlyGeometry).map((item) => item.id); if (editable.length) setShapeStyle(pkg, path, editable, style); }),
     opacity: (v) => run(() => { const editable = sel.filter((item) => !lockedIds.has(item.id)).map((item) => item.id); if (editable.length) setOpacity(pkg, path, editable, v); }),
     editText: () => openText(ids[0]),
-    tableRows: (op, i) => run(() => { if (ids[0] && !lockedIds.has(ids[0])) tableRows(pkg, path, ids[0], op, i); }),
-    tableCols: (op, i) => run(() => { if (ids[0] && !lockedIds.has(ids[0])) tableCols(pkg, path, ids[0], op, i); }),
+    tableRows: (op, i, before = false) => run(() => { if (ids[0] && !lockedIds.has(ids[0])) tableRows(pkg, path, ids[0], op, i, before); }),
+    tableCols: (op, i, before = false) => run(() => { if (ids[0] && !lockedIds.has(ids[0])) tableCols(pkg, path, ids[0], op, i, before); }),
     tableOptions: (options) => run(() => { if (ids[0] && !lockedIds.has(ids[0])) setTableOptions(pkg, path, ids[0], options); }),
     tableRangeText: (row, col, scope, props) => run(() => { if (ids[0] && !lockedIds.has(ids[0])) setTableRangeTextProps(pkg, path, ids[0], row, col, scope, props); }),
     tableRangeFill: (row, col, scope, hex) => run(() => { if (ids[0] && !lockedIds.has(ids[0])) setTableRangeCellFill(pkg, path, ids[0], row, col, scope, hex); }),
@@ -388,6 +388,15 @@ export default function PptxEditorDialog({ onClose }) {
     setTextEdit(null);
     if (compact) setSheet("ribbon");
   };
+  // Corner button of the table: the toolbar and the ribbon now format the whole table.
+  const selectWholeTable = (id) => {
+    if (lockedIds.has(id)) return;
+    setSelection([id]); setTextEdit(null);
+    setTableFocus({ id, row: 0, col: 0, scope: "table", picked: true });
+    setActiveRibbon("table");
+  };
+  // "+" on a table border: boundary j sits between line j-1 and line j (0 = before the first, n = after the last).
+  const addTableLine = (kind, boundary) => (kind === "row" ? a.tableRows : a.tableCols)("add", boundary === 0 ? 0 : boundary - 1, boundary === 0);
   const cancelInlineText = () => {
     const id = textEdit?.id;
     if (id) setTextAutoSizeDrafts((current) => { if (!current.has(id)) return current; const next = new Map(current); next.delete(id); return next; });
@@ -566,8 +575,8 @@ export default function PptxEditorDialog({ onClose }) {
   const tableTextStyle = selectedTableCell?.text?.paragraphs?.find((p) => p.runs.length)?.runs[0]?.style || selectedTableCell?.text?.paragraphs?.[0]?.end || null;
   const cellToolbarNode = tableFocus.picked && focusIsTable && sel.length === 1 && selectedTableCell && !lockedIds.has(selectedEl.id)
     ? <CellToolbar style={tableTextStyle} fill={selectedTableCell.fill} themeColors={ribbonColors} t={t}
-        onText={(props) => a.tableRangeText(tableRowIndex, tableColIndex, "cell", props)}
-        onFill={(hex) => a.tableRangeFill(tableRowIndex, tableColIndex, "cell", hex)} />
+        onText={(props) => a.tableRangeText(tableRowIndex, tableColIndex, tableFocus.scope, props)}
+        onFill={(hex) => a.tableRangeFill(tableRowIndex, tableColIndex, tableFocus.scope, hex)} />
     : null;
   const textHasContent = (e) => !!e?.text?.plain?.some((v) => String(v).trim());
   const canTextEdit = sel.length > 0 && sel.every((e) => e.kind !== "table" && (e.kind === "text" || textHasContent(e)));
@@ -830,7 +839,7 @@ export default function PptxEditorDialog({ onClose }) {
             {!compact && <aside className="pe-left"><SlidesPanel pkg={pkg} pres={pres} idx={safeIdx} onSelect={slideOps.select} onAdd={slideOps.add} onDuplicate={dupSlide} onDelete={slideOps.del} onMove={slideOps.move} t={t} labels={labels} /></aside>}
             <main className="pe-main" dir="ltr">
               {okModel ? (
-                <Canvas ref={canvasRef} pkg={pkg} model={canvasModel} selection={selection} onSelect={setSelection} onSelectionComplete={activateContextForSelection} onInteractionStart={clearContextSheetTimer} onCommit={commitBounds} onEditText={openText} editingText={textEdit} tableSelection={tableFocus} cellToolbar={cellToolbarNode} textAutoSizeHeights={textAutoSizeDrafts} onTableCellSelect={selectTableCell} onAutoSizeText={autoSizeTextHeight} onTextCommit={commitInlineText} onTextCancel={cancelInlineText} onCopy={copyNow} onDelete={a.remove} onRotate={() => a.rotate(90)} multi={multi} grid={grid} locked={lockedIds} labels={labels} onZoom={setZoom} compact={compact} />
+                <Canvas ref={canvasRef} pkg={pkg} model={canvasModel} selection={selection} onSelect={setSelection} onSelectionComplete={activateContextForSelection} onInteractionStart={clearContextSheetTimer} onCommit={commitBounds} onEditText={openText} editingText={textEdit} tableSelection={tableFocus} cellToolbar={cellToolbarNode} onTableAdd={addTableLine} onTableSelectAll={selectWholeTable} textAutoSizeHeights={textAutoSizeDrafts} onTableCellSelect={selectTableCell} onAutoSizeText={autoSizeTextHeight} onTextCommit={commitInlineText} onTextCancel={cancelInlineText} onCopy={copyNow} onDelete={a.remove} onRotate={() => a.rotate(90)} multi={multi} grid={grid} locked={lockedIds} labels={labels} onZoom={setZoom} compact={compact} />
               ) : <div className="pe-error"><AlertTriangle aria-hidden="true" />{t("pptxEditor.slideUnreadable")}</div>}
               {compact && pres && (
                 <div className="pe-slidenav">

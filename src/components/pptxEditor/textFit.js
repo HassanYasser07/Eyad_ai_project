@@ -112,3 +112,17 @@ export function fitTableToContent(root, el) {
   const h = rows.reduce((a, b) => a + b, 0);
   return rows.some((v, i) => v !== el.table.rows[i].h) ? { w: cols.reduce((a, b) => a + b, 0), h, tableGrid: { cols, rows } } : null;
 }
+
+/**
+ * Grid for a table whose column widths / row heights were set by the user (border drag).
+ * Rows never go below the height their wrapped text needs at the given column widths, so shrinking a
+ * column grows the affected rows and shrinking a row stops at its content. Returns null when the
+ * table cannot be measured; callers then use the requested grid as is.
+ */
+export function fitTableGrid(root, el, cols, rows) {
+  if (el?.kind !== "table") return null;
+  const natural = measureTableRowHeights(root, el.id, cols);
+  if (!natural || natural.length !== rows.length) return null;
+  const fitted = rows.map((h, i) => Math.max(h, natural[i]));
+  return { w: cols.reduce((a, b) => a + b, 0), h: fitted.reduce((a, b) => a + b, 0), tableGrid: { cols: cols.slice(), rows: fitted } };
+}

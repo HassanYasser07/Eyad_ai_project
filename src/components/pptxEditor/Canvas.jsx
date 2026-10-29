@@ -4,15 +4,18 @@ import SlideView, { collectImagePaths } from "./SlideView.jsx";
 import { useMediaUrls } from "./useMediaUrls.js";
 import { EMU_PER_PX } from "./engine/slideModel.js";
 import { hitTest, rotatedBox, unionBox, snapBox } from "./engine/geometry.js";
-import { fitFrame, fitTableToContent } from "./textFit.js";
+import { fitFrame, fitTableToContent, fitTableGrid } from "./textFit.js";
+import TableHandles from "./TableHandles.jsx";
 
 const MIN_SIZE = 91440;
+const MIN_COL = 285750; // 30 px: narrowest column a border drag can produce
+const MIN_ROW = 190500; // 20 px: shortest row (content may force more)
 const GRID = 228600; // 0.25 in
 const HANDLES = [["nw", 0, 0], ["n", 0.5, 0], ["ne", 1, 0], ["e", 1, 0.5], ["se", 1, 1], ["s", 0.5, 1], ["sw", 0, 1], ["w", 0, 0.5]];
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const boundsOf = (e) => ({ x: e.x, y: e.y, w: e.w, h: e.h, rot: e.rot, flipH: e.flipH, flipV: e.flipV });
 
-const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelect, onSelectionComplete, onInteractionStart, onCommit, onEditText, onTextCommit, onTextCancel, onTableCellSelect, onAutoSizeText, textAutoSizeHeights, editingText, tableSelection, cellToolbar, onCopy, onDelete, onRotate, multi, grid, locked, labels, onZoom, compact }, ref) {
+const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelect, onSelectionComplete, onInteractionStart, onCommit, onEditText, onTextCommit, onTextCancel, onTableCellSelect, onAutoSizeText, textAutoSizeHeights, editingText, tableSelection, cellToolbar, onTableAdd, onTableSelectAll, onCopy, onDelete, onRotate, multi, grid, locked, labels, onZoom, compact }, ref) {
   const stageRef = React.useRef(null);
   const [size, setSize] = React.useState({ w: 800, h: 600 });
   const [view, setView] = React.useState({ zoom: 1, pan: { x: 0, y: 0 } });
@@ -22,6 +25,7 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
   const [cellFit, setCellFit] = React.useState(null); // live row/frame growth while typing in a table cell
   const cellToolbarRef = React.useRef(null);
   const [cellPos, setCellPos] = React.useState(null); // screen anchor of the floating cell toolbar
+  const [tblDrag, setTblDrag] = React.useState(null); // { kind: "col"|"row", index } while a table border is dragged
   const urls = useMediaUrls(pkg, collectImagePaths(model));
 
   const W = model.size.w / EMU_PER_PX, H = model.size.h / EMU_PER_PX;
@@ -396,15 +400,22 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
     const stage = stageRef.current;
     let next = null;
     if (cellKey && stage) {
-      const td = stage.querySelector(`.pptx-el-table[data-id="${tableSelection.id}"] td[data-row="${tableSelection.row}"][data-col="${tableSelection.col}"]`);
+      const hostSel = `.pptx-el-table[data-id="${tableSelection.id}"]`;
+      const wholeTable = tableSelection.scope === "table";
+      const target = wholeTable ? stage.querySelector(`${hostSel} table`) : stage.querySelector(`${hostSel} td[data-row="${tableSelection.row}"][data-col="${tableSelection.col}"]`);
       const bar = cellToolbarRef.current;
-      if (td && bar) {
-        const sr = stage.getBoundingClientRect(), cr = td.getBoundingClientRect();
+      if (target && bar) {
+        const tel = model.elements.find((x) => x.id === tableSelection.id);
+        const lastRow = (tel?.table?.rows?.length || 1) - 1;
+        // Leave room for the "+" handles that sit just outside the table border.
+        const gapAbove = wholeTable || tableSelection.row === 0 ? 38 : 8;
+        const gapBelow = wholeTable || tableSelection.row >= lastRow ? 38 : 8;
+        const sr = stage.getBoundingClientRect(), cr = target.getBoundingClientRect();
         const barW = Math.min(bar.offsetWidth, sr.width - 16), barH = bar.offsetHeight;
         const cx = cr.left - sr.left + cr.width / 2;
         const left = Math.round(Math.max(8 + barW / 2, Math.min(sr.width - 8 - barW / 2, cx)));
-        const above = cr.top - sr.top - barH - 8 >= 4;
-        const top = Math.round(above ? cr.top - sr.top - 8 : cr.bottom - sr.top + 8);
+        const above = cr.top - sr.top - barH - gapAbove >= 4;
+        const top = Math.round(above ? cr.top - sr.top - gapAbove : cr.bottom - sr.top + gapBelow);
         next = { left, top, above, maxW: Math.max(120, Math.round(sr.width - 16)) };
       }
     }
@@ -415,6 +426,47 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
   const toScreen = (b) => ({ cx: ox + ((b.x + b.w / 2) / EMU_PER_PX) * s, cy: oy + ((b.y + b.h / 2) / EMU_PER_PX) * s, w: (b.w / EMU_PER_PX) * s, h: (b.h / EMU_PER_PX) * s });
   const single = frames.length === 1 ? frames[0] : null;
   const union = frames.length > 1 ? unionBox(frames.map((f) => rotatedBox(f.b))) : null;
+  // Controls around a single, unrotated, editable table.
+  const tblSel = single && single.el.kind === "table" && single.el.table?.cols?.length && !locked.has(single.el.id) && !single.el.readOnlyGeometry && !single.b.rot && !single.b.flipH && !single.b.flipV
+    ? { el: single.el, b: single.b, cols: single.b.tableGrid?.cols || single.el.table.cols, rows: single.b.tableGrid?.rows || single.el.table.rows.map((r) => r.h) }
+    : null;
+  R.current.tblSel = tblSel;
+  // Drag a column / row border: only that column (or row) changes size, like PowerPoint; the frame grows or
+  // shrinks with it. Rows never get shorter than their wrapped text, and the drag previews live via the draft.
+  const startTableResize = (e, kind, index) => {
+    const t = R.current.tblSel;
+    e.stopPropagation();
+    if (!t || (e.button !== undefined && e.button > 0)) return;
+    const { el, cols, rows } = t, base = boundsOf(el), startX = e.clientX, startY = e.clientY, pointerId = e.pointerId;
+    let last = null;
+    setTblDrag({ kind, index });
+    R.current.onInteractionStart?.();
+    const move = (ev) => {
+      if (ev.pointerId !== pointerId) return;
+      const sc = R.current.s;
+      let c = cols.slice(), r = rows.slice();
+      if (kind === "col") c[index] = Math.max(MIN_COL, Math.round(cols[index] + ((ev.clientX - startX) / sc) * EMU_PER_PX));
+      else r[index] = Math.max(MIN_ROW, Math.round(rows[index] + ((ev.clientY - startY) / sc) * EMU_PER_PX));
+      const fit = fitTableGrid(stageRef.current, el, c, r);
+      if (fit) { c = fit.tableGrid.cols; r = fit.tableGrid.rows; }
+      last = { ...base, w: c.reduce((a, b) => a + b, 0), h: r.reduce((a, b) => a + b, 0), tableGrid: { cols: c, rows: r } };
+      setDraft(new Map([[el.id, last]]));
+    };
+    const end = (ev, cancelled) => {
+      if (ev.pointerId !== pointerId) return;
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", cancel);
+      setTblDrag(null);
+      setDraft(null);
+      if (!cancelled && last) R.current.onCommit([{ id: el.id, ...last }], "Resize table cells");
+    };
+    const up = (ev) => end(ev, false);
+    const cancel = (ev) => end(ev, true);
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", cancel);
+  };
   const quickActionBox = single ? rotatedBox(single.b) : union;
   const quickActionsEnabled = frames.length > 0 && frames.every(({ el }) => !locked.has(el.id) && !el.readOnlyGeometry);
   const quickActionWidth = 110;
@@ -460,6 +512,9 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
           <button type="button" title={labels.quickRotate} aria-label={labels.quickRotate} onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onRotate?.(); }}><RotateCw size={15} aria-hidden="true" /></button>
           <button type="button" className="is-danger" title={labels.quickDelete} aria-label={labels.quickDelete} onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onDelete?.(); }}><Trash2 size={15} aria-hidden="true" /></button>
         </div>}
+        {tblSel && <TableHandles x0={ox + (tblSel.b.x / EMU_PER_PX) * s} y0={oy + (tblSel.b.y / EMU_PER_PX) * s} s={s} cols={tblSel.cols} rows={tblSel.rows}
+          canAdd={!tblSel.el.table.hasMerge} drag={tblDrag} selected={tableSelection?.id === tblSel.el.id && tableSelection.picked && tableSelection.scope === "table"} labels={labels}
+          onSelectAll={() => onTableSelectAll?.(tblSel.el.id)} onAdd={(kind, boundary) => onTableAdd?.(kind, boundary)} onResizeStart={startTableResize} />}
         {cellToolbar && <div ref={cellToolbarRef} className={`pptx-cell-toolbar ${cellPos && !cellPos.above ? "is-below" : ""}`} role="toolbar" aria-label={labels.cellToolbar}
           style={{ left: cellPos ? cellPos.left : 0, top: cellPos ? cellPos.top : 0, maxWidth: cellPos ? cellPos.maxW : undefined, visibility: cellPos ? "visible" : "hidden" }}
           onPointerDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>{cellToolbar}</div>}
