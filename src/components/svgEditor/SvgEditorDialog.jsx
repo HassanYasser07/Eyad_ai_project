@@ -1,13 +1,12 @@
 import React from "react";
 import { createPortal } from "react-dom";
 import { useI18n } from "@/i18n/I18nContext";
-import { Slider } from "@/components/ui/slider";
 import {
-  X, Upload, Download, Undo2, Redo2, ZoomIn, ZoomOut, RotateCcw,
+  X, Upload, Download, Undo2, Redo2, RotateCcw,
   Copy, Trash2, Group, Ungroup, FileCode2,
   MousePointer2, Type, CircleAlert, CheckCircle2, FileUp,
   SlidersHorizontal, Maximize2, Layers, Palette, Eye, EyeOff,
-  Blend, RotateCw, Paintbrush, Image, Sparkles, ChevronLeft,
+  Blend, RotateCw, Paintbrush, Image, Sparkles, ChevronLeft, Check, Bold,
 } from "lucide-react";
 import SvgLayersPanel from "@/components/svgEditor/SvgLayersPanel";
 import SvgPropertiesPanel from "@/components/svgEditor/SvgPropertiesPanel";
@@ -29,7 +28,6 @@ import {
   toggleElementLock,
   ungroupElement,
   updateElementAttribute,
-  updateElementPosition,
   nudgeElement,
   updateElementSize,
   updateElementText,
@@ -295,6 +293,9 @@ export default function SvgEditorDialog({ onClose, direction = "ltr" }) {
   const [layersCollapsed, setLayersCollapsed] = React.useState(false);
   const [propertiesCollapsed, setPropertiesCollapsed] = React.useState(false);
   const [mobileEditorTab, setMobileEditorTab] = React.useState(null);
+  const [mobileTextComposerOpen, setMobileTextComposerOpen] = React.useState(false);
+  const [mobileTextDraft, setMobileTextDraft] = React.useState("");
+  const [mobileTextComposerMode, setMobileTextComposerMode] = React.useState("add");
   const [backgroundSubTab, setBackgroundSubTab] = React.useState("solid");
   const [palettePickerOpen, setPalettePickerOpen] = React.useState(false);
   const [selectedPaletteId, setSelectedPaletteId] = React.useState("ocean-mist");
@@ -303,11 +304,8 @@ export default function SvgEditorDialog({ onClose, direction = "ltr" }) {
   const stageRef = React.useRef(null);
   const markupRef = React.useRef("");
   const dragRef = React.useRef(null);
-  const pointerPointsRef = React.useRef(new Map());
-  const pinchRef = React.useRef(null);
   const shortcutsRef = React.useRef({});
   const viewRef = React.useRef({ zoom: 1, pan: { x: 0, y: 0 } });
-  const zoomStartViewRef = React.useRef(null);
   viewRef.current = { zoom, pan };
 
   const updateView = React.useCallback((nextOrUpdater) => {
@@ -333,14 +331,22 @@ export default function SvgEditorDialog({ onClose, direction = "ltr" }) {
     }
   }, [svgMarkup]);
   const artboardSize = React.useMemo(() => {
-    if (!canvasSize.width || !canvasSize.height) return { width: 1, height: 1 };
-    const maxWidth = Math.max(80, canvasSize.width - 36);
-    const maxHeight = Math.max(80, canvasSize.height - 36);
-    const width = Math.min(maxWidth, maxHeight * pageAspect);
-    const height = width / pageAspect;
-    if (height > maxHeight) return { width: maxHeight * pageAspect, height: maxHeight };
-    return { width, height };
-  }, [canvasSize, pageAspect]);
+    if (!canvasSize.width) return { width: 1, height: 1 };
+    // Fit the complete artboard inside the measured canvas without a mutable
+    // zoom factor. Mobile has a dedicated, tighter fit so the artwork uses the
+    // available width while still respecting the visible canvas height.
+    const isMobile = canvasSize.width <= 660;
+    // On mobile, use the full canvas width whenever the document's aspect ratio
+    // allows it. Height is derived from the original SVG aspect ratio and the
+    // available canvas height, never from the currently opened control tab.
+    // Control panels are overlays, so opening one must not resize the artboard.
+    const horizontalMargin = isMobile ? 0 : 48;
+    const verticalMargin = isMobile ? 16 : 48;
+    const maxWidth = Math.max(1, canvasSize.width - horizontalMargin * 2);
+    const maxHeight = Math.max(1, canvasSize.height - verticalMargin * 2);
+    const width = Math.max(1, Math.min(maxWidth, maxHeight * pageAspect));
+    return { width, height: width / pageAspect };
+  }, [canvasSize.width, canvasSize.height, pageAspect]);
 
   const rememberView = React.useCallback((previousView) => {
     const currentView = viewRef.current;
@@ -502,13 +508,45 @@ export default function SvgEditorDialog({ onClose, direction = "ltr" }) {
     if (duplicated.length) setSelectedIds(duplicated);
   };
 
-  const createTextSelection = () => {
+  const createTextSelection = (textValue) => {
     if (!markupRef.current) return;
     let newId = null;
     const succeeded = performEdit(t("svgEditor.textAdded"), (root) => {
-      newId = addTextElement(root, t("svgEditor.newText"));
+      newId = addTextElement(root, textValue ?? t("svgEditor.newText"));
     });
     if (succeeded && newId) setSelectedIds([newId]);
+  };
+
+  const requestAddText = () => {
+    if (!markupRef.current) return;
+    if (typeof window !== "undefined" && window.matchMedia("(max-width: 660px)").matches) {
+      setMobileTextComposerMode("add");
+      setMobileTextDraft("");
+      setMobileTextComposerOpen(true);
+      setMobileEditorTab(null);
+      return;
+    }
+    createTextSelection();
+  };
+
+  const requestEditText = () => {
+    if (!details || !["text", "tspan"].includes(details.tag) || locked) return;
+    setMobileTextComposerMode("edit");
+    setMobileTextDraft(details.textContent || "");
+    setMobileTextComposerOpen(true);
+    setMobileEditorTab(null);
+  };
+
+  const confirmMobileText = () => {
+    const value = mobileTextDraft.trim();
+    if (!value) return;
+    if (mobileTextComposerMode === "edit" && selectedId) {
+      performEdit(t("svgEditor.textUpdated"), (root) => updateElementText(root, selectedId, value));
+    } else {
+      createTextSelection(value);
+    }
+    setMobileTextComposerOpen(false);
+    setMobileEditorTab(null);
   };
 
   const getParentDeltaForRootMove = React.useCallback((element, dx, dy) => {
@@ -725,26 +763,6 @@ export default function SvgEditorDialog({ onClose, direction = "ltr" }) {
       return;
     }
 
-    pointerPointsRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
-    if (pointerPointsRef.current.size >= 2) {
-      const activeDrag = dragRef.current;
-      if (activeDrag?.target?.isConnected) {
-        if (activeDrag.originalTransform) activeDrag.target.setAttribute("transform", activeDrag.originalTransform);
-        else activeDrag.target.removeAttribute("transform");
-      }
-      dragRef.current = null;
-      const points = Array.from(pointerPointsRef.current.values()).slice(0, 2);
-      const midpoint = { x: (points[0].x + points[1].x) / 2, y: (points[0].y + points[1].y) / 2 };
-      const distance = Math.hypot(points[1].x - points[0].x, points[1].y - points[0].y);
-      const stageBounds = stageRef.current.getBoundingClientRect();
-      pinchRef.current = {
-        distance: Math.max(1, distance), midpoint,
-        canvasCenter: { x: stageBounds.left + stageBounds.width / 2, y: stageBounds.top + stageBounds.height / 2 },
-        originalView: { zoom: viewRef.current.zoom, pan: { ...viewRef.current.pan } },
-      };
-      event.preventDefault();
-      return;
-    }
 
     const target = event.target.closest?.("[data-editor-id]");
     if (target) {
@@ -793,81 +811,9 @@ export default function SvgEditorDialog({ onClose, direction = "ltr" }) {
     selectElement(target.getAttribute("data-editor-id"), event.shiftKey || event.metaKey || event.ctrlKey);
   };
 
-  const clampElementToArtboard = React.useCallback((svg, element) => {
-    try {
-      const viewBox = (svg.getAttribute("viewBox") || "").trim().split(/[ ,]+/).map(Number);
-      if (viewBox.length !== 4 || !viewBox.every(Number.isFinite) || viewBox[2] <= 0 || viewBox[3] <= 0) return;
-      const bounds = getElementBoundsInRoot(svg, element);
-      if (!bounds) return;
-      const right = viewBox[0] + viewBox[2];
-      const bottom = viewBox[1] + viewBox[3];
-      let dx = 0;
-      let dy = 0;
-      if (bounds.width >= viewBox[2]) dx = viewBox[0] - bounds.x;
-      else if (bounds.x < viewBox[0]) dx = viewBox[0] - bounds.x;
-      else if (bounds.x + bounds.width > right) dx = right - (bounds.x + bounds.width);
-      if (bounds.height >= viewBox[3]) dy = viewBox[1] - bounds.y;
-      else if (bounds.y < viewBox[1]) dy = viewBox[1] - bounds.y;
-      else if (bounds.y + bounds.height > bottom) dy = bottom - (bounds.y + bounds.height);
-      if (Math.abs(dx) < 0.001 && Math.abs(dy) < 0.001) return;
-
-      const parent = element.parentElement;
-      const rootMatrix = svg.getScreenCTM();
-      const parentMatrix = parent?.getScreenCTM?.();
-      if (!rootMatrix || !parentMatrix) return;
-      const parentInverse = parentMatrix.inverse();
-      const origin = svg.createSVGPoint();
-      origin.x = 0;
-      origin.y = 0;
-      const offset = svg.createSVGPoint();
-      offset.x = dx;
-      offset.y = dy;
-      const originInParent = origin.matrixTransform(rootMatrix).matrixTransform(parentInverse);
-      const offsetInParent = offset.matrixTransform(rootMatrix).matrixTransform(parentInverse);
-      const parentDx = offsetInParent.x - originInParent.x;
-      const parentDy = offsetInParent.y - originInParent.y;
-      const transform = element.getAttribute("transform") || "";
-      element.setAttribute("transform", `translate(${parentDx} ${parentDy}) ${transform}`.trim());
-    } catch {
-      // If an SVG engine cannot measure a special element, leave its authored geometry unchanged.
-    }
-  }, []);
-
-  const handleCanvasWheel = (event) => {
-    if (!svgMarkup) return;
-    event.preventDefault();
-    const factor = Math.exp(-event.deltaY * 0.0015);
-    updateView((current) => ({
-      ...current,
-      zoom: Math.max(0.25, Math.min(4, Number((current.zoom * factor).toFixed(3)))),
-    }));
-  };
 
   React.useEffect(() => {
     const onPointerMove = (event) => {
-      if (pointerPointsRef.current.has(event.pointerId)) {
-        pointerPointsRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
-      }
-      const pinch = pinchRef.current;
-      if (pinch && pointerPointsRef.current.size >= 2) {
-        const points = Array.from(pointerPointsRef.current.values()).slice(0, 2);
-        const midpoint = { x: (points[0].x + points[1].x) / 2, y: (points[0].y + points[1].y) / 2 };
-        const distance = Math.max(1, Math.hypot(points[1].x - points[0].x, points[1].y - points[0].y));
-        const zoomValue = Math.max(0.25, Math.min(4, pinch.originalView.zoom * distance / pinch.distance));
-        const originalPan = pinch.originalView.pan;
-        const originalZoom = pinch.originalView.zoom;
-        const anchorX = (pinch.midpoint.x - pinch.canvasCenter.x - originalPan.x) / originalZoom;
-        const anchorY = (pinch.midpoint.y - pinch.canvasCenter.y - originalPan.y) / originalZoom;
-        updateView({
-          zoom: zoomValue,
-          pan: {
-            x: midpoint.x - pinch.canvasCenter.x - zoomValue * anchorX,
-            y: midpoint.y - pinch.canvasCenter.y - zoomValue * anchorY,
-          },
-        });
-        event.preventDefault();
-        return;
-      }
       const drag = dragRef.current;
       if (drag) {
         const svg = stageRef.current?.querySelector("svg");
@@ -898,16 +844,7 @@ export default function SvgEditorDialog({ onClose, direction = "ltr" }) {
     };
 
     const onPointerUp = (event) => {
-      const pinch = pinchRef.current;
-      const wasPointerTracked = pointerPointsRef.current.has(event.pointerId);
-      pointerPointsRef.current.delete(event.pointerId);
-      if (pinch && wasPointerTracked) {
-        pinchRef.current = null;
-        rememberView(pinch.originalView);
-        dragRef.current = null;
-        return;
-      }
-      const drag = dragRef.current;
+            const drag = dragRef.current;
       dragRef.current = null;
       if (!drag) return;
       if (!drag.moved) {
@@ -921,7 +858,8 @@ export default function SvgEditorDialog({ onClose, direction = "ltr" }) {
       }
       const svg = stageRef.current?.querySelector("svg");
       if (!svg) return;
-      clampElementToArtboard(svg, drag.target);
+      // Elements may intentionally extend beyond the artboard while editing.
+      // The SVG export applies the artboard viewport clip instead.
       const next = serializeLiveSvg(svg);
       commitMarkup(next, drag.startMarkup, drag.startView);
       setNotice(t(drag.type === "resize" ? "svgEditor.dimensionsUpdated" : "svgEditor.moved"));
@@ -935,7 +873,7 @@ export default function SvgEditorDialog({ onClose, direction = "ltr" }) {
       document.removeEventListener("pointerup", onPointerUp);
       document.removeEventListener("pointercancel", onPointerUp);
     };
-  }, [commitMarkup, updateView, rememberView, clampElementToArtboard, t]);
+  }, [commitMarkup, updateView, rememberView, t]);
 
   React.useEffect(() => {
     const element = stageRef.current;
@@ -1006,7 +944,7 @@ export default function SvgEditorDialog({ onClose, direction = "ltr" }) {
       );
     }
     return (
-      <div className="svg-editor-canvas" ref={stageRef} onPointerDown={beginCanvasInteraction} onClick={handleCanvasClick} onWheel={handleCanvasWheel} onKeyDown={(event) => {
+      <div className="svg-editor-canvas" ref={stageRef} onPointerDown={beginCanvasInteraction} onClick={handleCanvasClick} onKeyDown={(event) => {
         const handle = event.target.closest?.("[data-editor-handle]");
         if (!handle || (event.key !== "Enter" && event.key !== " ")) return;
         event.preventDefault();
@@ -1018,7 +956,7 @@ export default function SvgEditorDialog({ onClose, direction = "ltr" }) {
           style={{
             width: `${artboardSize.width}px`,
             height: `${artboardSize.height}px`,
-            transform: `translate(-50%, -50%) translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+            transform: "translate(-50%, -50%)",
           }}
           dangerouslySetInnerHTML={{ __html: svgMarkup }}
         />
@@ -1049,34 +987,12 @@ export default function SvgEditorDialog({ onClose, direction = "ltr" }) {
             <ToolbarButton icon={Undo2} label={t("svgEditor.undo")} onClick={undo} disabled={!history.past.length} />
             <ToolbarButton icon={Redo2} label={t("svgEditor.redo")} onClick={redo} disabled={!history.future.length} />
             <span className="svg-editor-toolbar-divider" />
-            <ToolbarButton icon={ZoomOut} label={t("svgEditor.zoomOut")} onClick={() => { const previous = { zoom: viewRef.current.zoom, pan: { ...viewRef.current.pan } }; updateView((current) => ({ ...current, zoom: Math.max(0.25, Number((current.zoom - 0.1).toFixed(2))) })); rememberView(previous); }} disabled={!svgMarkup || zoom <= 0.25} />
-            <span className="svg-editor-zoom-value">{Math.round(zoom * 100)}%</span>
-            <div className="svg-editor-zoom-slider-wrap">
-              <Slider
-                aria-label={t("svgEditor.zoom")}
-                value={[Math.round(zoom * 100)]}
-                min={25}
-                max={400}
-                step={5}
-                disabled={!svgMarkup}
-                className="svg-editor-zoom-slider"
-                onPointerDown={() => { zoomStartViewRef.current = { zoom: viewRef.current.zoom, pan: { ...viewRef.current.pan } }; }}
-                onKeyDown={() => { if (!zoomStartViewRef.current) zoomStartViewRef.current = { zoom: viewRef.current.zoom, pan: { ...viewRef.current.pan } }; }}
-                onValueChange={(values) => updateView((current) => ({ ...current, zoom: Number(((values[0] || 100) / 100).toFixed(2)) }))}
-                onValueCommit={(values) => {
-                  updateView((current) => ({ ...current, zoom: Number(((values[0] || 100) / 100).toFixed(2)) }));
-                  if (zoomStartViewRef.current) rememberView(zoomStartViewRef.current);
-                  zoomStartViewRef.current = null;
-                }}
-              />
-            </div>
-            <ToolbarButton icon={ZoomIn} label={t("svgEditor.zoomIn")} onClick={() => { const previous = { zoom: viewRef.current.zoom, pan: { ...viewRef.current.pan } }; updateView((current) => ({ ...current, zoom: Math.min(4, Number((current.zoom + 0.1).toFixed(2))) })); rememberView(previous); }} disabled={!svgMarkup || zoom >= 4} />
             <ToolbarButton icon={RotateCcw} label={t("svgEditor.resetView")} onClick={resetEditor} disabled={!originalMarkup} danger />
           </div>
           <div className="svg-editor-tool-group svg-editor-arrange-tools">
             <ToolbarButton icon={Palette} label={t("palette.open")} onClick={() => setPalettePickerOpen(true)} disabled={!svgMarkup} />
             <ToolbarButton icon={previewSelectedHidden ? Eye : EyeOff} label={previewSelectedHidden ? t("palette.showSelectedInEditor") : t("palette.hideSelectedInEditor")} onClick={togglePreviewVisibility} disabled={!selectedIds.length} active={previewSelectedHidden} />
-            <ToolbarButton icon={Type} label={t("svgEditor.addText")} onClick={createTextSelection} disabled={!svgMarkup} />
+            <ToolbarButton icon={Type} label={t("svgEditor.addText")} onClick={requestAddText} disabled={!svgMarkup} />
             <ToolbarButton
               icon={Image}
               label={t("svgEditor.background") || "Background"}
@@ -1101,6 +1017,24 @@ export default function SvgEditorDialog({ onClose, direction = "ltr" }) {
               <header><div><Palette size={18} /><div><strong>{t("palette.galleryTitle")}</strong><small>{t("palette.galleryHint")}</small></div></div><button type="button" onClick={() => setPalettePickerOpen(false)} aria-label={t("svgEditor.close")}><X size={18} /></button></header>
               <ColorPalettePicker onSelect={choosePalette} selectedPaletteId={selectedPaletteId} t={t} />
             </section>
+          </div>
+        )}
+
+        {mobileTextComposerOpen && (
+          <div className="svg-editor-mobile-text-composer" role="dialog" aria-modal="true" aria-label={mobileTextComposerMode === "edit" ? (t("svgEditor.editText") || "Edit text") : (t("svgEditor.addText") || "Add text")}>
+            <header className="svg-editor-mobile-text-composer-header">
+              <button type="button" className="svg-editor-mobile-text-back" onClick={() => setMobileTextComposerOpen(false)} aria-label={t("svgEditor.backToTabs") || "Back"}><ChevronLeft size={20} /></button>
+              <strong>{mobileTextComposerMode === "edit" ? (t("svgEditor.editText") || "Edit text") : (t("svgEditor.addText") || "Add text")}</strong>
+              <span />
+            </header>
+            <div className="svg-editor-mobile-text-composer-body">
+              <div className="svg-editor-mobile-text-input-card">
+                <Type size={22} />
+                <textarea autoFocus value={mobileTextDraft} onChange={(event) => setMobileTextDraft(event.target.value)} maxLength={1000} placeholder={t("svgEditor.newText") || "Type your text..."} aria-label={t("svgEditor.textContent") || "Text content"} />
+                <small>{mobileTextDraft.length}/1000</small>
+              </div>
+              <button type="button" className="svg-editor-mobile-text-confirm" onClick={confirmMobileText} disabled={!mobileTextDraft.trim()}><Check size={18} />{t("svgEditor.confirmText") || "OK"}</button>
+            </div>
           </div>
         )}
 
@@ -1135,7 +1069,6 @@ export default function SvgEditorDialog({ onClose, direction = "ltr" }) {
             locked={locked}
             error={error}
             onRename={(label) => performEdit(t("svgEditor.labelUpdated"), (root) => renameElement(root, selectedId, label))}
-            onPosition={(axis, value, bounds) => performEdit(t("svgEditor.positionUpdated"), (root) => updateElementPosition(root, selectedId, axis, value, bounds))}
             onText={(value) => performEdit(t("svgEditor.textUpdated"), (root) => updateElementText(root, selectedId, value))}
             onSize={(dimension, value, bounds) => performEdit(t("svgEditor.dimensionsUpdated"), (root) => updateElementSize(root, selectedId, dimension, value, bounds))}
             onRotate={(value, bounds) => performEdit(t("svgEditor.rotationUpdated"), (root) => rotateElement(root, selectedId, value, bounds))}
@@ -1148,7 +1081,7 @@ export default function SvgEditorDialog({ onClose, direction = "ltr" }) {
             onDelete={deleteSelection}
             onGroup={groupSelection}
             onUngroup={ungroupSelection}
-            onAddText={createTextSelection}
+            onEditText={requestEditText}
             activeMobileTab={mobileEditorTab}
             onSetSolidBackground={handleSetSolidBackground}
             onSetGradientBackground={handleSetGradientBackground}
@@ -1215,10 +1148,13 @@ export default function SvgEditorDialog({ onClose, direction = "ltr" }) {
               <SlidersHorizontal size={20} />
               <span>{t("svgEditor.controls") || "Controls"}</span>
             </button>
-            <button type="button" className={`svg-editor-mobile-tab ${mobileEditorTab === "text" ? "is-active" : ""}`} onClick={() => setMobileEditorTab(prev => prev === "text" ? null : "text")}>
+            <button type="button" className="svg-editor-mobile-tab" onClick={requestAddText}>
               <Type size={20} />
               <span>{t("svgEditor.text") || "Text"}</span>
             </button>
+            <button type="button" className={`svg-editor-mobile-tab ${mobileEditorTab === "fontFamily" ? "is-active" : ""}`} onClick={() => setMobileEditorTab("fontFamily")}><Type size={20} /><span>{t("svgEditor.fontFamily") || "Font"}</span></button>
+            <button type="button" className={`svg-editor-mobile-tab ${mobileEditorTab === "letterSpacing" ? "is-active" : ""}`} onClick={() => setMobileEditorTab("letterSpacing")}><span className="svg-editor-spacing-tab-icon">A↔</span><span>{t("svgEditor.letterSpacing") || "Spacing"}</span></button>
+            <button type="button" className={`svg-editor-mobile-tab ${mobileEditorTab === "textStyle" ? "is-active" : ""}`} onClick={() => setMobileEditorTab("textStyle")}><Bold size={20} /><span>{t("svgEditor.typography") || "Style"}</span></button>
             <button type="button" className={`svg-editor-mobile-tab ${mobileEditorTab === "size" ? "is-active" : ""}`} onClick={() => setMobileEditorTab(prev => prev === "size" ? null : "size")}>
               <Maximize2 size={20} />
               <span>{t("svgEditor.size") || "Size"}</span>

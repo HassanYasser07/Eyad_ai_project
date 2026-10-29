@@ -334,7 +334,13 @@ export function editSvgMarkup(markup, edit) {
 export function exportSvgMarkup(markup) {
   const document = parseSvgMarkup(markup);
   const { document: safeDocument, warnings } = sanitizeParsedDocument(document, { assignMetadata: false });
-  return { markup: serializeSvgDocument(safeDocument.documentElement, { forExport: true }), warnings };
+  const root = safeDocument.documentElement;
+  // Keep the SVG viewport equal to its authored viewBox. This clips anything
+  // positioned outside the artboard in exported files while leaving it editable
+  // and visible outside the artboard in the editor.
+  root.setAttribute("overflow", "hidden");
+  if (root.style) root.style.setProperty("overflow", "hidden", "important");
+  return { markup: serializeSvgDocument(root, { forExport: true }), warnings };
 }
 
 export function getUniqueEditorId(root, prefix = "svg-node") {
