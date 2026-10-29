@@ -16,7 +16,10 @@ export function useMediaUrls(pkg, paths) {
       if (!mime) continue;
       cache.set(p, null);
       pkg.bytes(p).then((bytes) => {
-        if (!bytes || !pkg.urlCache) return;
+        // Remove the in-flight marker when the part is missing so a later render
+        // (e.g. revisiting the slide) retries instead of showing "Loading…" forever.
+        if (!bytes) { cache.delete(p); return; }
+        if (!pkg.urlCache) return;
         cache.set(p, URL.createObjectURL(new Blob([bytes], { type: mime })));
         if (live) bump();
       }).catch(() => cache.delete(p));

@@ -5,7 +5,7 @@
  */
 import { NS, kid, kids, path, attr, num, create, insertOrdered, ORDER, descendants, textOf, parseXml, serializeXml, PptxError } from "./xml.js";
 import { REL } from "./package.js";
-import { rotatedBox, unionBox } from "./geometry.js";
+import { rotatedBox, unionBox, distributeEmu } from "./geometry.js";
 
 const DRAWABLE = ["sp", "pic", "grpSp", "graphicFrame", "cxnSp", "AlternateContent", "contentPart"];
 const R = Math.round;
@@ -101,9 +101,34 @@ export function setBounds(pkg, slidePath, changes, label = "Move") {
       // Geometry edits must never rewrite text auto-fit settings. Automatically
       // injecting normAutofit here caused ordinary titles/body text to shrink
       // after a user narrowed a box, instead of wrapping and growing its frame.
+      const prev = node.localName === "graphicFrame" ? readBoundsFromNode(node) : null;
       writeBounds(doc, node, ch);
+      if (prev) syncTableGrid(node, prev, ch);
     }
   });
+}
+
+/**
+ * A table frame is only ever the sum of its grid (gridCol widths x row heights). Resizing the
+ * frame therefore has to resize the grid too, otherwise the frame and the rendered table
+ * diverge (rows keep their old heights while text re-wraps in the new column widths).
+ * `ch.tableGrid` ({cols, rows} in EMU) carries the already text-fitted grid from the editor;
+ * without it the grid is scaled proportionally, which keeps the file self-consistent.
+ */
+function syncTableGrid(node, prev, ch) {
+  const tbl = path(node, "graphic", "graphicData", "tbl");
+  if (!tbl) return;
+  const gridCols = kids(kid(tbl, "tblGrid"), "gridCol"), trs = kids(tbl, "tr");
+  const g = ch.tableGrid;
+  let cols = null, rows = null;
+  if (g && g.cols?.length === gridCols.length && g.rows?.length === trs.length) {
+    cols = g.cols; rows = g.rows;
+  } else {
+    if (Math.round(ch.w) !== Math.round(prev.w)) cols = distributeEmu(gridCols.map((c) => num(c, "w")), Math.round(ch.w));
+    if (Math.round(ch.h) !== Math.round(prev.h)) rows = distributeEmu(trs.map((r) => num(r, "h")), Math.round(ch.h));
+  }
+  if (cols) gridCols.forEach((c, i) => c.setAttribute("w", String(Math.round(cols[i]))));
+  if (rows) trs.forEach((r, i) => r.setAttribute("h", String(Math.round(rows[i]))));
 }
 
 /** Hide/show selected drawing objects using DrawingML's non-visual hidden flag. */
@@ -358,13 +383,36 @@ export function setText(pkg, slidePath, id, texts, cell = null, fittedHeight = n
       node.insertBefore(body, spPr ? spPr.nextSibling : null);
     }
     if (!body) throw new PptxError("NO_TEXT", "This object has no text.");
+    const wasEmpty = !!cell && kids(body, "p").every((para) => !segmentsOf(para).some((seg) => seg.text));
     applyParagraphTexts(doc, body, texts);
+    // First text typed into an empty table cell: centred both ways at a medium size (the default
+    // cell text is small and top-left). Cells that already have content keep their own formatting.
+    if (wasEmpty && kids(body, "p").some((para) => segmentsOf(para).some((seg) => seg.text))) centerNewCellText(doc, body);
     // Commit text and its auto-grown frame in the same undoable transaction.
     if (!cell && Number.isFinite(fittedHeight)) {
       const current = readBoundsFromNode(node) || fallbackBounds;
       if (current && fittedHeight > current.h) writeBounds(doc, node, { ...current, h: Math.round(fittedHeight) });
     }
   });
+}
+
+export const NEW_CELL_FONT_SZ = 2000; // 20 pt, hundredths of a point
+
+function centerNewCellText(doc, body) {
+  const tc = body.parentNode;
+  let tcPr = kid(tc, "tcPr");
+  if (!tcPr) { tcPr = create(doc, "a", "tcPr"); tc.insertBefore(tcPr, body.nextSibling); }
+  tcPr.setAttribute("anchor", "ctr");
+  for (const para of kids(body, "p")) {
+    ensurePPr(doc, para).setAttribute("algn", "ctr");
+    for (const run of kids(para, "r", "fld")) {
+      const rPr = ensureRPr(doc, run);
+      if (!rPr.hasAttribute("sz")) rPr.setAttribute("sz", String(NEW_CELL_FONT_SZ));
+    }
+    let end = kid(para, "endParaRPr");
+    if (!end) { end = create(doc, "a", "endParaRPr"); para.appendChild(end); }
+    if (!end.hasAttribute("sz")) end.setAttribute("sz", String(NEW_CELL_FONT_SZ));
+  }
 }
 
 function ensureRPr(doc, run) {
@@ -1035,7 +1083,8 @@ function growFrame(doc, node, dx, dy) {
   const b = readBoundsFromNode(node);
   if (b) writeBounds(doc, node, { ...b, w: b.w + dx, h: b.h + dy });
 }
-export function tableRows(pkg, slidePath, id, op, index) {
+/** `before` inserts the new row above `index` instead of below it (used by the top-edge "+" handle). */
+export function tableRows(pkg, slidePath, id, op, index, before = false) {
   return mutateSlide(pkg, slidePath, "Table rows", (doc, tree) => {
     const node = findNode(tree, id), tbl = tblOf(node);
     guardMerge(tbl);
@@ -1045,7 +1094,7 @@ export function tableRows(pkg, slidePath, id, op, index) {
       const clone = src.cloneNode(true);
       stripExt(clone);
       for (const tc of kids(clone, "tc")) { clearCell(tc); stripExt(tc); }
-      tbl.insertBefore(clone, src.nextSibling);
+      tbl.insertBefore(clone, before ? src : src.nextSibling);
       growFrame(doc, node, 0, num(src, "h"));
     } else {
       if (rows.length <= 1) throw new PptxError("TABLE_MIN", "A table needs at least one row.");
@@ -1055,7 +1104,8 @@ export function tableRows(pkg, slidePath, id, op, index) {
     }
   });
 }
-export function tableCols(pkg, slidePath, id, op, index) {
+/** `before` inserts the new column left of `index` instead of right of it (used by the edge "+" handle). */
+export function tableCols(pkg, slidePath, id, op, index, before = false) {
   return mutateSlide(pkg, slidePath, "Table columns", (doc, tree) => {
     const node = findNode(tree, id), tbl = tblOf(node);
     guardMerge(tbl);
@@ -1064,11 +1114,11 @@ export function tableCols(pkg, slidePath, id, op, index) {
       const src = cols[Math.min(index, cols.length - 1)];
       const c = src.cloneNode(true);
       stripExt(c);
-      grid.insertBefore(c, src.nextSibling);
+      grid.insertBefore(c, before ? src : src.nextSibling);
       for (const tr of kids(tbl, "tr")) {
-        const tcs = kids(tr, "tc"), t = tcs[Math.min(index, tcs.length - 1)].cloneNode(true);
+        const tcs = kids(tr, "tc"), at = tcs[Math.min(index, tcs.length - 1)], t = at.cloneNode(true);
         clearCell(t); stripExt(t);
-        tr.insertBefore(t, tcs[Math.min(index, tcs.length - 1)].nextSibling);
+        tr.insertBefore(t, before ? at : at.nextSibling);
       }
       growFrame(doc, node, num(src, "w"), 0);
     } else {

@@ -13,6 +13,7 @@ import { PptxPackage, PptxError, readPresentation, readSlide, setSlideBackground
 import { checkPptxFile, readFile, saveBytes, pickFile, PPTX_ACCEPT, IMAGE_ACCEPT, safeName, saveDraft, loadDraft, clearDraft, imageInfo } from "./fileIO.js";
 import { disposeMediaUrls, useMediaUrls } from "./useMediaUrls.js";
 import Canvas from "./Canvas.jsx";
+import CellToolbar from "./CellToolbar.jsx";
 import SlideView, { collectImagePaths } from "./SlideView.jsx";
 import Inspector from "./Inspector.jsx";
 import ColorPalettePicker from "../shared/ColorPalettePicker.jsx";
@@ -60,6 +61,7 @@ export default function PptxEditorDialog({ onClose }) {
   const vp = useVisualViewport(compact);
   const rootRef = React.useRef(null);
   const canvasRef = React.useRef(null);
+  const fitBounds = (changes) => canvasRef.current?.fitChanges?.(changes) ?? changes;
   const original = React.useRef(null);
   const clipboard = React.useRef(null);
   const [, force] = React.useReducer((n) => n + 1, 0);
@@ -171,7 +173,7 @@ export default function PptxEditorDialog({ onClose }) {
     finally { paletteSnapshotsRef.current = null; setAllSlidesPalette(false); }
   };
   const lockedIds = React.useMemo(() => new Set([...locked].filter((k) => okModel && k.startsWith(`${okModel.path}#`)).map((k) => k.split("#")[1])), [locked, okModel]);
-  const labels = React.useMemo(() => ({ canvas: t("pptxEditor.canvas"), locked: t("pptxEditor.locked"), loading: t("pptxEditor.loadingImage"), imageUnavailable: t("pptxEditor.imageUnavailable"), chartNote: t("pptxEditor.chartNote"), chartPreview: t("pptxEditor.chartPreview"), viewOnly: t("pptxEditor.viewOnly"), placeholderHint: t("pptxEditor.placeholderHint"), selectionActions: t("pptxEditor.selectionActions"), quickCopy: t("pptxEditor.quickCopyHint"), quickRotate: t("pptxEditor.quickRotateHint"), quickDelete: t("pptxEditor.quickDeleteHint") }), [t]);
+  const labels = React.useMemo(() => ({ canvas: t("pptxEditor.canvas"), locked: t("pptxEditor.locked"), loading: t("pptxEditor.loadingImage"), imageUnavailable: t("pptxEditor.imageUnavailable"), chartNote: t("pptxEditor.chartNote"), chartPreview: t("pptxEditor.chartPreview"), viewOnly: t("pptxEditor.viewOnly"), placeholderHint: t("pptxEditor.placeholderHint"), selectionActions: t("pptxEditor.selectionActions"), quickCopy: t("pptxEditor.quickCopyHint"), quickRotate: t("pptxEditor.quickRotateHint"), quickDelete: t("pptxEditor.quickDeleteHint"), cellToolbar: t("pptxEditor.cellToolbar"), selectTable: t("pptxEditor.selectWholeTable"), addColumn: t("pptxEditor.insertColumnHere"), addRow: t("pptxEditor.insertRowHere"), resizeColumn: t("pptxEditor.resizeColumn"), resizeRow: t("pptxEditor.resizeRow") }), [t]);
 
   React.useEffect(() => { if (pkg) return pkg.subscribe(() => force()); return undefined; }, [pkg]);
   React.useEffect(() => { if (okModel) setSelection((s) => { const n = s.filter((id) => okModel.elements.some((e) => e.id === id)); return n.length === s.length ? s : n; }); }, [okModel]);
@@ -195,6 +197,15 @@ export default function PptxEditorDialog({ onClose }) {
   // Selection identity, not cell formatting updates, controls default table focus.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectionKey, safeIdx]);
+  // The floating cell toolbar belongs to an explicitly picked cell: once the table stops being the
+  // single selected element (click on empty space, another object, Esc, slide change) the pick is dropped.
+  React.useEffect(() => {
+    if (!tableFocus.picked) return;
+    const stillSelected = sel.length === 1 && sel[0].kind === "table" && sel[0].id === tableFocus.id;
+    if (!stillSelected) setTableFocus((current) => (current.picked ? { ...current, picked: false } : current));
+  // Selection identity decides visibility, not style/model updates.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectionKey, safeIdx, tableFocus.picked]);
   const activateContextForSelection = React.useCallback((ids) => {
     const items = okModel?.elements.filter((item) => ids.includes(item.id)) || [];
     if (!items.length) return;
@@ -281,7 +292,7 @@ export default function PptxEditorDialog({ onClose }) {
       allSlides ? (hex ? t("pptxEditor.backgroundAllUpdated") : t("pptxEditor.backgroundAllReset")) : (hex ? t("pptxEditor.backgroundUpdated") : t("pptxEditor.backgroundReset")),
     ),
     selectBehind: () => canvasRef.current?.selectBehind(),
-    field: (partial) => run(() => { const e = sel.find((item) => !lockedIds.has(item.id) && !item.readOnlyGeometry); if (!e) return; setBounds(pkg, path, [{ id: e.id, ...bounds(e), ...partial }], "Edit"); }),
+    field: (partial) => run(() => { const e = sel.find((item) => !lockedIds.has(item.id) && !item.readOnlyGeometry); if (!e) return; setBounds(pkg, path, fitBounds([{ id: e.id, ...bounds(e), ...partial }]), "Edit"); }),
     order: (mode) => run(() => { const editable = sel.filter((item) => !lockedIds.has(item.id) && !item.readOnlyGeometry).map((item) => item.id); if (editable.length) reorderElements(pkg, path, editable, mode); }),
     align: (mode) => run(() => {
       const items = sel.filter((e) => !lockedIds.has(e.id) && !e.readOnlyGeometry).map((e) => ({ id: e.id, box: rotatedBox(bounds(e)) }));
@@ -309,8 +320,8 @@ export default function PptxEditorDialog({ onClose }) {
     shape: (style) => run(() => { const editable = sel.filter((item) => !lockedIds.has(item.id) && !item.readOnlyGeometry).map((item) => item.id); if (editable.length) setShapeStyle(pkg, path, editable, style); }),
     opacity: (v) => run(() => { const editable = sel.filter((item) => !lockedIds.has(item.id)).map((item) => item.id); if (editable.length) setOpacity(pkg, path, editable, v); }),
     editText: () => openText(ids[0]),
-    tableRows: (op, i) => run(() => { if (ids[0] && !lockedIds.has(ids[0])) tableRows(pkg, path, ids[0], op, i); }),
-    tableCols: (op, i) => run(() => { if (ids[0] && !lockedIds.has(ids[0])) tableCols(pkg, path, ids[0], op, i); }),
+    tableRows: (op, i, before = false) => run(() => { if (ids[0] && !lockedIds.has(ids[0])) tableRows(pkg, path, ids[0], op, i, before); }),
+    tableCols: (op, i, before = false) => run(() => { if (ids[0] && !lockedIds.has(ids[0])) tableCols(pkg, path, ids[0], op, i, before); }),
     tableOptions: (options) => run(() => { if (ids[0] && !lockedIds.has(ids[0])) setTableOptions(pkg, path, ids[0], options); }),
     tableRangeText: (row, col, scope, props) => run(() => { if (ids[0] && !lockedIds.has(ids[0])) setTableRangeTextProps(pkg, path, ids[0], row, col, scope, props); }),
     tableRangeFill: (row, col, scope, hex) => run(() => { if (ids[0] && !lockedIds.has(ids[0])) setTableRangeCellFill(pkg, path, ids[0], row, col, scope, hex); }),
@@ -331,22 +342,38 @@ export default function PptxEditorDialog({ onClose }) {
     if (!cell && !el.text && el.kind !== "shape" && el.kind !== "text") return;
     if (lockedIds.has(id)) { setFeedback({ kind: "error", text: t("pptxEditor.lockedHint") }); return; }
     setSelection([id]);
-    if (cell) setTableFocus({ id, row: cell.row, col: cell.col, scope: "cell" });
+    if (cell) setTableFocus({ id, row: cell.row, col: cell.col, scope: "cell", picked: true });
     setActiveRibbon(cell ? "table" : "text"); setSheet(null); setTextEdit({ id, ...(cell || {}) });
   }
-  const commitInlineText = (id, texts, cell = null) => {
+  const commitInlineText = (id, texts, cell = null, measuredHeight = null) => {
     const cleaned = (Array.isArray(texts) ? texts : [texts]).map((value) => String(value ?? "").replace(/[\u200B\uFEFF]/g, ""));
     const nextText = cleaned.join("\n").replace(/\n+$/, "");
     const target = okModel?.elements.find((item) => item.id === id);
+    // Use the latest measured content height in either direction: deleting text
+    // must shrink the frame just as typing grows it. Fall back to the live draft
+    // only when the blur measurement is unavailable.
+    const draftHeight = Number(measuredHeight) > 0
+      ? Number(measuredHeight)
+      : (textAutoSizeDraftsRef.current.get(id) || 0);
+    const slideBottomLimit = target ? Math.max(1, (okModel?.size?.h || target.y + target.h) - target.y) : 1;
+    const fittedHeight = !cell && target && draftHeight > 0
+      ? Math.min(slideBottomLimit, Math.ceil(draftHeight))
+      : null;
+    const heightChanged = fittedHeight != null && Math.abs(fittedHeight - target.h) > 2 * 9525;
     const existing = cell
       ? target?.table?.rows?.[cell.row]?.cells?.[cell.col]?.text?.plain?.join("\n")
       : target?.text?.plain?.join("\n");
-    const pendingHeight = !cell ? textAutoSizeDraftsRef.current.get(id) : null;
-    const needsHeight = Number.isFinite(pendingHeight) && target && pendingHeight > target.h + 2 * 9525;
-    if (nextText !== String(existing ?? "").replace(/[\u200B\uFEFF]/g, "").replace(/\n+$/, "")) {
-      run(() => setText(pkg, path, id, cleaned, cell, needsHeight ? pendingHeight : null, needsHeight ? bounds(target) : null));
-    } else if (needsHeight) {
-      run(() => setBounds(pkg, path, [{ ...bounds(target), h: pendingHeight }], "Fit text to content"));
+    // Commit the edited text and its measured auto-grown height together.
+    // Position and width remain unchanged, and no other slide element is touched.
+    if (nextText !== String(existing ?? "").replace(/[\u200B\uFEFF]/g, "").replace(/\n+$/, "") || heightChanged) {
+      // Commit text and the fitted frame height atomically. Only this element's
+      // height changes; x/y/width and every other slide element remain untouched.
+      run(() => pkg.transact("Edit text", () => {
+        setText(pkg, path, id, cleaned, cell, heightChanged ? fittedHeight : null, target ? bounds(target) : null);
+        // A cell that now needs more lines grows its row, and the table frame with it, in the same undo step.
+        const grown = cell && target ? canvasRef.current?.fitTable?.(id) : null;
+        if (grown) setBounds(pkg, path, [{ id, ...bounds(target), ...grown }], "Edit text");
+      }));
     }
     setTextAutoSizeDrafts((current) => {
       if (!current.has(id)) return current;
@@ -356,30 +383,42 @@ export default function PptxEditorDialog({ onClose }) {
   };
   const selectTableCell = (id, row, col) => {
     setSelection([id]);
-    setTableFocus({ id, row, col, scope: "cell" });
+    setTableFocus({ id, row, col, scope: "cell", picked: true });
     setActiveRibbon("table");
     setTextEdit(null);
     if (compact) setSheet("ribbon");
   };
+  // Corner button of the table: the toolbar and the ribbon now format the whole table.
+  const selectWholeTable = (id) => {
+    if (lockedIds.has(id)) return;
+    setSelection([id]); setTextEdit(null);
+    setTableFocus({ id, row: 0, col: 0, scope: "table", picked: true });
+    setActiveRibbon("table");
+  };
+  // "+" on a table border: boundary j sits between line j-1 and line j (0 = before the first, n = after the last).
+  const addTableLine = (kind, boundary) => (kind === "row" ? a.tableRows : a.tableCols)("add", boundary === 0 ? 0 : boundary - 1, boundary === 0);
   const cancelInlineText = () => {
     const id = textEdit?.id;
     if (id) setTextAutoSizeDrafts((current) => { if (!current.has(id)) return current; const next = new Map(current); next.delete(id); return next; });
     setTextEdit(null);
   };
-  const commitBounds = (changes, label) => run(() => setBounds(pkg, path, changes, label));
+  const commitBounds = (changes, label) => run(() => setBounds(pkg, path, fitBounds(changes), label));
   const autoSizeTextHeight = React.useCallback((id, suggestedHeight, isEditing = false) => {
     const element = okModel?.elements.find((item) => item.id === id);
     if (!pkg || !path || !element || element.kind === "table" || lockedIds.has(id) || element.readOnlyGeometry) return;
-    const targetHeight = Math.ceil(Number(suggestedHeight) || 0);
-    const draftHeight = textAutoSizeDraftsRef.current.get(id) || 0;
-    const currentHeight = Math.max(element.h, draftHeight);
-    // Auto-sizing is strictly grow-only: it fixes clipped wrapped text without
-    // changing the user's width or shrinking existing text/boxes unexpectedly.
-    if (!Number.isFinite(targetHeight) || targetHeight <= currentHeight + 2 * 9525) return;
+    // Grow only to the slide's bottom edge. Further text remains in the
+    // editable content and is naturally clipped by .pptx-slide, without
+    // expanding geometry beyond the slide and triggering viewport movement.
+    const slideBottomLimit = Math.max(1, (okModel.size?.h || element.y + element.h) - element.y);
+    const targetHeight = Math.min(slideBottomLimit, Math.ceil(Number(suggestedHeight) || 0));
+    const currentHeight = textAutoSizeDraftsRef.current.get(id) || element.h;
+    // Fit in both directions. As content is deleted, the frame contracts to
+    // the measured content height; x/y/width and all other elements stay fixed.
+    if (!Number.isFinite(targetHeight) || Math.abs(targetHeight - currentHeight) <= 2 * 9525) return;
     if (isEditing) {
       setTextAutoSizeDrafts((current) => {
-        const oldHeight = Math.max(element.h, current.get(id) || 0);
-        if (targetHeight <= oldHeight + 2 * 9525) return current;
+        const oldHeight = current.get(id) || element.h;
+        if (Math.abs(targetHeight - oldHeight) <= 2 * 9525) return current;
         const next = new Map(current); next.set(id, targetHeight); return next;
       });
       return;
@@ -534,6 +573,11 @@ export default function PptxEditorDialog({ onClose }) {
   const tableColIndex = focusIsTable ? Math.max(0, Math.min(tableFocus.col, (selectedEl.table?.cols?.length || 1) - 1)) : 0;
   const selectedTableCell = focusIsTable ? selectedEl.table?.rows?.[tableRowIndex]?.cells?.[tableColIndex] : null;
   const tableTextStyle = selectedTableCell?.text?.paragraphs?.find((p) => p.runs.length)?.runs[0]?.style || selectedTableCell?.text?.paragraphs?.[0]?.end || null;
+  const cellToolbarNode = tableFocus.picked && focusIsTable && sel.length === 1 && selectedTableCell && !lockedIds.has(selectedEl.id)
+    ? <CellToolbar style={tableTextStyle} fill={selectedTableCell.fill} themeColors={ribbonColors} t={t}
+        onText={(props) => a.tableRangeText(tableRowIndex, tableColIndex, tableFocus.scope, props)}
+        onFill={(hex) => a.tableRangeFill(tableRowIndex, tableColIndex, tableFocus.scope, hex)} />
+    : null;
   const textHasContent = (e) => !!e?.text?.plain?.some((v) => String(v).trim());
   const canTextEdit = sel.length > 0 && sel.every((e) => e.kind !== "table" && (e.kind === "text" || textHasContent(e)));
   const canShapeEdit = sel.length > 0 && sel.every((e) => e.kind === "shape" || e.kind === "line");
@@ -795,7 +839,7 @@ export default function PptxEditorDialog({ onClose }) {
             {!compact && <aside className="pe-left"><SlidesPanel pkg={pkg} pres={pres} idx={safeIdx} onSelect={slideOps.select} onAdd={slideOps.add} onDuplicate={dupSlide} onDelete={slideOps.del} onMove={slideOps.move} t={t} labels={labels} /></aside>}
             <main className="pe-main" dir="ltr">
               {okModel ? (
-                <Canvas ref={canvasRef} pkg={pkg} model={canvasModel} selection={selection} onSelect={setSelection} onSelectionComplete={activateContextForSelection} onInteractionStart={clearContextSheetTimer} onCommit={commitBounds} onEditText={openText} editingText={textEdit} tableSelection={tableFocus} textAutoSizeHeights={textAutoSizeDrafts} onTableCellSelect={selectTableCell} onAutoSizeText={autoSizeTextHeight} onTextCommit={commitInlineText} onTextCancel={cancelInlineText} onCopy={copyNow} onDelete={a.remove} onRotate={() => a.rotate(90)} multi={multi} grid={grid} locked={lockedIds} labels={labels} onZoom={setZoom} compact={compact} />
+                <Canvas ref={canvasRef} pkg={pkg} model={canvasModel} selection={selection} onSelect={setSelection} onSelectionComplete={activateContextForSelection} onInteractionStart={clearContextSheetTimer} onCommit={commitBounds} onEditText={openText} editingText={textEdit} tableSelection={tableFocus} cellToolbar={cellToolbarNode} onTableAdd={addTableLine} onTableSelectAll={selectWholeTable} textAutoSizeHeights={textAutoSizeDrafts} onTableCellSelect={selectTableCell} onAutoSizeText={autoSizeTextHeight} onTextCommit={commitInlineText} onTextCancel={cancelInlineText} onCopy={copyNow} onDelete={a.remove} onRotate={() => a.rotate(90)} multi={multi} grid={grid} locked={lockedIds} labels={labels} onZoom={setZoom} compact={compact} />
               ) : <div className="pe-error"><AlertTriangle aria-hidden="true" />{t("pptxEditor.slideUnreadable")}</div>}
               {compact && pres && (
                 <div className="pe-slidenav">

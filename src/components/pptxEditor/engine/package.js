@@ -45,9 +45,15 @@ export function partForRels(relsPath) {
   return m ? `${m[1]}${m[2]}` : null;
 }
 export function resolveTarget(fromPart, target) {
-  if (target.startsWith("/")) return normalize(target.slice(1));
+  // Relationship targets are URI-encoded part names (e.g. spaces as %20) and
+  // some writers use backslashes. Normalize both so they match the real zip
+  // entry names; a literal "%" that fails decoding keeps the raw target.
+  let clean = target;
+  try { clean = decodeURIComponent(target); } catch { /* keep raw target */ }
+  clean = clean.replace(/\\/g, "/");
+  if (clean.startsWith("/")) return normalize(clean.slice(1));
   const base = fromPart === "/" ? "" : dirname(fromPart);
-  return normalize(base ? `${base}/${target}` : target);
+  return normalize(base ? `${base}/${clean}` : clean);
 }
 function normalize(p) {
   const out = [];

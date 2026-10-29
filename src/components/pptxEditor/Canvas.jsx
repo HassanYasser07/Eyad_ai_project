@@ -4,20 +4,26 @@ import SlideView, { collectImagePaths } from "./SlideView.jsx";
 import { useMediaUrls } from "./useMediaUrls.js";
 import { EMU_PER_PX } from "./engine/slideModel.js";
 import { hitTest, rotatedBox, unionBox, snapBox } from "./engine/geometry.js";
+import { fitFrame, fitTableToContent, fitTableGrid } from "./textFit.js";
+import TableHandles from "./TableHandles.jsx";
 
 const MIN_SIZE = 91440;
+const MIN_COL = 285750; // 30 px: narrowest column a border drag can produce
+const MIN_ROW = 190500; // 20 px: shortest row (content may force more)
 const GRID = 228600; // 0.25 in
 const HANDLES = [["nw", 0, 0], ["n", 0.5, 0], ["ne", 1, 0], ["e", 1, 0.5], ["se", 1, 1], ["s", 0.5, 1], ["sw", 0, 1], ["w", 0, 0.5]];
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const boundsOf = (e) => ({ x: e.x, y: e.y, w: e.w, h: e.h, rot: e.rot, flipH: e.flipH, flipV: e.flipV });
 
-const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelect, onSelectionComplete, onInteractionStart, onCommit, onEditText, onTextCommit, onTextCancel, onTableCellSelect, onAutoSizeText, textAutoSizeHeights, editingText, tableSelection, onCopy, onDelete, onRotate, multi, grid, locked, labels, onZoom, compact }, ref) {
+const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelect, onSelectionComplete, onInteractionStart, onCommit, onEditText, onTextCommit, onTextCancel, onTableCellSelect, onAutoSizeText, textAutoSizeHeights, editingText, tableSelection, cellToolbar, onTableAdd, onTableSelectAll, onCopy, onDelete, onRotate, multi, grid, locked, labels, onZoom, compact }, ref) {
   const stageRef = React.useRef(null);
   const [size, setSize] = React.useState({ w: 800, h: 600 });
   const [view, setView] = React.useState({ zoom: 1, pan: { x: 0, y: 0 } });
   const [draft, setDraft] = React.useState(null);
   const [guides, setGuides] = React.useState(null);
   const [marquee, setMarquee] = React.useState(null);
+  const [cellFit, setCellFit] = React.useState(null); // live row/frame growth while typing in a table cell
+  const [tblDrag, setTblDrag] = React.useState(null); // { kind: "col"|"row", index } while a table border is dragged
   const urls = useMediaUrls(pkg, collectImagePaths(model));
 
   const W = model.size.w / EMU_PER_PX, H = model.size.h / EMU_PER_PX;
@@ -28,7 +34,7 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
 
   // Everything the pointer handlers need, kept fresh without re-binding listeners.
   const R = React.useRef({});
-  R.current = { s, ox, oy, fit, size, W, H, model, selection, multi, grid, locked, view, onSelect, onSelectionComplete, onInteractionStart, onCommit, onEditText, draft };
+  R.current = { s, ox, oy, fit, size, W, H, model, selection, multi, grid, locked, view, onSelect, onSelectionComplete, onInteractionStart, onCommit, onEditText, draft, editingText, tableSelection };
   const pointers = React.useRef(new Map());
   const gesture = React.useRef(null);
   const lastTap = React.useRef({ t: 0, id: null, x: 0, y: 0 });
@@ -49,6 +55,27 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
     updateSize();
     return () => ro?.disconnect();
   }, []);
+  // Typing in a table cell re-wraps its text: grow the row and the frame live (same measurement as on commit),
+  // so the frame always equals the rendered table and every cell stays clickable.
+  React.useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return undefined;
+    let raf = 0;
+    const onInput = (e) => {
+      const td = e.target?.closest?.("td[data-row]");
+      if (!td) return;
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        const id = td.closest(".pptx-el-table")?.dataset.id;
+        const el = R.current.model.elements.find((x) => x.id === id);
+        const fit = el ? fitTableToContent(stage, el) : null;
+        setCellFit(fit ? { id, h: fit.h, tableGrid: fit.tableGrid } : null);
+      });
+    };
+    stage.addEventListener("input", onInput);
+    return () => { cancelAnimationFrame(raf); stage.removeEventListener("input", onInput); };
+  }, []);
+  React.useEffect(() => { setCellFit(null); }, [model, editingText?.id, editingText?.row, editingText?.col]);
   // Reset view when the slide changes.
   React.useEffect(() => { setView({ zoom: 1, pan: { x: 0, y: 0 } }); }, [model.path]);
 
@@ -77,11 +104,27 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
     const tol = ((touch ? 10 : 5) / R.current.s) * EMU_PER_PX;
     const out = [];
     const els = R.current.model.elements;
-    for (let i = els.length - 1; i >= 0; i--) { const e = els[i]; if (!e.hidden && hitTest(boundsOf(e), pt.x, pt.y, e.h < 20000 || e.w < 20000 ? tol * 1.5 : 0)) out.push(e); }
+    for (let i = els.length - 1; i >= 0; i--) { const e = els[i]; if (!e.hidden && hitTest(R.current.overrides?.get(e.id) || boundsOf(e), pt.x, pt.y, e.h < 20000 || e.w < 20000 ? tol * 1.5 : 0)) out.push(e); }
     return out;
   };
 
+  // Content-driven geometry for `id` at width `w` / requested height `h` (text frames and tables).
+  const fitOf = (id, w, h) => {
+    const el = R.current.model.elements.find((x) => x.id === id);
+    return el ? fitFrame(stageRef.current, el, w, h) : null;
+  };
+
   React.useImperativeHandle(ref, () => ({
+    // Re-flow guard for any geometry commit (handles, inspector fields): a text frame whose
+    // size changed can never end up shorter than its wrapped text.
+    fitChanges: (changes) => changes.map((c) => {
+      const el = R.current.model.elements.find((x) => x.id === c.id);
+      if (!el || (c.w === el.w && c.h === el.h) || c.tableGrid) return c; // moves/rotates and pre-fitted drafts pass through
+      const fit = fitOf(c.id, c.w, c.h);
+      return fit && (fit.h > c.h || fit.tableGrid) ? { ...c, ...fit } : c;
+    }),
+    // Rows grown to fit freshly typed cell text; null when nothing needs to change.
+    fitTable: (id) => { const el = R.current.model.elements.find((x) => x.id === id); return el ? fitTableToContent(stageRef.current, el) : null; },
     zoomBy: (f) => zoomAt(f, R.current.size.w / 2, R.current.size.h / 2),
     fit: () => {
       const rect = stageRef.current?.getBoundingClientRect();
@@ -249,10 +292,16 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
       let w = Math.max(MIN_SIZE, b0.w + sx * lx), h = Math.max(MIN_SIZE, b0.h + sy * ly);
       const corner = sx !== 0 && sy !== 0;
       if (corner && (g.isImage ? !e.shiftKey : e.shiftKey)) { const ratio = b0.w / b0.h; if (Math.abs(w / b0.w - 1) > Math.abs(h / b0.h - 1)) h = w / ratio; else w = h * ratio; }
+      // Re-flow: content re-wraps at the new width, so the frame may never be shorter than its
+      // content (text) or its rows' content (tables). This gives vertical shrinking a natural floor.
+      const fit = fitOf(g.id, w, h);
+      let tableGrid;
+      if (fit) { h = Math.max(h, fit.h); if (fit.tableGrid) { tableGrid = fit.tableGrid; h = fit.h; } }
       const dw = w - b0.w, dh = h - b0.h;
-      const lcx = (sx * dw) / 2, lcy = (sy * dh) / 2;
+      // A height forced by text on a width-only handle grows downward (top edge stays put).
+      const lcx = (sx * dw) / 2, lcy = ((sy || 1) * dh) / 2;
       const cx = b0.x + b0.w / 2 + lcx * cos - lcy * sin, cy = b0.y + b0.h / 2 + lcx * sin + lcy * cos;
-      setDraft(new Map([[g.id, { ...b0, x: cx - w / 2, y: cy - h / 2, w, h }]]));
+      setDraft(new Map([[g.id, { ...b0, x: cx - w / 2, y: cy - h / 2, w, h, ...(tableGrid ? { tableGrid } : {}) }]]));
     }
   };
 
@@ -284,6 +333,17 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
       const tapped = g.tapId || g.id;
       if (g.tapId) { nextSelection = [g.tapId]; R.current.onSelect(nextSelection); }
       else if (g.pending) { nextSelection = g.pending; R.current.onSelect(nextSelection); }
+      // Tapping a table cell puts the caret straight into that cell. A drag never gets here
+      // (g.moved), so moving/resizing the table is unaffected.
+      const tbl = R.current.model.elements.find((x) => x.id === tapped && x.kind === "table");
+      const cellEl = tbl ? document.elementFromPoint(e.clientX, e.clientY)?.closest?.("td[data-row]") : null;
+      if (cellEl && !R.current.locked.has(tapped)) {
+        const cell = { row: Number(cellEl.dataset.row), col: Number(cellEl.dataset.col) };
+        const cur = R.current.editingText;
+        if (!(cur?.id === tapped && cur.row === cell.row && cur.col === cell.col)) R.current.onEditText(tapped, cell);
+        lastTap.current = { t: 0, id: null, x: 0, y: 0 };
+        return;
+      }
       const now = Date.now(), lt = lastTap.current;
       const doubleTap = !g.toggleOff && lt.id === tapped && now - lt.t < 380 && Math.hypot(e.clientX - lt.x, e.clientY - lt.y) < 26;
       if (doubleTap) { lastTap.current = { t: 0, id: null, x: 0, y: 0 }; R.current.onEditText(tapped); }
@@ -324,13 +384,66 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
         if (pendingHeight > base.h) combined.set(element.id, { ...base, h: pendingHeight });
       }
     }
+    if (cellFit && !combined.has(cellFit.id)) {
+      const element = model.elements.find((item) => item.id === cellFit.id);
+      if (element) combined.set(cellFit.id, { ...boundsOf(element), h: cellFit.h, tableGrid: cellFit.tableGrid });
+    }
     return combined;
-  }, [draft, textAutoSizeHeights, model]);
+  }, [draft, textAutoSizeHeights, model, cellFit]);
+  R.current.overrides = overrides;
   const sel = model.elements.filter((e) => selection.includes(e.id));
   const frames = sel.map((e) => ({ el: e, b: overrides.get(e.id) || boundsOf(e) }));
   const toScreen = (b) => ({ cx: ox + ((b.x + b.w / 2) / EMU_PER_PX) * s, cy: oy + ((b.y + b.h / 2) / EMU_PER_PX) * s, w: (b.w / EMU_PER_PX) * s, h: (b.h / EMU_PER_PX) * s });
   const single = frames.length === 1 ? frames[0] : null;
   const union = frames.length > 1 ? unionBox(frames.map((f) => rotatedBox(f.b))) : null;
+  // Controls around a single, unrotated, editable table.
+  const tblSel = single && single.el.kind === "table" && single.el.table?.cols?.length && !locked.has(single.el.id) && !single.el.readOnlyGeometry && !single.b.rot && !single.b.flipH && !single.b.flipV
+    ? { el: single.el, b: single.b, cols: single.b.tableGrid?.cols || single.el.table.cols, rows: single.b.tableGrid?.rows || single.el.table.rows.map((r) => r.h) }
+    : null;
+  R.current.tblSel = tblSel;
+  // Drag a column / row border: only that column (or row) changes size, like PowerPoint; the frame grows or
+  // shrinks with it. Rows never get shorter than their wrapped text, and the drag previews live via the draft.
+  const startTableResize = (e, kind, border) => {
+    const t = R.current.tblSel;
+    e.stopPropagation();
+    if (!t || (e.button !== undefined && e.button > 0)) return;
+    const { el, cols, rows } = t, base = boundsOf(el), startX = e.clientX, startY = e.clientY, pointerId = e.pointerId;
+    // Border b sits after column/row b-1; the first border (b = 0) belongs to the first one and moves the frame origin.
+    const atStart = border === 0, index = atStart ? 0 : border - 1;
+    let last = null;
+    setTblDrag({ kind, border });
+    R.current.onInteractionStart?.();
+    const move = (ev) => {
+      if (ev.pointerId !== pointerId) return;
+      const sc = R.current.s;
+      let c = cols.slice(), r = rows.slice();
+      const raw = (((kind === "col" ? ev.clientX - startX : ev.clientY - startY) / sc) * EMU_PER_PX);
+      const delta = atStart ? -raw : raw;
+      if (kind === "col") c[index] = Math.max(MIN_COL, Math.round(cols[index] + delta));
+      else r[index] = Math.max(MIN_ROW, Math.round(rows[index] + delta));
+      const fit = fitTableGrid(stageRef.current, el, c, r);
+      if (fit) { c = fit.tableGrid.cols; r = fit.tableGrid.rows; }
+      // Dragging the top / left edge grows the first row / column outwards: the origin follows so the rest stays put.
+      const x = atStart && kind === "col" ? base.x + (cols[0] - c[0]) : base.x;
+      const y = atStart && kind === "row" ? base.y + (rows[0] - r[0]) : base.y;
+      last = { ...base, x, y, w: c.reduce((a, b) => a + b, 0), h: r.reduce((a, b) => a + b, 0), tableGrid: { cols: c, rows: r } };
+      setDraft(new Map([[el.id, last]]));
+    };
+    const end = (ev, cancelled) => {
+      if (ev.pointerId !== pointerId) return;
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", cancel);
+      setTblDrag(null);
+      setDraft(null);
+      if (!cancelled && last) R.current.onCommit([{ id: el.id, ...last }], "Resize table cells");
+    };
+    const up = (ev) => end(ev, false);
+    const cancel = (ev) => end(ev, true);
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", cancel);
+  };
   const quickActionBox = single ? rotatedBox(single.b) : union;
   const quickActionsEnabled = frames.length > 0 && frames.every(({ el }) => !locked.has(el.id) && !el.readOnlyGeometry);
   const quickActionWidth = 110;
@@ -360,7 +473,7 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
               style={{ left: f.cx - f.w / 2, top: f.cy - f.h / 2, width: f.w, height: f.h, transform: `rotate(${b.rot || 0}deg)` }}>
               {single && !isLocked && (
                 <>
-                  {HANDLES.filter(([k]) => !((k === "n" || k === "s") && f.h < 76) && !((k === "e" || k === "w") && f.w < 76)).map(([k, hx, hy]) => (
+                  {HANDLES.filter(([k]) => !(el.kind === "table" && k.length === 1) && !((k === "n" || k === "s") && f.h < 76) && !((k === "e" || k === "w") && f.w < 76)).map(([k, hx, hy]) => (
                     <div key={k} className={`pptx-handle h-${k}`} data-handle={k} style={{ left: `${hx * 100}%`, top: `${hy * 100}%` }} onPointerDown={(e) => startHandle(e, k, el.id)}><i /></div>
                   ))}
                   <div className="pptx-rot-line" />
@@ -376,6 +489,12 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
           <button type="button" title={labels.quickRotate} aria-label={labels.quickRotate} onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onRotate?.(); }}><RotateCw size={15} aria-hidden="true" /></button>
           <button type="button" className="is-danger" title={labels.quickDelete} aria-label={labels.quickDelete} onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onDelete?.(); }}><Trash2 size={15} aria-hidden="true" /></button>
         </div>}
+        {tblSel && <TableHandles x0={ox + (tblSel.b.x / EMU_PER_PX) * s} y0={oy + (tblSel.b.y / EMU_PER_PX) * s} s={s} cols={tblSel.cols} rows={tblSel.rows}
+          canAdd={!tblSel.el.table.hasMerge} drag={tblDrag} selected={tableSelection?.id === tblSel.el.id && tableSelection.picked && tableSelection.scope === "table"} labels={labels}
+          onSelectAll={() => onTableSelectAll?.(tblSel.el.id)} onAdd={(kind, boundary) => onTableAdd?.(kind, boundary)} onResizeStart={startTableResize} />}
+        {/* Docked at the top of the workspace, under the editor ribbon; shown only while a cell / table is picked. */}
+        {cellToolbar && <div className="pptx-cell-toolbar" role="toolbar" aria-label={labels.cellToolbar}
+          onPointerDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>{cellToolbar}</div>}
         {union && <div className="pptx-union" style={{ left: ox + (union.x / EMU_PER_PX) * s, top: oy + (union.y / EMU_PER_PX) * s, width: (union.w / EMU_PER_PX) * s, height: (union.h / EMU_PER_PX) * s }}><span>{frames.length}</span></div>}
         {marquee && <div className="pptx-marquee" style={{ left: Math.min(marquee.x0, marquee.x1), top: Math.min(marquee.y0, marquee.y1), width: Math.abs(marquee.x1 - marquee.x0), height: Math.abs(marquee.y1 - marquee.y0) }} />}
       </div>

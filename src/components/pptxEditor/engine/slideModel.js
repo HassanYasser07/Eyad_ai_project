@@ -315,7 +315,7 @@ function readTable(tbl, ctx) {
       if (merged) hasMerge = true;
       const tcPr = kid(tc, "tcPr");
       const fillEl = tcPr && readFillEl(tcPr, ctx);
-      return { text: readText(kid(tc, "txBody"), ctx, { ph: null }), gridSpan: num(tc, "gridSpan", 1), rowSpan: num(tc, "rowSpan", 1), hMerge: bool(tc, "hMerge"), vMerge: bool(tc, "vMerge"), fill: fillEl };
+      return { text: readText(kid(tc, "txBody"), ctx, { ph: null }), gridSpan: num(tc, "gridSpan", 1), rowSpan: num(tc, "rowSpan", 1), hMerge: bool(tc, "hMerge"), vMerge: bool(tc, "vMerge"), fill: fillEl, anchor: tcPr && tcPr.getAttribute("anchor") || "t" };
     }),
   }));
   return { cols, rows, hasMerge, firstRow: bool(pr, "firstRow"), lastRow: bool(pr, "lastRow"), firstCol: bool(pr, "firstCol"), lastCol: bool(pr, "lastCol"), bandRow: bool(pr, "bandRow"), bandCol: bool(pr, "bandCol"), accent: { hex: ctx.theme.colors.accent1, alpha: 1 } };

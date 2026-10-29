@@ -1,0 +1,949 @@
+import React from "react";
+import { EMU_PER_PX } from "./engine/slideModel.js";
+import { jsxDEV as _jsxDEV, Fragment as _Fragment } from "react/jsx-dev-runtime";
+const px = emu => emu / EMU_PER_PX;
+const ptToPx = pt => pt * 4 / 3;
+const rgba = (c, extra = 1) => c ? `rgba(${parseInt(c.hex.slice(0, 2), 16)},${parseInt(c.hex.slice(2, 4), 16)},${parseInt(c.hex.slice(4, 6), 16)},${(c.alpha ?? 1) * extra})` : "transparent";
+const DASH = {
+  dash: "6 3",
+  sysDash: "3 1",
+  dot: "1.5 2.5",
+  sysDot: "1 1",
+  lgDash: "10 4",
+  dashDot: "6 3 1.5 3"
+};
+const SERIF = /georgia|times|garamond|cambria|palatino|book|serif|minion|baskerville|didot/i,
+  MONO = /courier|consolas|mono|menlo|lucida console/i;
+const font = f => {
+  const name = String(f || "Calibri").replace(/["\\;]/g, "");
+  return `"${name}", ${MONO.test(name) ? "ui-monospace, monospace" : SERIF.test(name) && !/sans/i.test(name) ? "Georgia, serif" : "Calibri, Arial, sans-serif"}`;
+};
+export function collectImagePaths(model) {
+  const out = new Set();
+  const walk = els => {
+    for (const e of els) {
+      if (e.imagePath) out.add(e.imagePath);
+      if (e.fill?.type === "image") out.add(e.fill.path);
+      if (e.children) walk(e.children);
+    }
+  };
+  walk(model.elements);
+  walk(model.under);
+  if (model.background?.type === "image") out.add(model.background.path);
+  return [...out];
+}
+function fillAttr(fill, id, defs, urls) {
+  if (!fill || fill.type === "none") return {
+    fill: "none"
+  };
+  if (fill.type === "solid") return {
+    fill: `#${fill.hex}`,
+    fillOpacity: fill.alpha
+  };
+  if (fill.type === "gradient") {
+    const gid = `g-${id}`;
+    const stops = fill.stops.map((s, i) => /*#__PURE__*/_jsxDEV("stop", {
+      offset: `${s.pos * 100}%`,
+      stopColor: `#${s.hex}`,
+      stopOpacity: s.alpha
+    }, i, false));
+    defs.push(fill.radial ? /*#__PURE__*/_jsxDEV("radialGradient", {
+      id: gid,
+      children: stops
+    }, gid, false) : /*#__PURE__*/_jsxDEV("linearGradient", {
+      id: gid,
+      gradientTransform: `rotate(${fill.angle} .5 .5)`,
+      children: stops
+    }, gid, false));
+    return {
+      fill: `url(#${gid})`
+    };
+  }
+  // Picture fills on shapes (a:blipFill) are how Canva and many template
+  // exporters store every photo. Stretch the image over the shape's box;
+  // until its blob URL arrives keep the neutral fallback and re-render.
+  if (fill.type === "image") {
+    const url = urls?.[fill.path];
+    if (!url) return {
+      fill: "#e2e8f0"
+    };
+    const pid = `img-${id}`;
+    defs.push(/*#__PURE__*/_jsxDEV("pattern", {
+      id: pid,
+      patternUnits: "objectBoundingBox",
+      patternContentUnits: "objectBoundingBox",
+      width: "1",
+      height: "1",
+      children: /*#__PURE__*/_jsxDEV("image", {
+        href: url,
+        x: "0",
+        y: "0",
+        width: "1",
+        height: "1",
+        preserveAspectRatio: "none"
+      }, void 0, false)
+    }, pid, false));
+    return {
+      fill: `url(#${pid})`
+    };
+  }
+  return {
+    fill: "#e2e8f0"
+  };
+}
+function Geometry({
+  el,
+  w,
+  h,
+  idPrefix,
+  urls
+}) {
+  const defs = [];
+  const f = fillAttr(el.fill, `${idPrefix}${el.id}`, defs, urls);
+  const ln = el.line || {};
+  const sw = ln.none || ln.hex === undefined ? 0 : Math.max(0.5, px(ln.w ?? 12700));
+  const stroke = sw ? {
+    stroke: `#${ln.hex}`,
+    strokeOpacity: ln.alpha,
+    strokeWidth: sw,
+    strokeDasharray: DASH[ln.dash],
+    strokeLinejoin: "round"
+  } : {
+    stroke: "none"
+  };
+  const g = el.geom || {
+    kind: "rect"
+  };
+  let body = null;
+  if (g.kind === "ellipse") body = /*#__PURE__*/_jsxDEV("ellipse", {
+    cx: w / 2,
+    cy: h / 2,
+    rx: w / 2,
+    ry: h / 2,
+    ...f,
+    ...stroke
+  }, void 0, false);else if (g.kind === "path") body = /*#__PURE__*/_jsxDEV("path", {
+    d: g.d,
+    ...f,
+    ...stroke
+  }, void 0, false);else if (g.kind === "custom") body = g.paths.map((p, i) => /*#__PURE__*/_jsxDEV("path", {
+    d: p.d,
+    ...(p.fill ? f : {
+      fill: "none"
+    }),
+    ...(p.stroke ? stroke : {
+      stroke: "none"
+    })
+  }, i, false));else if (g.kind === "line") {
+    const mk = `${idPrefix}arrow-${el.id}`;
+    const head = ln.tail && ln.tail !== "none",
+      tail = ln.head && ln.head !== "none";
+    body = /*#__PURE__*/_jsxDEV(_Fragment, {
+      children: [(head || tail) && /*#__PURE__*/_jsxDEV("defs", {
+        children: /*#__PURE__*/_jsxDEV("marker", {
+          id: mk,
+          viewBox: "0 0 8 8",
+          markerWidth: "3",
+          markerHeight: "3",
+          refX: "6",
+          refY: "4",
+          orient: "auto-start-reverse",
+          markerUnits: "strokeWidth",
+          children: /*#__PURE__*/_jsxDEV("path", {
+            d: "M0 0 L8 4 L0 8 Z",
+            fill: `#${ln.hex || "000000"}`
+          }, void 0, false)
+        }, void 0, false)
+      }, void 0, false), /*#__PURE__*/_jsxDEV("line", {
+        x1: "0",
+        y1: "0",
+        x2: w,
+        y2: h,
+        ...stroke,
+        markerEnd: head ? `url(#${mk})` : undefined,
+        markerStart: tail ? `url(#${mk})` : undefined
+      }, void 0, false)]
+    }, void 0, true);
+  } else body = /*#__PURE__*/_jsxDEV("rect", {
+    x: "0",
+    y: "0",
+    width: w,
+    height: h,
+    ...f,
+    ...stroke
+  }, void 0, false);
+  return /*#__PURE__*/_jsxDEV("svg", {
+    className: "pptx-geom",
+    width: Math.max(w, 1),
+    height: Math.max(h, 1),
+    viewBox: `0 0 ${Math.max(w, 1)} ${Math.max(h, 1)}`,
+    "aria-hidden": "true",
+    children: [defs.length > 0 && /*#__PURE__*/_jsxDEV("defs", {
+      children: defs
+    }, void 0, false), body]
+  }, void 0, true);
+}
+function bulletText(b) {
+  if (b.kind === "char") return b.char;
+  if (b.kind === "auto") return `${b.number}.`;
+  return "";
+}
+export function TextBody({
+  text,
+  hint,
+  cellMode = false,
+  editing = false,
+  elementId,
+  frameW,
+  frameH,
+  onAutoSize,
+  onEditStart,
+  onCommit,
+  onCancel
+}) {
+  const containerRef = React.useRef(null);
+  const contentRef = React.useRef(null);
+  const autoSizeFrameRef = React.useRef(0);
+  const previousBoundsRef = React.useRef({
+    w: frameW,
+    h: frameH
+  });
+  const makeTextLayoutKey = value => JSON.stringify((value?.paragraphs || []).map(p => ({
+    plain: p.plain,
+    endSize: p.end?.size,
+    align: p.algn,
+    indent: p.indent,
+    margin: p.marL,
+    lineSpacing: p.lnSpc,
+    spaceBefore: p.spcBef,
+    spaceAfter: p.spcAft,
+    bullet: p.bullet,
+    runs: p.runs.map(r => ({
+      text: r.text,
+      size: r.style.size,
+      font: r.style.font,
+      bold: r.style.bold,
+      italic: r.style.italic,
+      underline: r.style.underline,
+      strike: r.style.strike,
+      baseline: r.style.baseline
+    }))
+  })));
+  const textLayoutKey = makeTextLayoutKey(text);
+  const previousTextLayoutKeyRef = React.useRef(textLayoutKey);
+  const body = text?.body || {};
+  // Preserve the font sizes authored in the PPTX. Browser-measured shrink-to-fit
+  // was unreliable for titles and wrapped text and could make content suddenly
+  // tiny when a slide was selected. Overflow is handled by growing the text box.
+  const renderScale = 1;
+
+  // Grow text objects when wrapping or edited content exceeds their frame. We
+  // deliberately don't run this on first mount for unchanged imported objects;
+  // it activates on inline editing, text-style changes, or geometry changes.
+  // Cell geometry is owned by the table grid and must never be auto-resized.
+  const requestContentFit = React.useCallback(() => {
+    if (cellMode || !onAutoSize || !elementId || !Number.isFinite(frameH) || typeof window === "undefined") return;
+    if (autoSizeFrameRef.current) window.cancelAnimationFrame(autoSizeFrameRef.current);
+    autoSizeFrameRef.current = window.requestAnimationFrame(() => {
+      autoSizeFrameRef.current = 0;
+      const container = containerRef.current;
+      const content = contentRef.current;
+      if (!container || !content || !container.isConnected || !content.isConnected) return;
+      const css = window.getComputedStyle(container);
+      const verticalPadding = (Number.parseFloat(css.paddingTop) || 0) + (Number.parseFloat(css.paddingBottom) || 0);
+      const contentRect = content.getBoundingClientRect();
+      // scrollHeight captures wrapped lines and contenteditable-created line breaks;
+      // the bounding-box height covers fractional line metrics in Chromium/WebKit.
+      const naturalContentHeight = Math.max(content.scrollHeight, content.offsetHeight, contentRect.height);
+      if (!Number.isFinite(naturalContentHeight) || naturalContentHeight <= 0) return;
+      const requiredHeight = Math.ceil((naturalContentHeight + verticalPadding + 1) * EMU_PER_PX);
+      if (requiredHeight > frameH + 2 * EMU_PER_PX) onAutoSize(elementId, requiredHeight, editing);
+    });
+  }, [cellMode, onAutoSize, elementId, frameH, editing]);
+  React.useLayoutEffect(() => {
+    // During a live resize Canvas deliberately suspends auto-sizing so that the
+    // user's pointer controls the frame. Do NOT consume the new dimensions while
+    // the callback is absent: after the drag commits, the callback returns and
+    // we must still detect the geometry change and measure the wrapped content.
+    // The previous implementation updated these refs before checking onAutoSize,
+    // making the final committed size look unchanged and leaving wrapped lines clipped.
+    if (cellMode || !onAutoSize) return undefined;
+    const previous = previousBoundsRef.current;
+    const boundsChanged = previous.w !== frameW || previous.h !== frameH;
+    const textChanged = previousTextLayoutKeyRef.current !== textLayoutKey;
+    previousBoundsRef.current = {
+      w: frameW,
+      h: frameH
+    };
+    previousTextLayoutKeyRef.current = textLayoutKey;
+    if (!editing && !boundsChanged && !textChanged) return undefined;
+    requestContentFit();
+    return () => {
+      if (autoSizeFrameRef.current && typeof window !== "undefined") {
+        window.cancelAnimationFrame(autoSizeFrameRef.current);
+        autoSizeFrameRef.current = 0;
+      }
+    };
+  }, [cellMode, onAutoSize, editing, frameW, frameH, textLayoutKey, requestContentFit]);
+  React.useEffect(() => () => {
+    if (autoSizeFrameRef.current && typeof window !== "undefined") window.cancelAnimationFrame(autoSizeFrameRef.current);
+  }, []);
+  React.useEffect(() => {
+    if (!editing || !contentRef.current) return undefined;
+    const editor = contentRef.current;
+    editor.focus({
+      preventScroll: true
+    });
+    try {
+      const selection = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(editor);
+      range.collapse(false);
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+    } catch {/* Focus still works if selection APIs are unavailable. */}
+    return undefined;
+  }, [editing]);
+  if (!text) return null;
+  const {
+    paragraphs
+  } = text;
+  const ins = body.insets || {
+    t: 45720,
+    r: 91440,
+    b: 45720,
+    l: 91440
+  };
+  const justify = body.anchor === "ctr" ? "center" : body.anchor === "b" ? "flex-end" : "flex-start";
+  const nowrap = body.wrap === "none";
+  const empty = text.isEmpty;
+  return /*#__PURE__*/_jsxDEV("div", {
+    ref: containerRef,
+    className: `pptx-text ${editing ? "is-inline-editing" : ""}`,
+    style: {
+      padding: `${px(ins.t)}px ${px(ins.r)}px ${px(ins.b)}px ${px(ins.l)}px`,
+      justifyContent: cellMode ? "flex-start" : justify,
+      whiteSpace: nowrap ? "pre" : "pre-wrap"
+    },
+    onDoubleClick: event => {
+      if (!editing && onEditStart) {
+        event.preventDefault();
+        event.stopPropagation();
+        onEditStart();
+      }
+    },
+    children: /*#__PURE__*/_jsxDEV("div", {
+      ref: contentRef,
+      className: "pptx-text-content",
+      "data-auto-fit": "none",
+      "data-auto-scale": "1.000",
+      contentEditable: editing,
+      suppressContentEditableWarning: editing,
+      onPointerDown: event => {
+        if (editing) event.stopPropagation();
+      },
+      onInput: () => {
+        if (editing) requestContentFit();
+      },
+      onKeyDown: event => {
+        if (!editing) return;
+        if (event.key === "Escape") {
+          event.preventDefault();
+          event.stopPropagation();
+          onCancel?.();
+        } else if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+          event.preventDefault();
+          event.currentTarget.blur();
+        } else event.stopPropagation();
+      },
+      onBlur: event => {
+        if (!editing || !onCommit) return;
+        const value = String(event.currentTarget.innerText ?? event.currentTarget.textContent ?? "").replace(/[\u200B\uFEFF]/g, "").replace(/\r\n?/g, "\n").replace(/\n+$/, "");
+        onCommit(value.split("\n"));
+      },
+      children: empty && hint ? /*#__PURE__*/_jsxDEV("div", {
+        className: "pptx-hint",
+        children: hint
+      }, void 0, false) : paragraphs.map((p, i) => {
+        const maxPt = Math.max(p.end.size, ...p.runs.map(r => r.style.size));
+        const fs = ptToPx(maxPt) * renderScale;
+        const lh = p.lnSpc ? p.lnSpc.pct ? p.lnSpc.pct * 1.2 : ptToPx(p.lnSpc.pts) / Math.max(1, fs / renderScale) : 1.2;
+        const sp = s => s ? s.pts !== undefined ? ptToPx(s.pts) * renderScale : s.pct * fs * 1.2 : 0;
+        const bt = bulletText(p.bullet);
+        const hang = Math.abs(px(p.indent));
+        return /*#__PURE__*/_jsxDEV("div", {
+          className: "pptx-para",
+          dir: p.rtl ? "rtl" : "ltr",
+          style: {
+            textAlign: p.algn === "ctr" ? "center" : p.algn === "r" ? "right" : p.algn === "just" ? "justify" : "left",
+            paddingInlineStart: px(p.marL) * renderScale,
+            textIndent: px(p.indent) * renderScale,
+            marginTop: i ? sp(p.spcBef) : 0,
+            marginBottom: sp(p.spcAft),
+            lineHeight: lh,
+            minHeight: `${fs * lh}px`,
+            fontSize: fs
+          },
+          children: [bt && /*#__PURE__*/_jsxDEV("span", {
+            className: "pptx-bullet",
+            style: {
+              display: "inline-block",
+              minWidth: hang || fs,
+              textIndent: 0,
+              color: rgba(p.runs[0]?.style.color || p.end.color),
+              fontFamily: "Arial, sans-serif"
+            },
+            children: bt
+          }, void 0, false), p.runs.map((r, j) => {
+            const s = r.style;
+            const visibleText = String(r.text ?? "").replace(/[\u200B\uFEFF]/g, "");
+            return /*#__PURE__*/_jsxDEV("span", {
+              style: {
+                fontFamily: font(s.font),
+                fontSize: ptToPx(s.size) * renderScale,
+                fontWeight: s.bold ? 700 : 400,
+                fontStyle: s.italic ? "italic" : "normal",
+                textDecoration: [s.underline && "underline", s.strike && "line-through"].filter(Boolean).join(" ") || "none",
+                color: rgba(s.color),
+                backgroundColor: s.highlight ? rgba(s.highlight) : undefined,
+                verticalAlign: s.baseline > 0 ? "super" : s.baseline < 0 ? "sub" : "baseline"
+              },
+              children: visibleText
+            }, j, false);
+          }), editing && p.runs.every(run => !String(run.text ?? "").replace(/[\u200B\uFEFF]/g, "")) && /*#__PURE__*/_jsxDEV("br", {
+            "data-empty-caret": "true",
+            "aria-hidden": "true"
+          }, void 0, false)]
+        }, i, true);
+      })
+    }, editing ? "editing-content" : "view-content", false)
+  }, void 0, false);
+}
+
+/** View-only chart drawn from the cached data in the file. Editing the chart is not supported. */
+function ChartPreview({
+  info,
+  w,
+  h,
+  note
+}) {
+  const {
+    shape,
+    series,
+    categories
+  } = info.preview;
+  const padT = info.title ? 34 : 14,
+    padB = shape === "pie" ? 26 : 44,
+    padL = shape === "hbar" ? 60 : 36,
+    padR = 14;
+  const iw = Math.max(10, w - padL - padR),
+    ih = Math.max(10, h - padT - padB);
+  const n = Math.max(...series.map(s => s.values.length)),
+    all = series.flatMap(s => s.values);
+  const max = Math.max(1e-9, ...all, 0),
+    min = Math.min(0, ...all),
+    span = max - min || 1;
+  const label = i => categories[i] ?? String(i + 1);
+  const fs = Math.max(9, Math.min(14, h / 22));
+  let body = null;
+  if (shape === "pie") {
+    const vals = series[0].values.map(v => Math.max(0, v)),
+      tot = vals.reduce((a, b) => a + b, 0) || 1;
+    const r = Math.min(iw, ih) / 2,
+      cx = w / 2,
+      cy = padT + ih / 2;
+    let a0 = -Math.PI / 2;
+    body = vals.map((v, i) => {
+      const a1 = a0 + v / tot * Math.PI * 2,
+        large = a1 - a0 > Math.PI ? 1 : 0;
+      const d = `M${cx} ${cy} L${cx + r * Math.cos(a0)} ${cy + r * Math.sin(a0)} A${r} ${r} 0 ${large} 1 ${cx + r * Math.cos(a1)} ${cy + r * Math.sin(a1)} Z`;
+      a0 = a1;
+      return /*#__PURE__*/_jsxDEV("path", {
+        d: d,
+        fill: `#${["4472C4", "ED7D31", "A5A5A5", "FFC000", "5B9BD5", "70AD47"][i % 6]}`,
+        stroke: "#fff",
+        strokeWidth: "1.5"
+      }, i, false);
+    });
+  } else if (shape === "hbar") {
+    const gh = ih / n,
+      bh = gh * 0.7 / series.length;
+    body = /*#__PURE__*/_jsxDEV(_Fragment, {
+      children: [series.map((s, si) => s.values.map((v, i) => /*#__PURE__*/_jsxDEV("rect", {
+        x: padL,
+        y: padT + i * gh + gh * 0.15 + si * bh,
+        width: Math.max(0, (v - Math.min(0, min)) / span * iw),
+        height: bh,
+        fill: `#${s.color}`
+      }, `${si}-${i}`, false))), Array.from({
+        length: n
+      }, (_, i) => /*#__PURE__*/_jsxDEV("text", {
+        x: padL - 6,
+        y: padT + i * gh + gh / 2 + fs / 3,
+        textAnchor: "end",
+        fontSize: fs,
+        fill: "#475569",
+        children: label(i)
+      }, i, false))]
+    }, void 0, true);
+  } else {
+    const gw = iw / n,
+      bw = gw * 0.7 / series.length,
+      y = v => padT + ih - (v - min) / span * ih;
+    body = /*#__PURE__*/_jsxDEV(_Fragment, {
+      children: [[0, 0.25, 0.5, 0.75, 1].map(t => /*#__PURE__*/_jsxDEV("g", {
+        children: [/*#__PURE__*/_jsxDEV("line", {
+          x1: padL,
+          x2: padL + iw,
+          y1: padT + ih * t,
+          y2: padT + ih * t,
+          stroke: "#e2e8f0"
+        }, void 0, false), /*#__PURE__*/_jsxDEV("text", {
+          x: padL - 5,
+          y: padT + ih * t + fs / 3,
+          textAnchor: "end",
+          fontSize: fs,
+          fill: "#64748b",
+          children: Number((max - span * t).toFixed(1))
+        }, void 0, false)]
+      }, t, true)), shape === "col" ? series.map((s, si) => s.values.map((v, i) => /*#__PURE__*/_jsxDEV("rect", {
+        x: padL + i * gw + gw * 0.15 + si * bw,
+        y: Math.min(y(v), y(0)),
+        width: bw,
+        height: Math.abs(y(v) - y(0)),
+        fill: `#${s.color}`
+      }, `${si}-${i}`, false))) : series.map((s, si) => /*#__PURE__*/_jsxDEV("polyline", {
+        fill: "none",
+        stroke: `#${s.color}`,
+        strokeWidth: "2.5",
+        points: s.values.map((v, i) => `${padL + i * gw + gw / 2},${y(v)}`).join(" ")
+      }, si, false)), Array.from({
+        length: n
+      }, (_, i) => /*#__PURE__*/_jsxDEV("text", {
+        x: padL + i * gw + gw / 2,
+        y: padT + ih + fs + 6,
+        textAnchor: "middle",
+        fontSize: fs,
+        fill: "#475569",
+        children: label(i)
+      }, i, false))]
+    }, void 0, true);
+  }
+  return /*#__PURE__*/_jsxDEV("div", {
+    className: "pptx-chart",
+    role: "img",
+    "aria-label": `${info.title || info.type} (${note})`,
+    children: [/*#__PURE__*/_jsxDEV("svg", {
+      width: w,
+      height: h,
+      viewBox: `0 0 ${w} ${h}`,
+      children: [/*#__PURE__*/_jsxDEV("rect", {
+        width: w,
+        height: h,
+        fill: "#fff"
+      }, void 0, false), info.title && /*#__PURE__*/_jsxDEV("text", {
+        x: w / 2,
+        y: 22,
+        textAnchor: "middle",
+        fontSize: Math.max(12, fs + 3),
+        fontWeight: "700",
+        fill: "#1e293b",
+        children: info.title
+      }, void 0, false), body]
+    }, void 0, true), /*#__PURE__*/_jsxDEV("span", {
+      className: "pptx-chart-note",
+      children: note
+    }, void 0, false)]
+  }, void 0, true);
+}
+function TableView({
+  el,
+  w,
+  h,
+  tableSelection,
+  editingText,
+  onTableCellSelect,
+  onEditText,
+  onTextCommit,
+  onTextCancel
+}) {
+  const t = el.table;
+  if (!t) return /*#__PURE__*/_jsxDEV("div", {
+    className: "pptx-object-card",
+    children: "Table"
+  }, void 0, false);
+  const accent = t.accent.hex;
+  return /*#__PURE__*/_jsxDEV("table", {
+    className: "pptx-table",
+    style: {
+      width: w,
+      height: h
+    },
+    children: [/*#__PURE__*/_jsxDEV("colgroup", {
+      children: t.cols.map((c, i) => /*#__PURE__*/_jsxDEV("col", {
+        style: {
+          width: px(c)
+        }
+      }, i, false))
+    }, void 0, false), /*#__PURE__*/_jsxDEV("tbody", {
+      children: t.rows.map((r, ri) => /*#__PURE__*/_jsxDEV("tr", {
+        style: {
+          height: px(r.h)
+        },
+        children: r.cells.map((c, ci) => {
+          if (c.hMerge || c.vMerge) return null;
+          const head = !!t.firstRow && ri === 0;
+          const firstCol = !!t.firstCol && ci === 0;
+          const lastCol = !!t.lastCol && ci === t.cols.length - 1;
+          const totalRow = !!t.lastRow && ri === t.rows.length - 1;
+          const bandRow = !!t.bandRow && ri % 2 === 1 && !head;
+          const bandCol = !!t.bandCol && ci % 2 === 1 && !head;
+          const emphasized = head || firstCol || lastCol || totalRow;
+          const bg = c.fill?.type === "solid" ? rgba(c.fill) : emphasized ? `#${accent}` : bandRow || bandCol ? `#${accent}22` : t.bandRow || t.bandCol ? `#${accent}0A` : "transparent";
+          return /*#__PURE__*/_jsxDEV("td", {
+            colSpan: c.gridSpan,
+            rowSpan: c.rowSpan,
+            className: tableSelection?.id === el.id && (tableSelection.scope === "table" || tableSelection.scope === "row" && tableSelection.row === ri || tableSelection.scope === "column" && tableSelection.col === ci || tableSelection.scope === "cell" && tableSelection.row === ri && tableSelection.col === ci) ? `is-table-${tableSelection.scope}-selected` : undefined,
+            style: {
+              background: bg,
+              color: emphasized ? "#fff" : undefined,
+              fontWeight: emphasized ? 700 : undefined
+            },
+            onClick: event => {
+              event.stopPropagation();
+              onTableCellSelect?.(el.id, ri, ci);
+            },
+            onDoubleClick: event => {
+              event.preventDefault();
+              event.stopPropagation();
+              onEditText?.(el.id, {
+                row: ri,
+                col: ci
+              });
+            },
+            children: /*#__PURE__*/_jsxDEV(TextBody, {
+              text: c.text,
+              cellMode: true,
+              editing: editingText?.id === el.id && editingText?.row === ri && editingText?.col === ci,
+              onEditStart: () => onEditText?.(el.id, {
+                row: ri,
+                col: ci
+              }),
+              onCommit: texts => onTextCommit?.(el.id, texts, {
+                row: ri,
+                col: ci
+              }),
+              onCancel: onTextCancel
+            }, void 0, false)
+          }, ci, false);
+        })
+      }, ri, false))
+    }, void 0, false)]
+  }, void 0, true);
+}
+function ElementNode({
+  el,
+  urls,
+  hints,
+  idPrefix,
+  labels,
+  editingText,
+  tableSelection,
+  onTableCellSelect,
+  onAutoSizeText,
+  onEditText,
+  onTextCommit,
+  onTextCancel
+}) {
+  if (el.hidden) return null;
+  if (el.kind === "group") return /*#__PURE__*/_jsxDEV(_Fragment, {
+    children: el.children.map((c, ci) => /*#__PURE__*/_jsxDEV(ElementNode, {
+      el: c,
+      urls: urls,
+      hints: hints,
+      idPrefix: idPrefix,
+      labels: labels,
+      editingText: editingText,
+      tableSelection: tableSelection,
+      onTableCellSelect: onTableCellSelect,
+      onAutoSizeText: onAutoSizeText,
+      onEditText: onEditText,
+      onTextCommit: onTextCommit,
+      onTextCancel: onTextCancel
+    }, `${c.id}-${ci}`, false))
+  }, void 0, false);
+  const w = px(el.w),
+    h = px(el.h);
+  const transforms = [el.rot ? `rotate(${el.rot}deg)` : "", el.flipH ? "scaleX(-1)" : "", el.flipV ? "scaleY(-1)" : ""].filter(Boolean).join(" ");
+  const style = {
+    left: px(el.x),
+    top: px(el.y),
+    width: w,
+    height: h,
+    transform: transforms || undefined,
+    transformOrigin: "center center"
+  };
+  let inner = null;
+  switch (el.kind) {
+    case "image":
+      {
+        const url = el.imagePath && urls[el.imagePath];
+        const c = el.crop || {
+          l: 0,
+          t: 0,
+          r: 0,
+          b: 0
+        };
+        const sw = 1 - c.l - c.r || 1,
+          sh = 1 - c.t - c.b || 1;
+        const round = el.geom?.kind === "ellipse" ? "50%" : undefined;
+        inner = url ? /*#__PURE__*/_jsxDEV("div", {
+          className: "pptx-img",
+          style: {
+            borderRadius: round,
+            opacity: el.opacity
+          },
+          children: /*#__PURE__*/_jsxDEV("img", {
+            src: url,
+            alt: el.alt || "",
+            draggable: false,
+            style: {
+              width: `${100 / sw}%`,
+              height: `${100 / sh}%`,
+              left: `${-c.l / sw * 100}%`,
+              top: `${-c.t / sh * 100}%`,
+              transform: undefined
+            }
+          }, void 0, false)
+        }, void 0, false) : /*#__PURE__*/_jsxDEV("div", {
+          className: "pptx-object-card",
+          children: el.mime ? labels.loading : labels.imageUnavailable
+        }, void 0, false);
+        if (el.line && !el.line.none && el.line.hex) inner = /*#__PURE__*/_jsxDEV(_Fragment, {
+          children: [inner, /*#__PURE__*/_jsxDEV("div", {
+            className: "pptx-img-border",
+            style: {
+              borderColor: `#${el.line.hex}`,
+              borderWidth: Math.max(1, px(el.line.w ?? 12700)),
+              borderRadius: round,
+              opacity: el.line.alpha ?? 1
+            }
+          }, void 0, false)]
+        }, void 0, true);
+        break;
+      }
+    case "table":
+      inner = /*#__PURE__*/_jsxDEV(TableView, {
+        el: el,
+        w: w,
+        h: h,
+        tableSelection: tableSelection,
+        editingText: editingText,
+        onTableCellSelect: onTableCellSelect,
+        onEditText: onEditText,
+        onTextCommit: onTextCommit,
+        onTextCancel: onTextCancel
+      }, void 0, false);
+      break;
+    case "chart":
+      inner = el.chartInfo.preview ? /*#__PURE__*/_jsxDEV(ChartPreview, {
+        info: el.chartInfo,
+        w: w,
+        h: h,
+        note: labels.chartPreview
+      }, void 0, false) : /*#__PURE__*/_jsxDEV("div", {
+        className: "pptx-object-card",
+        children: [/*#__PURE__*/_jsxDEV("strong", {
+          children: el.chartInfo.title || el.chartInfo.type
+        }, void 0, false), el.chartInfo.title && /*#__PURE__*/_jsxDEV("span", {
+          children: el.chartInfo.type
+        }, void 0, false), /*#__PURE__*/_jsxDEV("em", {
+          children: labels.chartNote
+        }, void 0, false)]
+      }, void 0, true);
+      break;
+    case "diagram":
+      inner = /*#__PURE__*/_jsxDEV("div", {
+        className: "pptx-object-card",
+        children: [/*#__PURE__*/_jsxDEV("strong", {
+          children: "SmartArt"
+        }, void 0, false), /*#__PURE__*/_jsxDEV("em", {
+          children: labels.viewOnly
+        }, void 0, false)]
+      }, void 0, true);
+      break;
+    case "object":
+      inner = /*#__PURE__*/_jsxDEV("div", {
+        className: "pptx-object-card",
+        children: [/*#__PURE__*/_jsxDEV("strong", {
+          children: el.name || "Object"
+        }, void 0, false), /*#__PURE__*/_jsxDEV("em", {
+          children: labels.viewOnly
+        }, void 0, false)]
+      }, void 0, true);
+      break;
+    default:
+      inner = /*#__PURE__*/_jsxDEV(_Fragment, {
+        children: [/*#__PURE__*/_jsxDEV(Geometry, {
+          el: el,
+          w: w,
+          h: h,
+          idPrefix: idPrefix,
+          urls: urls
+        }, void 0, false), el.text && /*#__PURE__*/_jsxDEV(TextBody, {
+          text: el.text,
+          hint: hints && el.ph ? labels.placeholderHint : null,
+          elementId: el.id,
+          frameW: el.w,
+          frameH: el.h,
+          onAutoSize: onAutoSizeText,
+          editing: editingText?.id === el.id && editingText?.row === undefined,
+          onEditStart: () => onEditText?.(el.id),
+          onCommit: texts => onTextCommit?.(el.id, texts),
+          onCancel: onTextCancel
+        }, void 0, false)]
+      }, void 0, true);
+  }
+  return /*#__PURE__*/_jsxDEV("div", {
+    className: `pptx-el pptx-el-${el.kind}`,
+    "data-id": el.id,
+    style: style,
+    children: inner
+  }, void 0, false);
+}
+function backgroundStyle(bg, urls) {
+  if (!bg) return {
+    background: "#fff"
+  };
+  if (bg.type === "solid") return {
+    background: rgba(bg)
+  };
+  if (bg.type === "gradient") {
+    const stops = bg.stops.map(s => `${rgba(s)} ${s.pos * 100}%`).join(",");
+    return {
+      background: bg.radial ? `radial-gradient(circle,${stops})` : `linear-gradient(${bg.angle + 90}deg,${stops})`
+    };
+  }
+  if (bg.type === "image" && urls[bg.path]) return {
+    background: `center / cover no-repeat url(${urls[bg.path]})`
+  };
+  return {
+    background: "#fff"
+  };
+}
+
+/**
+ * Pure presentation of a slide model. `overrides` (Map id → bounds) lets the
+ * canvas preview a drag without touching the document; groups are previewed
+ * with a CSS transform so content and selection frame stay in lock-step.
+ */
+export default function SlideView({
+  model,
+  urls,
+  overrides,
+  geometryDrafts,
+  hints = false,
+  labels,
+  editingText,
+  tableSelection,
+  onTableCellSelect,
+  onAutoSizeText,
+  onEditText,
+  onTextCommit,
+  onTextCancel
+}) {
+  const idPrefix = React.useId().replace(/:/g, "");
+  const W = px(model.size.w),
+    H = px(model.size.h);
+  const renderTop = el => {
+    if (el.hidden) return null;
+    const ov = overrides?.get(el.id);
+    if (!ov) return /*#__PURE__*/_jsxDEV(ElementNode, {
+      el: el,
+      urls: urls,
+      hints: hints,
+      idPrefix: idPrefix,
+      labels: labels,
+      editingText: editingText,
+      tableSelection: tableSelection,
+      onTableCellSelect: onTableCellSelect,
+      onAutoSizeText: onAutoSizeText,
+      onEditText: onEditText,
+      onTextCommit: onTextCommit,
+      onTextCancel: onTextCancel
+    }, el.id, false);
+    // `geometryDrafts` is only the active pointer drag/resize preview. A height
+    // override coming from textAutoSizeHeights is different: keep auto-sizing live
+    // so additional typing or wrapping can continue to grow the selected frame.
+    const suspendAutoSize = Boolean(geometryDrafts?.has(el.id));
+    if (el.kind === "group") {
+      const sx = el.w ? ov.w / el.w : 1,
+        sy = el.h ? ov.h / el.h : 1;
+      const dx = ov.x + ov.w / 2 - (el.x + el.w / 2),
+        dy = ov.y + ov.h / 2 - (el.y + el.h / 2);
+      return /*#__PURE__*/_jsxDEV("div", {
+        className: "pptx-group-preview",
+        style: {
+          left: px(el.x),
+          top: px(el.y),
+          width: px(el.w),
+          height: px(el.h),
+          transform: `translate(${px(dx)}px,${px(dy)}px) rotate(${ov.rot - el.rot}deg) scale(${sx},${sy})`
+        },
+        children: /*#__PURE__*/_jsxDEV("div", {
+          style: {
+            position: "absolute",
+            left: -px(el.x),
+            top: -px(el.y)
+          },
+          children: el.children.map((c, ci) => /*#__PURE__*/_jsxDEV(ElementNode, {
+            el: c,
+            urls: urls,
+            hints: hints,
+            idPrefix: idPrefix,
+            labels: labels,
+            editingText: editingText,
+            tableSelection: tableSelection,
+            onTableCellSelect: onTableCellSelect,
+            onAutoSizeText: null,
+            onEditText: onEditText,
+            onTextCommit: onTextCommit,
+            onTextCancel: onTextCancel
+          }, `${c.id}-${ci}`, false))
+        }, void 0, false)
+      }, el.id, false);
+    }
+    return /*#__PURE__*/_jsxDEV(ElementNode, {
+      el: {
+        ...el,
+        ...ov
+      },
+      urls: urls,
+      hints: hints,
+      idPrefix: idPrefix,
+      labels: labels,
+      editingText: editingText,
+      tableSelection: tableSelection,
+      onTableCellSelect: onTableCellSelect,
+      onAutoSizeText: suspendAutoSize ? null : onAutoSizeText,
+      onEditText: onEditText,
+      onTextCommit: onTextCommit,
+      onTextCancel: onTextCancel
+    }, el.id, false);
+  };
+  return /*#__PURE__*/_jsxDEV("div", {
+    className: "pptx-slide",
+    style: {
+      width: W,
+      height: H,
+      ...backgroundStyle(model.background, urls)
+    },
+    children: [model.under.map((el, ui) => /*#__PURE__*/_jsxDEV(ElementNode, {
+      el: el,
+      urls: urls,
+      hints: false,
+      idPrefix: idPrefix,
+      labels: labels
+    }, `u${ui}`, false)), model.elements.map(renderTop)]
+  }, void 0, true);
+}
