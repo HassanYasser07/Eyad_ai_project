@@ -246,6 +246,27 @@
 .pptx-selection-actions button.is-danger { color: hsl(var(--destructive, 0 72% 51%)); }
 .pptx-selection-actions button:disabled { opacity: .38; cursor: not-allowed; }
 .pptx-selection-actions button:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
+.pptx-selection-actions.is-below { transform: translate(-100%, 8px); }
+
+/* Floating formatting bar above the picked table cell. */
+.pptx-cell-toolbar { position: absolute; z-index: 6; display: flex; align-items: center; gap: 4px; min-height: 46px; padding: 5px 8px; box-sizing: border-box; border: 1px solid hsl(var(--border)); border-radius: 14px; background: hsl(var(--card)); color: hsl(var(--foreground)); box-shadow: 0 8px 26px rgba(15,23,42,.24); transform: translate(-50%, -100%); pointer-events: auto; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; direction: ltr; touch-action: pan-x; }
+.pptx-cell-toolbar::-webkit-scrollbar { display: none; }
+.pptx-cell-toolbar.is-below { transform: translate(-50%, 0); }
+.pptx-cell-toolbar > *, .pptx-cell-toolbar .pptx-cell-size > * { flex: 0 0 auto; }
+.pptx-cell-btn { display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: inherit; cursor: pointer; }
+.pptx-cell-btn:hover { background: hsl(var(--accent)); }
+.pptx-cell-btn.is-active { background: hsl(var(--primary) / .16); color: hsl(var(--primary)); }
+.pptx-cell-btn:focus-visible, .pptx-cell-font:focus-visible, .pptx-cell-size input:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 1px; }
+.pptx-cell-font { height: 32px; max-width: 118px; padding: 0 6px; border: 1px solid hsl(var(--border)); border-radius: 8px; background: hsl(var(--background)); color: inherit; font-size: 14px; }
+.pptx-cell-size { display: inline-flex; align-items: center; gap: 1px; padding: 0 2px; border: 1px solid hsl(var(--border)); border-radius: 8px; background: hsl(var(--background)); }
+.pptx-cell-size .pptx-cell-btn { width: 26px; height: 30px; }
+.pptx-cell-size input { width: 34px; height: 30px; padding: 0; border: 0; background: transparent; color: inherit; font-size: 15px; text-align: center; outline: none; }
+.pptx-cell-sep { width: 1px; height: 24px; margin: 0 3px; background: hsl(var(--border)); }
+.pptx-cell-color { display: inline-flex; align-items: center; gap: 2px; padding-inline-start: 4px; color: hsl(var(--muted-foreground)); }
+.pptx-cell-color .pe-color { min-height: 30px; padding: 0 4px; gap: 0; border-radius: 8px; }
+.pptx-cell-color .pe-color-label { display: none; }
+.pptx-cell-color .pe-swatch { width: 18px; height: 18px; }
+@media (max-width: 640px) { .pptx-cell-toolbar { min-height: 50px; } .pptx-cell-btn { width: 36px; height: 36px; } .pptx-cell-font { height: 36px; } }
 .pptx-handle { position: absolute; width: 44px; height: 44px; transform: translate(-50%, -50%); display: flex; align-items: center; justify-content: center; pointer-events: auto; touch-action: none; }
 .pptx-handle i { display: block; width: 12px; height: 12px; background: #fff; border: 2px solid hsl(var(--primary)); border-radius: 3px; box-shadow: 0 1px 4px rgba(0,0,0,.35); }
 .is-compact .pptx-handle i { width: 16px; height: 16px; }
