@@ -635,3 +635,16 @@ test("extended shape gallery presets render without approximation", async () => 
   await roundTrip(pkg);
 });
 
+
+test("resizing a table frame scales its grid so frame and rows never diverge", async () => {
+  const pkg = await load("table_chart.pptx"); const { m } = slide(pkg); const t = m.elements.find((e) => e.kind === "table");
+  setBounds(pkg, m.path, [{ id: t.id, x: t.x, y: t.y, w: Math.round(t.w * 0.5), h: Math.round(t.h * 1.5), rot: 0 }], "Resize");
+  const t2 = slide(pkg).m.elements.find((e) => e.id === t.id);
+  assert.equal(t2.table.cols.reduce((a, b) => a + b, 0), t2.w);
+  assert.equal(t2.table.rows.reduce((a, r) => a + r.h, 0), t2.h);
+  // a pre-fitted grid from the editor is honoured verbatim
+  const rows = t2.table.rows.map((r) => r.h + 1000);
+  setBounds(pkg, m.path, [{ id: t.id, x: t.x, y: t.y, w: t2.w, h: rows.reduce((a, b) => a + b, 0), rot: 0, tableGrid: { cols: t2.table.cols, rows } }], "Fit");
+  const t3 = slide(pkg).m.elements.find((e) => e.id === t.id);
+  assert.deepEqual(t3.table.rows.map((r) => r.h), rows);
+});

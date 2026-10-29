@@ -358,7 +358,12 @@ export default function PptxEditorDialog({ onClose }) {
     if (nextText !== String(existing ?? "").replace(/[\u200B\uFEFF]/g, "").replace(/\n+$/, "") || heightChanged) {
       // Commit text and the fitted frame height atomically. Only this element's
       // height changes; x/y/width and every other slide element remain untouched.
-      run(() => setText(pkg, path, id, cleaned, cell, heightChanged ? fittedHeight : null, target ? bounds(target) : null));
+      run(() => pkg.transact("Edit text", () => {
+        setText(pkg, path, id, cleaned, cell, heightChanged ? fittedHeight : null, target ? bounds(target) : null);
+        // A cell that now needs more lines grows its row, and the table frame with it, in the same undo step.
+        const grown = cell && target ? canvasRef.current?.fitTable?.(id) : null;
+        if (grown) setBounds(pkg, path, [{ id, ...bounds(target), ...grown }], "Edit text");
+      }));
     }
     setTextAutoSizeDrafts((current) => {
       if (!current.has(id)) return current;

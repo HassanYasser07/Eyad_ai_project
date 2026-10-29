@@ -374,7 +374,11 @@ export default function SlideView({ model, urls, overrides, geometryDrafts, hint
         </div>
       );
     }
-    return <ElementNode key={el.id} el={{ ...el, ...ov }} urls={urls} hints={hints} idPrefix={idPrefix} labels={labels} editingText={editingText} tableSelection={tableSelection} onTableCellSelect={onTableCellSelect} onAutoSizeText={suspendAutoSize ? null : onAutoSizeText} onEditText={onEditText} onTextCommit={onTextCommit} onTextCancel={onTextCancel} />;
+    // A table drag/commit preview carries its re-fitted grid so cells re-wrap live.
+    const previewEl = el.kind === "table" && ov.tableGrid && el.table
+      ? { ...el, ...ov, table: { ...el.table, cols: ov.tableGrid.cols, rows: el.table.rows.map((r, i) => ({ ...r, h: ov.tableGrid.rows[i] ?? r.h })) } }
+      : { ...el, ...ov };
+    return <ElementNode key={el.id} el={previewEl} urls={urls} hints={hints} idPrefix={idPrefix} labels={labels} editingText={editingText} tableSelection={tableSelection} onTableCellSelect={onTableCellSelect} onAutoSizeText={suspendAutoSize ? null : onAutoSizeText} onEditText={onEditText} onTextCommit={onTextCommit} onTextCancel={onTextCancel} />;
   };
   return (
     <div className="pptx-slide" style={{ width: W, height: H, ...backgroundStyle(model.background, urls) }}>

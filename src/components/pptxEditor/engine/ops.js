@@ -5,7 +5,7 @@
  */
 import { NS, kid, kids, path, attr, num, create, insertOrdered, ORDER, descendants, textOf, parseXml, serializeXml, PptxError } from "./xml.js";
 import { REL } from "./package.js";
-import { rotatedBox, unionBox } from "./geometry.js";
+import { rotatedBox, unionBox, distributeEmu } from "./geometry.js";
 
 const DRAWABLE = ["sp", "pic", "grpSp", "graphicFrame", "cxnSp", "AlternateContent", "contentPart"];
 const R = Math.round;
@@ -101,9 +101,34 @@ export function setBounds(pkg, slidePath, changes, label = "Move") {
       // Geometry edits must never rewrite text auto-fit settings. Automatically
       // injecting normAutofit here caused ordinary titles/body text to shrink
       // after a user narrowed a box, instead of wrapping and growing its frame.
+      const prev = node.localName === "graphicFrame" ? readBoundsFromNode(node) : null;
       writeBounds(doc, node, ch);
+      if (prev) syncTableGrid(node, prev, ch);
     }
   });
+}
+
+/**
+ * A table frame is only ever the sum of its grid (gridCol widths x row heights). Resizing the
+ * frame therefore has to resize the grid too, otherwise the frame and the rendered table
+ * diverge (rows keep their old heights while text re-wraps in the new column widths).
+ * `ch.tableGrid` ({cols, rows} in EMU) carries the already text-fitted grid from the editor;
+ * without it the grid is scaled proportionally, which keeps the file self-consistent.
+ */
+function syncTableGrid(node, prev, ch) {
+  const tbl = path(node, "graphic", "graphicData", "tbl");
+  if (!tbl) return;
+  const gridCols = kids(kid(tbl, "tblGrid"), "gridCol"), trs = kids(tbl, "tr");
+  const g = ch.tableGrid;
+  let cols = null, rows = null;
+  if (g && g.cols?.length === gridCols.length && g.rows?.length === trs.length) {
+    cols = g.cols; rows = g.rows;
+  } else {
+    if (Math.round(ch.w) !== Math.round(prev.w)) cols = distributeEmu(gridCols.map((c) => num(c, "w")), Math.round(ch.w));
+    if (Math.round(ch.h) !== Math.round(prev.h)) rows = distributeEmu(trs.map((r) => num(r, "h")), Math.round(ch.h));
+  }
+  if (cols) gridCols.forEach((c, i) => c.setAttribute("w", String(Math.round(cols[i]))));
+  if (rows) trs.forEach((r, i) => r.setAttribute("h", String(Math.round(rows[i]))));
 }
 
 /** Hide/show selected drawing objects using DrawingML's non-visual hidden flag. */

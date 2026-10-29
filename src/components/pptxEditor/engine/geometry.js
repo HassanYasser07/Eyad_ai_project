@@ -60,3 +60,15 @@ export function snapBox(box, candidates, threshold) {
   for (const c of candidates.ys) for (const v of ys) { const d = c - v; if (Math.abs(d) <= threshold && (bestY === null || Math.abs(d) < Math.abs(bestY.d))) bestY = { d, at: c }; }
   return { dx: bestX ? bestX.d : 0, dy: bestY ? bestY.d : 0, guideX: bestX ? bestX.at : null, guideY: bestY ? bestY.at : null };
 }
+
+/**
+ * Scale `values` proportionally so they sum to exactly `total` (integers, EMU).
+ * The rounding remainder goes to the last entry so grid sums always equal the frame.
+ */
+export function distributeEmu(values, total) {
+  const sum = values.reduce((a, b) => a + b, 0);
+  if (!values.length || !(sum > 0) || !Number.isFinite(total)) return values.slice();
+  const out = values.map((v) => Math.max(0, Math.round((v * total) / sum)));
+  out[out.length - 1] += Math.round(total) - out.reduce((a, b) => a + b, 0);
+  return out;
+}
