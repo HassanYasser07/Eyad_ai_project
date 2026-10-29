@@ -403,23 +403,30 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
   R.current.tblSel = tblSel;
   // Drag a column / row border: only that column (or row) changes size, like PowerPoint; the frame grows or
   // shrinks with it. Rows never get shorter than their wrapped text, and the drag previews live via the draft.
-  const startTableResize = (e, kind, index) => {
+  const startTableResize = (e, kind, border) => {
     const t = R.current.tblSel;
     e.stopPropagation();
     if (!t || (e.button !== undefined && e.button > 0)) return;
     const { el, cols, rows } = t, base = boundsOf(el), startX = e.clientX, startY = e.clientY, pointerId = e.pointerId;
+    // Border b sits after column/row b-1; the first border (b = 0) belongs to the first one and moves the frame origin.
+    const atStart = border === 0, index = atStart ? 0 : border - 1;
     let last = null;
-    setTblDrag({ kind, index });
+    setTblDrag({ kind, border });
     R.current.onInteractionStart?.();
     const move = (ev) => {
       if (ev.pointerId !== pointerId) return;
       const sc = R.current.s;
       let c = cols.slice(), r = rows.slice();
-      if (kind === "col") c[index] = Math.max(MIN_COL, Math.round(cols[index] + ((ev.clientX - startX) / sc) * EMU_PER_PX));
-      else r[index] = Math.max(MIN_ROW, Math.round(rows[index] + ((ev.clientY - startY) / sc) * EMU_PER_PX));
+      const raw = (((kind === "col" ? ev.clientX - startX : ev.clientY - startY) / sc) * EMU_PER_PX);
+      const delta = atStart ? -raw : raw;
+      if (kind === "col") c[index] = Math.max(MIN_COL, Math.round(cols[index] + delta));
+      else r[index] = Math.max(MIN_ROW, Math.round(rows[index] + delta));
       const fit = fitTableGrid(stageRef.current, el, c, r);
       if (fit) { c = fit.tableGrid.cols; r = fit.tableGrid.rows; }
-      last = { ...base, w: c.reduce((a, b) => a + b, 0), h: r.reduce((a, b) => a + b, 0), tableGrid: { cols: c, rows: r } };
+      // Dragging the top / left edge grows the first row / column outwards: the origin follows so the rest stays put.
+      const x = atStart && kind === "col" ? base.x + (cols[0] - c[0]) : base.x;
+      const y = atStart && kind === "row" ? base.y + (rows[0] - r[0]) : base.y;
+      last = { ...base, x, y, w: c.reduce((a, b) => a + b, 0), h: r.reduce((a, b) => a + b, 0), tableGrid: { cols: c, rows: r } };
       setDraft(new Map([[el.id, last]]));
     };
     const end = (ev, cancelled) => {
@@ -466,7 +473,7 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
               style={{ left: f.cx - f.w / 2, top: f.cy - f.h / 2, width: f.w, height: f.h, transform: `rotate(${b.rot || 0}deg)` }}>
               {single && !isLocked && (
                 <>
-                  {HANDLES.filter(([k]) => !((k === "n" || k === "s") && f.h < 76) && !((k === "e" || k === "w") && f.w < 76)).map(([k, hx, hy]) => (
+                  {HANDLES.filter(([k]) => !(el.kind === "table" && k.length === 1) && !((k === "n" || k === "s") && f.h < 76) && !((k === "e" || k === "w") && f.w < 76)).map(([k, hx, hy]) => (
                     <div key={k} className={`pptx-handle h-${k}`} data-handle={k} style={{ left: `${hx * 100}%`, top: `${hy * 100}%` }} onPointerDown={(e) => startHandle(e, k, el.id)}><i /></div>
                   ))}
                   <div className="pptx-rot-line" />
