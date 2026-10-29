@@ -338,17 +338,26 @@ export default function PptxEditorDialog({ onClose }) {
     const cleaned = (Array.isArray(texts) ? texts : [texts]).map((value) => String(value ?? "").replace(/[\u200B\uFEFF]/g, ""));
     const nextText = cleaned.join("\n").replace(/\n+$/, "");
     const target = okModel?.elements.find((item) => item.id === id);
-    const draftHeight = Math.max(Number(measuredHeight) || 0, textAutoSizeDraftsRef.current.get(id) || 0);
-    const fittedHeight = !cell && target && draftHeight > target.h ? draftHeight : null;
+    // Use the latest measured content height in either direction: deleting text
+    // must shrink the frame just as typing grows it. Fall back to the live draft
+    // only when the blur measurement is unavailable.
+    const draftHeight = Number(measuredHeight) > 0
+      ? Number(measuredHeight)
+      : (textAutoSizeDraftsRef.current.get(id) || 0);
+    const slideBottomLimit = target ? Math.max(1, (okModel?.size?.h || target.y + target.h) - target.y) : 1;
+    const fittedHeight = !cell && target && draftHeight > 0
+      ? Math.min(slideBottomLimit, Math.ceil(draftHeight))
+      : null;
+    const heightChanged = fittedHeight != null && Math.abs(fittedHeight - target.h) > 2 * 9525;
     const existing = cell
       ? target?.table?.rows?.[cell.row]?.cells?.[cell.col]?.text?.plain?.join("\n")
       : target?.text?.plain?.join("\n");
     // Commit the edited text and its measured auto-grown height together.
     // Position and width remain unchanged, and no other slide element is touched.
-    if (nextText !== String(existing ?? "").replace(/[\u200B\uFEFF]/g, "").replace(/\n+$/, "") || fittedHeight) {
-      // setText writes the text and the fitted frame height in one undoable
-      // transaction. Only this text element grows; its x/y/width stay unchanged.
-      run(() => setText(pkg, path, id, cleaned, cell, fittedHeight, target ? bounds(target) : null));
+    if (nextText !== String(existing ?? "").replace(/[\u200B\uFEFF]/g, "").replace(/\n+$/, "") || heightChanged) {
+      // Commit text and the fitted frame height atomically. Only this element's
+      // height changes; x/y/width and every other slide element remain untouched.
+      run(() => setText(pkg, path, id, cleaned, cell, heightChanged ? fittedHeight : null, target ? bounds(target) : null));
     }
     setTextAutoSizeDrafts((current) => {
       if (!current.has(id)) return current;
@@ -377,15 +386,14 @@ export default function PptxEditorDialog({ onClose }) {
     // expanding geometry beyond the slide and triggering viewport movement.
     const slideBottomLimit = Math.max(1, (okModel.size?.h || element.y + element.h) - element.y);
     const targetHeight = Math.min(slideBottomLimit, Math.ceil(Number(suggestedHeight) || 0));
-    const draftHeight = textAutoSizeDraftsRef.current.get(id) || 0;
-    const currentHeight = Math.max(element.h, draftHeight);
-    // Auto-sizing is strictly grow-only: it fixes clipped wrapped text without
-    // changing the user's width or shrinking existing text/boxes unexpectedly.
-    if (!Number.isFinite(targetHeight) || targetHeight <= currentHeight + 2 * 9525) return;
+    const currentHeight = textAutoSizeDraftsRef.current.get(id) || element.h;
+    // Fit in both directions. As content is deleted, the frame contracts to
+    // the measured content height; x/y/width and all other elements stay fixed.
+    if (!Number.isFinite(targetHeight) || Math.abs(targetHeight - currentHeight) <= 2 * 9525) return;
     if (isEditing) {
       setTextAutoSizeDrafts((current) => {
-        const oldHeight = Math.max(element.h, current.get(id) || 0);
-        if (targetHeight <= oldHeight + 2 * 9525) return current;
+        const oldHeight = current.get(id) || element.h;
+        if (Math.abs(targetHeight - oldHeight) <= 2 * 9525) return current;
         const next = new Map(current); next.set(id, targetHeight); return next;
       });
       return;
