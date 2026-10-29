@@ -4,6 +4,7 @@ import SlideView, { collectImagePaths } from "./SlideView.jsx";
 import { useMediaUrls } from "./useMediaUrls.js";
 import { EMU_PER_PX } from "./engine/slideModel.js";
 import { hitTest, rotatedBox, unionBox, snapBox } from "./engine/geometry.js";
+import { measureTextFrameHeight, isTextFitElement } from "./textFit.js";
 
 const MIN_SIZE = 91440;
 const GRID = 228600; // 0.25 in
@@ -81,7 +82,23 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
     return out;
   };
 
+  // Minimum frame height (EMU) that keeps an element's text inside its frame at width `w`.
+  // Null for elements whose height is not driven by text.
+  const minTextHeight = (id, w) => {
+    const el = R.current.model.elements.find((x) => x.id === id);
+    if (!isTextFitElement(el)) return null;
+    return measureTextFrameHeight(stageRef.current, id, w);
+  };
+
   React.useImperativeHandle(ref, () => ({
+    // Re-flow guard for any geometry commit (handles, inspector fields): a text frame whose
+    // size changed can never end up shorter than its wrapped text.
+    fitChanges: (changes) => changes.map((c) => {
+      const el = R.current.model.elements.find((x) => x.id === c.id);
+      if (!el || (c.w === el.w && c.h === el.h)) return c;
+      const need = minTextHeight(c.id, c.w);
+      return need != null && c.h < need ? { ...c, h: need } : c;
+    }),
     zoomBy: (f) => zoomAt(f, R.current.size.w / 2, R.current.size.h / 2),
     fit: () => {
       const rect = stageRef.current?.getBoundingClientRect();
@@ -249,8 +266,13 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
       let w = Math.max(MIN_SIZE, b0.w + sx * lx), h = Math.max(MIN_SIZE, b0.h + sy * ly);
       const corner = sx !== 0 && sy !== 0;
       if (corner && (g.isImage ? !e.shiftKey : e.shiftKey)) { const ratio = b0.w / b0.h; if (Math.abs(w / b0.w - 1) > Math.abs(h / b0.h - 1)) h = w / ratio; else w = h * ratio; }
+      // Re-flow: text re-wraps at the new width, so the frame may never be shorter than the
+      // wrapped text. This also gives vertical shrinking a natural floor (one text block).
+      const need = minTextHeight(g.id, w);
+      if (need != null && h < need) h = need;
       const dw = w - b0.w, dh = h - b0.h;
-      const lcx = (sx * dw) / 2, lcy = (sy * dh) / 2;
+      // A height forced by text on a width-only handle grows downward (top edge stays put).
+      const lcx = (sx * dw) / 2, lcy = ((sy || 1) * dh) / 2;
       const cx = b0.x + b0.w / 2 + lcx * cos - lcy * sin, cy = b0.y + b0.h / 2 + lcx * sin + lcy * cos;
       setDraft(new Map([[g.id, { ...b0, x: cx - w / 2, y: cy - h / 2, w, h }]]));
     }

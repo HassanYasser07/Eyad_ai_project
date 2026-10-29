@@ -60,6 +60,7 @@ export default function PptxEditorDialog({ onClose }) {
   const vp = useVisualViewport(compact);
   const rootRef = React.useRef(null);
   const canvasRef = React.useRef(null);
+  const fitBounds = (changes) => canvasRef.current?.fitChanges?.(changes) ?? changes;
   const original = React.useRef(null);
   const clipboard = React.useRef(null);
   const [, force] = React.useReducer((n) => n + 1, 0);
@@ -281,7 +282,7 @@ export default function PptxEditorDialog({ onClose }) {
       allSlides ? (hex ? t("pptxEditor.backgroundAllUpdated") : t("pptxEditor.backgroundAllReset")) : (hex ? t("pptxEditor.backgroundUpdated") : t("pptxEditor.backgroundReset")),
     ),
     selectBehind: () => canvasRef.current?.selectBehind(),
-    field: (partial) => run(() => { const e = sel.find((item) => !lockedIds.has(item.id) && !item.readOnlyGeometry); if (!e) return; setBounds(pkg, path, [{ id: e.id, ...bounds(e), ...partial }], "Edit"); }),
+    field: (partial) => run(() => { const e = sel.find((item) => !lockedIds.has(item.id) && !item.readOnlyGeometry); if (!e) return; setBounds(pkg, path, fitBounds([{ id: e.id, ...bounds(e), ...partial }]), "Edit"); }),
     order: (mode) => run(() => { const editable = sel.filter((item) => !lockedIds.has(item.id) && !item.readOnlyGeometry).map((item) => item.id); if (editable.length) reorderElements(pkg, path, editable, mode); }),
     align: (mode) => run(() => {
       const items = sel.filter((e) => !lockedIds.has(e.id) && !e.readOnlyGeometry).map((e) => ({ id: e.id, box: rotatedBox(bounds(e)) }));
@@ -377,7 +378,7 @@ export default function PptxEditorDialog({ onClose }) {
     if (id) setTextAutoSizeDrafts((current) => { if (!current.has(id)) return current; const next = new Map(current); next.delete(id); return next; });
     setTextEdit(null);
   };
-  const commitBounds = (changes, label) => run(() => setBounds(pkg, path, changes, label));
+  const commitBounds = (changes, label) => run(() => setBounds(pkg, path, fitBounds(changes), label));
   const autoSizeTextHeight = React.useCallback((id, suggestedHeight, isEditing = false) => {
     const element = okModel?.elements.find((item) => item.id === id);
     if (!pkg || !path || !element || element.kind === "table" || lockedIds.has(id) || element.readOnlyGeometry) return;
