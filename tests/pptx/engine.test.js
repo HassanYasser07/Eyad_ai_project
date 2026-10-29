@@ -395,6 +395,36 @@ test("tables: add/delete rows and columns", async () => {
   await roundTrip(pkg);
 });
 
+test("tables: insert a row/column before the first one (edge + handles)", async () => {
+  const pkg = await load("table_chart.pptx"); const { m } = slide(pkg); const t = m.elements.find((e) => e.kind === "table");
+  const first = (tb) => [tb.rows[0].cells[0].text.plain[0], tb.rows[1].cells[0].text.plain[0]];
+  const before = t.table; const [row0] = first(before);
+  tableRows(pkg, m.path, t.id, "add", 0, true);
+  let tb = slide(pkg).m.elements.find((e) => e.kind === "table").table;
+  assert.equal(tb.rows.length, before.rows.length + 1);
+  assert.deepEqual(first(tb), ["", row0], "new empty row is on top, old first row moved down");
+  const col0 = tb.rows[1].cells[0].text.plain[0];
+  tableCols(pkg, m.path, t.id, "add", 0, true);
+  tb = slide(pkg).m.elements.find((e) => e.kind === "table").table;
+  assert.equal(tb.cols.length, before.cols.length + 1);
+  assert.equal(tb.rows[1].cells[0].text.plain[0], "");
+  assert.equal(tb.rows[1].cells[1].text.plain[0], col0, "old first column moved right");
+  await roundTrip(pkg);
+});
+
+test("tables: a user-set grid (border drag) resizes only that column and the frame follows", async () => {
+  const pkg = await load("table_chart.pptx"); const { m } = slide(pkg); const t = m.elements.find((e) => e.kind === "table");
+  const cols = t.table.cols.slice(), rows = t.table.rows.map((r) => r.h);
+  cols[0] += 300000;
+  const w = cols.reduce((a, b) => a + b, 0), h = rows.reduce((a, b) => a + b, 0);
+  setBounds(pkg, m.path, [{ id: t.id, x: t.x, y: t.y, w, h, rot: t.rot, flipH: t.flipH, flipV: t.flipV, tableGrid: { cols, rows } }], "Resize table cells");
+  const after = slide(pkg).m.elements.find((e) => e.kind === "table");
+  assert.deepEqual(after.table.cols, cols);
+  assert.deepEqual(after.table.rows.map((r) => r.h), rows);
+  assert.equal(after.w, w);
+  await roundTrip(pkg);
+});
+
 test("slide management: add, duplicate, move, delete (+undo)", async () => {
   const pkg = await load("many_slides.pptx"); const n0 = readPresentation(pkg).slides.length;
   const layouts = listLayouts(pkg); assert.ok(layouts.length > 1);

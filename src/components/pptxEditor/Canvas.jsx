@@ -23,8 +23,6 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
   const [guides, setGuides] = React.useState(null);
   const [marquee, setMarquee] = React.useState(null);
   const [cellFit, setCellFit] = React.useState(null); // live row/frame growth while typing in a table cell
-  const cellToolbarRef = React.useRef(null);
-  const [cellPos, setCellPos] = React.useState(null); // screen anchor of the floating cell toolbar
   const [tblDrag, setTblDrag] = React.useState(null); // { kind: "col"|"row", index } while a table border is dragged
   const urls = useMediaUrls(pkg, collectImagePaths(model));
 
@@ -393,34 +391,6 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
     return combined;
   }, [draft, textAutoSizeHeights, model, cellFit]);
   R.current.overrides = overrides;
-  // Float the formatting bar above the picked table cell. Measured from the rendered <td> so it follows
-  // zoom, pan, row growth and text edits; it is skipped entirely when no cell is picked (cellToolbar is null).
-  const cellKey = cellToolbar && tableSelection ? `${tableSelection.id}:${tableSelection.row}:${tableSelection.col}` : null;
-  React.useLayoutEffect(() => {
-    const stage = stageRef.current;
-    let next = null;
-    if (cellKey && stage) {
-      const hostSel = `.pptx-el-table[data-id="${tableSelection.id}"]`;
-      const wholeTable = tableSelection.scope === "table";
-      const target = wholeTable ? stage.querySelector(`${hostSel} table`) : stage.querySelector(`${hostSel} td[data-row="${tableSelection.row}"][data-col="${tableSelection.col}"]`);
-      const bar = cellToolbarRef.current;
-      if (target && bar) {
-        const tel = model.elements.find((x) => x.id === tableSelection.id);
-        const lastRow = (tel?.table?.rows?.length || 1) - 1;
-        // Leave room for the "+" handles that sit just outside the table border.
-        const gapAbove = wholeTable || tableSelection.row === 0 ? 38 : 8;
-        const gapBelow = wholeTable || tableSelection.row >= lastRow ? 38 : 8;
-        const sr = stage.getBoundingClientRect(), cr = target.getBoundingClientRect();
-        const barW = Math.min(bar.offsetWidth, sr.width - 16), barH = bar.offsetHeight;
-        const cx = cr.left - sr.left + cr.width / 2;
-        const left = Math.round(Math.max(8 + barW / 2, Math.min(sr.width - 8 - barW / 2, cx)));
-        const above = cr.top - sr.top - barH - gapAbove >= 4;
-        const top = Math.round(above ? cr.top - sr.top - gapAbove : cr.bottom - sr.top + gapBelow);
-        next = { left, top, above, maxW: Math.max(120, Math.round(sr.width - 16)) };
-      }
-    }
-    setCellPos((cur) => (cur === next || (cur && next && cur.left === next.left && cur.top === next.top && cur.above === next.above && cur.maxW === next.maxW) ? cur : next));
-  });
   const sel = model.elements.filter((e) => selection.includes(e.id));
   const frames = sel.map((e) => ({ el: e, b: overrides.get(e.id) || boundsOf(e) }));
   const toScreen = (b) => ({ cx: ox + ((b.x + b.w / 2) / EMU_PER_PX) * s, cy: oy + ((b.y + b.h / 2) / EMU_PER_PX) * s, w: (b.w / EMU_PER_PX) * s, h: (b.h / EMU_PER_PX) * s });
@@ -507,7 +477,7 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
             </div>
           );
         })}
-        {quickActionBox && quickActionsEnabled && <div className={`pptx-selection-actions ${cellToolbar ? "is-below" : ""}`} style={{ left: quickActionLeft, top: cellToolbar ? oy + ((quickActionBox.y + quickActionBox.h) / EMU_PER_PX) * s : Math.max(52, oy + (quickActionBox.y / EMU_PER_PX) * s) }} aria-label={labels.selectionActions}>
+        {quickActionBox && quickActionsEnabled && <div className="pptx-selection-actions" style={{ left: quickActionLeft, top: Math.max(52, oy + (quickActionBox.y / EMU_PER_PX) * s) }} aria-label={labels.selectionActions}>
           <button type="button" title={labels.quickCopy} aria-label={labels.quickCopy} onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onCopy?.(); }}><Copy size={15} aria-hidden="true" /></button>
           <button type="button" title={labels.quickRotate} aria-label={labels.quickRotate} onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onRotate?.(); }}><RotateCw size={15} aria-hidden="true" /></button>
           <button type="button" className="is-danger" title={labels.quickDelete} aria-label={labels.quickDelete} onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onDelete?.(); }}><Trash2 size={15} aria-hidden="true" /></button>
@@ -515,8 +485,8 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
         {tblSel && <TableHandles x0={ox + (tblSel.b.x / EMU_PER_PX) * s} y0={oy + (tblSel.b.y / EMU_PER_PX) * s} s={s} cols={tblSel.cols} rows={tblSel.rows}
           canAdd={!tblSel.el.table.hasMerge} drag={tblDrag} selected={tableSelection?.id === tblSel.el.id && tableSelection.picked && tableSelection.scope === "table"} labels={labels}
           onSelectAll={() => onTableSelectAll?.(tblSel.el.id)} onAdd={(kind, boundary) => onTableAdd?.(kind, boundary)} onResizeStart={startTableResize} />}
-        {cellToolbar && <div ref={cellToolbarRef} className={`pptx-cell-toolbar ${cellPos && !cellPos.above ? "is-below" : ""}`} role="toolbar" aria-label={labels.cellToolbar}
-          style={{ left: cellPos ? cellPos.left : 0, top: cellPos ? cellPos.top : 0, maxWidth: cellPos ? cellPos.maxW : undefined, visibility: cellPos ? "visible" : "hidden" }}
+        {/* Docked at the top of the workspace, under the editor ribbon; shown only while a cell / table is picked. */}
+        {cellToolbar && <div className="pptx-cell-toolbar" role="toolbar" aria-label={labels.cellToolbar}
           onPointerDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>{cellToolbar}</div>}
         {union && <div className="pptx-union" style={{ left: ox + (union.x / EMU_PER_PX) * s, top: oy + (union.y / EMU_PER_PX) * s, width: (union.w / EMU_PER_PX) * s, height: (union.h / EMU_PER_PX) * s }}><span>{frames.length}</span></div>}
         {marquee && <div className="pptx-marquee" style={{ left: Math.min(marquee.x0, marquee.x1), top: Math.min(marquee.y0, marquee.y1), width: Math.abs(marquee.x1 - marquee.x0), height: Math.abs(marquee.y1 - marquee.y0) }} />}
