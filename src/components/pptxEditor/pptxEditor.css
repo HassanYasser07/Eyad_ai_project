@@ -277,13 +277,15 @@
 .pptx-object-card em { font-style: normal; font-size: 12px; color: #64748b; }
 .pptx-table { border-collapse: collapse; table-layout: fixed; }
 .pptx-table td { padding: 0; vertical-align: top; border: 1px solid rgba(100,116,139,.55); overflow: hidden; }
-.pptx-table td.is-table-cell-selected { box-shadow: inset 0 0 0 2px hsl(var(--primary)); }
+.pptx-table td.is-table-cell-selected { outline: 2px solid #2563eb; outline-offset: -2px; position: relative; z-index: 2; }
 .pptx-table td.is-table-row-selected, .pptx-table td.is-table-column-selected { box-shadow: inset 0 0 0 1.5px hsl(var(--primary) / .72); }
 .pptx-table td.is-table-table-selected { box-shadow: inset 0 0 0 1px hsl(var(--primary) / .65); }
 .pptx-text.is-inline-editing { z-index: 20; overflow: visible; outline: 1.5px solid hsl(var(--primary)); outline-offset: -1px; border-radius: 2px; cursor: text; }
 .pptx-text-content[contenteditable="true"] { min-height: 1px; outline: none; cursor: text; user-select: text; -webkit-user-select: text; caret-color: currentColor; }
 .pptx-text-content[contenteditable="true"] .pptx-para { cursor: text; }
 .pptx-table .pptx-text { position: static; }
+/* In a table the whole cell carries the blue selection border; no second box around the text. */
+.pptx-table .pptx-text.is-inline-editing { outline: none; border-radius: 0; }
 .pptx-group-preview { position: absolute; }
 
 @media (max-width: 767px) {

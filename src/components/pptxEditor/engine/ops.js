@@ -383,13 +383,36 @@ export function setText(pkg, slidePath, id, texts, cell = null, fittedHeight = n
       node.insertBefore(body, spPr ? spPr.nextSibling : null);
     }
     if (!body) throw new PptxError("NO_TEXT", "This object has no text.");
+    const wasEmpty = !!cell && kids(body, "p").every((para) => !segmentsOf(para).some((seg) => seg.text));
     applyParagraphTexts(doc, body, texts);
+    // First text typed into an empty table cell: centred both ways at a medium size (the default
+    // cell text is small and top-left). Cells that already have content keep their own formatting.
+    if (wasEmpty && kids(body, "p").some((para) => segmentsOf(para).some((seg) => seg.text))) centerNewCellText(doc, body);
     // Commit text and its auto-grown frame in the same undoable transaction.
     if (!cell && Number.isFinite(fittedHeight)) {
       const current = readBoundsFromNode(node) || fallbackBounds;
       if (current && fittedHeight > current.h) writeBounds(doc, node, { ...current, h: Math.round(fittedHeight) });
     }
   });
+}
+
+export const NEW_CELL_FONT_SZ = 2000; // 20 pt, hundredths of a point
+
+function centerNewCellText(doc, body) {
+  const tc = body.parentNode;
+  let tcPr = kid(tc, "tcPr");
+  if (!tcPr) { tcPr = create(doc, "a", "tcPr"); tc.insertBefore(tcPr, body.nextSibling); }
+  tcPr.setAttribute("anchor", "ctr");
+  for (const para of kids(body, "p")) {
+    ensurePPr(doc, para).setAttribute("algn", "ctr");
+    for (const run of kids(para, "r", "fld")) {
+      const rPr = ensureRPr(doc, run);
+      if (!rPr.hasAttribute("sz")) rPr.setAttribute("sz", String(NEW_CELL_FONT_SZ));
+    }
+    let end = kid(para, "endParaRPr");
+    if (!end) { end = create(doc, "a", "endParaRPr"); para.appendChild(end); }
+    if (!end.hasAttribute("sz")) end.setAttribute("sz", String(NEW_CELL_FONT_SZ));
+  }
 }
 
 function ensureRPr(doc, run) {

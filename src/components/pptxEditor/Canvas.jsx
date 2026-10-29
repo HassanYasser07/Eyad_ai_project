@@ -19,6 +19,7 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
   const [draft, setDraft] = React.useState(null);
   const [guides, setGuides] = React.useState(null);
   const [marquee, setMarquee] = React.useState(null);
+  const [cellFit, setCellFit] = React.useState(null); // live row/frame growth while typing in a table cell
   const urls = useMediaUrls(pkg, collectImagePaths(model));
 
   const W = model.size.w / EMU_PER_PX, H = model.size.h / EMU_PER_PX;
@@ -29,7 +30,7 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
 
   // Everything the pointer handlers need, kept fresh without re-binding listeners.
   const R = React.useRef({});
-  R.current = { s, ox, oy, fit, size, W, H, model, selection, multi, grid, locked, view, onSelect, onSelectionComplete, onInteractionStart, onCommit, onEditText, draft };
+  R.current = { s, ox, oy, fit, size, W, H, model, selection, multi, grid, locked, view, onSelect, onSelectionComplete, onInteractionStart, onCommit, onEditText, draft, editingText, tableSelection };
   const pointers = React.useRef(new Map());
   const gesture = React.useRef(null);
   const lastTap = React.useRef({ t: 0, id: null, x: 0, y: 0 });
@@ -50,6 +51,27 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
     updateSize();
     return () => ro?.disconnect();
   }, []);
+  // Typing in a table cell re-wraps its text: grow the row and the frame live (same measurement as on commit),
+  // so the frame always equals the rendered table and every cell stays clickable.
+  React.useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return undefined;
+    let raf = 0;
+    const onInput = (e) => {
+      const td = e.target?.closest?.("td[data-row]");
+      if (!td) return;
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        const id = td.closest(".pptx-el-table")?.dataset.id;
+        const el = R.current.model.elements.find((x) => x.id === id);
+        const fit = el ? fitTableToContent(stage, el) : null;
+        setCellFit(fit ? { id, h: fit.h, tableGrid: fit.tableGrid } : null);
+      });
+    };
+    stage.addEventListener("input", onInput);
+    return () => { cancelAnimationFrame(raf); stage.removeEventListener("input", onInput); };
+  }, []);
+  React.useEffect(() => { setCellFit(null); }, [model, editingText?.id, editingText?.row, editingText?.col]);
   // Reset view when the slide changes.
   React.useEffect(() => { setView({ zoom: 1, pan: { x: 0, y: 0 } }); }, [model.path]);
 
@@ -78,7 +100,7 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
     const tol = ((touch ? 10 : 5) / R.current.s) * EMU_PER_PX;
     const out = [];
     const els = R.current.model.elements;
-    for (let i = els.length - 1; i >= 0; i--) { const e = els[i]; if (!e.hidden && hitTest(boundsOf(e), pt.x, pt.y, e.h < 20000 || e.w < 20000 ? tol * 1.5 : 0)) out.push(e); }
+    for (let i = els.length - 1; i >= 0; i--) { const e = els[i]; if (!e.hidden && hitTest(R.current.overrides?.get(e.id) || boundsOf(e), pt.x, pt.y, e.h < 20000 || e.w < 20000 ? tol * 1.5 : 0)) out.push(e); }
     return out;
   };
 
@@ -307,6 +329,17 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
       const tapped = g.tapId || g.id;
       if (g.tapId) { nextSelection = [g.tapId]; R.current.onSelect(nextSelection); }
       else if (g.pending) { nextSelection = g.pending; R.current.onSelect(nextSelection); }
+      // Tapping a table cell puts the caret straight into that cell. A drag never gets here
+      // (g.moved), so moving/resizing the table is unaffected.
+      const tbl = R.current.model.elements.find((x) => x.id === tapped && x.kind === "table");
+      const cellEl = tbl ? document.elementFromPoint(e.clientX, e.clientY)?.closest?.("td[data-row]") : null;
+      if (cellEl && !R.current.locked.has(tapped)) {
+        const cell = { row: Number(cellEl.dataset.row), col: Number(cellEl.dataset.col) };
+        const cur = R.current.editingText;
+        if (!(cur?.id === tapped && cur.row === cell.row && cur.col === cell.col)) R.current.onEditText(tapped, cell);
+        lastTap.current = { t: 0, id: null, x: 0, y: 0 };
+        return;
+      }
       const now = Date.now(), lt = lastTap.current;
       const doubleTap = !g.toggleOff && lt.id === tapped && now - lt.t < 380 && Math.hypot(e.clientX - lt.x, e.clientY - lt.y) < 26;
       if (doubleTap) { lastTap.current = { t: 0, id: null, x: 0, y: 0 }; R.current.onEditText(tapped); }
@@ -347,8 +380,13 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
         if (pendingHeight > base.h) combined.set(element.id, { ...base, h: pendingHeight });
       }
     }
+    if (cellFit && !combined.has(cellFit.id)) {
+      const element = model.elements.find((item) => item.id === cellFit.id);
+      if (element) combined.set(cellFit.id, { ...boundsOf(element), h: cellFit.h, tableGrid: cellFit.tableGrid });
+    }
     return combined;
-  }, [draft, textAutoSizeHeights, model]);
+  }, [draft, textAutoSizeHeights, model, cellFit]);
+  R.current.overrides = overrides;
   const sel = model.elements.filter((e) => selection.includes(e.id));
   const frames = sel.map((e) => ({ el: e, b: overrides.get(e.id) || boundsOf(e) }));
   const toScreen = (b) => ({ cx: ox + ((b.x + b.w / 2) / EMU_PER_PX) * s, cy: oy + ((b.y + b.h / 2) / EMU_PER_PX) * s, w: (b.w / EMU_PER_PX) * s, h: (b.h / EMU_PER_PX) * s });

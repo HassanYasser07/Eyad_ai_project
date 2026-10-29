@@ -79,7 +79,7 @@ function bulletText(b) {
   return "";
 }
 
-export function TextBody({ text, hint, cellMode = false, editing = false, elementId, frameW, frameH, onAutoSize, onEditStart, onCommit, onCancel }) {
+export function TextBody({ text, hint, cellMode = false, newCell = false, editing = false, elementId, frameW, frameH, onAutoSize, onEditStart, onCommit, onCancel }) {
   const containerRef = React.useRef(null);
   const contentRef = React.useRef(null);
   const autoSizeFrameRef = React.useRef(0);
@@ -183,14 +183,15 @@ export function TextBody({ text, hint, cellMode = false, editing = false, elemen
           onCommit(value.split("\n"), requiredHeight);
         }}>
       {empty && hint ? <div className="pptx-hint">{hint}</div> : paragraphs.map((p, i) => {
-        const maxPt = Math.max(p.end.size, ...p.runs.map((r) => r.style.size));
+        // An empty table cell previews the style its first text will be saved with: centred, medium size.
+        const maxPt = newCell ? Math.max(20, ...p.runs.map((r) => r.style.size)) : Math.max(p.end.size, ...p.runs.map((r) => r.style.size));
         const fs = ptToPx(maxPt) * renderScale;
         const lh = p.lnSpc ? (p.lnSpc.pct ? p.lnSpc.pct * 1.2 : ptToPx(p.lnSpc.pts) / Math.max(1, fs / renderScale)) : 1.2;
         const sp = (s) => (s ? (s.pts !== undefined ? ptToPx(s.pts) * renderScale : s.pct * fs * 1.2) : 0);
         const bt = bulletText(p.bullet);
         const hang = Math.abs(px(p.indent));
         return (
-          <div key={i} className="pptx-para" dir={p.rtl ? "rtl" : "ltr"} style={{ textAlign: p.algn === "ctr" ? "center" : p.algn === "r" ? "right" : p.algn === "just" ? "justify" : "left", paddingInlineStart: px(p.marL) * renderScale, textIndent: px(p.indent) * renderScale, marginTop: i ? sp(p.spcBef) : 0, marginBottom: sp(p.spcAft), lineHeight: lh, minHeight: `${fs * lh}px`, fontSize: fs }}>
+          <div key={i} className="pptx-para" dir={p.rtl ? "rtl" : "ltr"} style={{ textAlign: newCell || p.algn === "ctr" ? "center" : p.algn === "r" ? "right" : p.algn === "just" ? "justify" : "left", paddingInlineStart: px(p.marL) * renderScale, textIndent: px(p.indent) * renderScale, marginTop: i ? sp(p.spcBef) : 0, marginBottom: sp(p.spcAft), lineHeight: lh, minHeight: `${fs * lh}px`, fontSize: fs }}>
             {bt && <span className="pptx-bullet" style={{ display: "inline-block", minWidth: hang || fs, textIndent: 0, color: rgba(p.runs[0]?.style.color || p.end.color), fontFamily: "Arial, sans-serif" }}>{bt}</span>}
             {p.runs.map((r, j) => {
               const s = r.style;
@@ -276,12 +277,17 @@ function TableView({ el, w, h, tableSelection, editingText, onTableCellSelect, o
               const emphasized = head || firstCol || lastCol || totalRow;
               const bg = c.fill?.type === "solid" ? rgba(c.fill) : emphasized ? `#${accent}` : bandRow || bandCol ? `#${accent}22` : (t.bandRow || t.bandCol) ? `#${accent}0A` : "transparent";
               return (
-                <td key={ci} colSpan={c.gridSpan} rowSpan={c.rowSpan}
+                <td key={ci} colSpan={c.gridSpan} rowSpan={c.rowSpan} data-row={ri} data-col={ci}
                   className={tableSelection?.id === el.id && (tableSelection.scope === "table" || (tableSelection.scope === "row" && tableSelection.row === ri) || (tableSelection.scope === "column" && tableSelection.col === ci) || (tableSelection.scope === "cell" && tableSelection.row === ri && tableSelection.col === ci)) ? `is-table-${tableSelection.scope}-selected` : undefined}
-                  style={{ background: bg, color: emphasized ? "#fff" : undefined, fontWeight: emphasized ? 700 : undefined }}
-                  onClick={(event) => { event.stopPropagation(); onTableCellSelect?.(el.id, ri, ci); }}
+                  style={{ background: bg, color: emphasized ? "#fff" : undefined, fontWeight: emphasized ? 700 : undefined, verticalAlign: (c.text?.isEmpty || c.anchor === "ctr") ? "middle" : c.anchor === "b" ? "bottom" : "top" }}
+                  onClick={(event) => {
+                    // A single click edits the cell (the Canvas starts the edit on tap). Only fall back to
+                    // plain cell selection when there is no editor, e.g. a read-only preview.
+                    event.stopPropagation();
+                    if (!onEditText) onTableCellSelect?.(el.id, ri, ci);
+                  }}
                   onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); onEditText?.(el.id, { row: ri, col: ci }); }}>
-                  <TextBody text={c.text} cellMode editing={editingText?.id === el.id && editingText?.row === ri && editingText?.col === ci}
+                  <TextBody text={c.text} cellMode newCell={!!c.text?.isEmpty} editing={editingText?.id === el.id && editingText?.row === ri && editingText?.col === ci}
                     onEditStart={() => onEditText?.(el.id, { row: ri, col: ci })}
                     onCommit={(texts) => onTextCommit?.(el.id, texts, { row: ri, col: ci })} onCancel={onTextCancel} />
                 </td>

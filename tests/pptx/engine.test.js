@@ -648,3 +648,19 @@ test("resizing a table frame scales its grid so frame and rows never diverge", a
   const t3 = slide(pkg).m.elements.find((e) => e.id === t.id);
   assert.deepEqual(t3.table.rows.map((r) => r.h), rows);
 });
+
+test("first text typed into an empty table cell is centred (both axes) at a medium size; filled cells keep formatting", async () => {
+  const pkg = await load("simple.pptx"); const { m } = slide(pkg);
+  const id = addTable(pkg, m.path, { x: 900000, y: 1100000, w: 5200000, h: 2800000, rows: 2, cols: 2 });
+  setText(pkg, m.path, id, ["Hi"], { row: 1, col: 1 });
+  let cell = slide(pkg).m.elements.find((e) => e.id === id).table.rows[1].cells[1];
+  assert.equal(cell.anchor, "ctr");
+  assert.equal(cell.text.paragraphs[0].algn, "ctr");
+  assert.equal(cell.text.paragraphs[0].runs[0].style.size, 20);
+  // editing the now non-empty cell must not re-apply the defaults over a user's own formatting
+  setTextProps(pkg, m.path, [id], { size: 11, align: "l" }, { row: 1, col: 1 });
+  setText(pkg, m.path, id, ["Hi there"], { row: 1, col: 1 });
+  cell = slide(pkg).m.elements.find((e) => e.id === id).table.rows[1].cells[1];
+  assert.equal(cell.text.paragraphs[0].runs[0].style.size, 11);
+  assert.equal(cell.text.paragraphs[0].algn, "l");
+});
