@@ -334,19 +334,21 @@ export default function PptxEditorDialog({ onClose }) {
     if (cell) setTableFocus({ id, row: cell.row, col: cell.col, scope: "cell" });
     setActiveRibbon(cell ? "table" : "text"); setSheet(null); setTextEdit({ id, ...(cell || {}) });
   }
-  const commitInlineText = (id, texts, cell = null) => {
+  const commitInlineText = (id, texts, cell = null, measuredHeight = null) => {
     const cleaned = (Array.isArray(texts) ? texts : [texts]).map((value) => String(value ?? "").replace(/[\u200B\uFEFF]/g, ""));
     const nextText = cleaned.join("\n").replace(/\n+$/, "");
     const target = okModel?.elements.find((item) => item.id === id);
+    const draftHeight = Math.max(Number(measuredHeight) || 0, textAutoSizeDraftsRef.current.get(id) || 0);
+    const fittedHeight = !cell && target && draftHeight > target.h ? draftHeight : null;
     const existing = cell
       ? target?.table?.rows?.[cell.row]?.cells?.[cell.col]?.text?.plain?.join("\n")
       : target?.text?.plain?.join("\n");
-    const pendingHeight = !cell ? textAutoSizeDraftsRef.current.get(id) : null;
-    const needsHeight = Number.isFinite(pendingHeight) && target && pendingHeight > target.h + 2 * 9525;
-    if (nextText !== String(existing ?? "").replace(/[\u200B\uFEFF]/g, "").replace(/\n+$/, "")) {
-      run(() => setText(pkg, path, id, cleaned, cell, needsHeight ? pendingHeight : null, needsHeight ? bounds(target) : null));
-    } else if (needsHeight) {
-      run(() => setBounds(pkg, path, [{ ...bounds(target), h: pendingHeight }], "Fit text to content"));
+    // Commit the edited text and its measured auto-grown height together.
+    // Position and width remain unchanged, and no other slide element is touched.
+    if (nextText !== String(existing ?? "").replace(/[\u200B\uFEFF]/g, "").replace(/\n+$/, "") || fittedHeight) {
+      // setText writes the text and the fitted frame height in one undoable
+      // transaction. Only this text element grows; its x/y/width stay unchanged.
+      run(() => setText(pkg, path, id, cleaned, cell, fittedHeight, target ? bounds(target) : null));
     }
     setTextAutoSizeDrafts((current) => {
       if (!current.has(id)) return current;
@@ -370,7 +372,11 @@ export default function PptxEditorDialog({ onClose }) {
   const autoSizeTextHeight = React.useCallback((id, suggestedHeight, isEditing = false) => {
     const element = okModel?.elements.find((item) => item.id === id);
     if (!pkg || !path || !element || element.kind === "table" || lockedIds.has(id) || element.readOnlyGeometry) return;
-    const targetHeight = Math.ceil(Number(suggestedHeight) || 0);
+    // Grow only to the slide's bottom edge. Further text remains in the
+    // editable content and is naturally clipped by .pptx-slide, without
+    // expanding geometry beyond the slide and triggering viewport movement.
+    const slideBottomLimit = Math.max(1, (okModel.size?.h || element.y + element.h) - element.y);
+    const targetHeight = Math.min(slideBottomLimit, Math.ceil(Number(suggestedHeight) || 0));
     const draftHeight = textAutoSizeDraftsRef.current.get(id) || 0;
     const currentHeight = Math.max(element.h, draftHeight);
     // Auto-sizing is strictly grow-only: it fixes clipped wrapped text without

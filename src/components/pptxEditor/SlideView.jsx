@@ -83,68 +83,33 @@ export function TextBody({ text, hint, cellMode = false, editing = false, elemen
   const containerRef = React.useRef(null);
   const contentRef = React.useRef(null);
   const autoSizeFrameRef = React.useRef(0);
-  const previousBoundsRef = React.useRef({ w: frameW, h: frameH });
-  const makeTextLayoutKey = (value) => JSON.stringify((value?.paragraphs || []).map((p) => ({
-    plain: p.plain, endSize: p.end?.size, align: p.algn, indent: p.indent, margin: p.marL,
-    lineSpacing: p.lnSpc, spaceBefore: p.spcBef, spaceAfter: p.spcAft, bullet: p.bullet,
-    runs: p.runs.map((r) => ({ text: r.text, size: r.style.size, font: r.style.font, bold: r.style.bold, italic: r.style.italic, underline: r.style.underline, strike: r.style.strike, baseline: r.style.baseline })),
-  })));
-  const textLayoutKey = makeTextLayoutKey(text);
-  const previousTextLayoutKeyRef = React.useRef(textLayoutKey);
   const body = text?.body || {};
-  // Preserve the font sizes authored in the PPTX. Browser-measured shrink-to-fit
-  // was unreliable for titles and wrapped text and could make content suddenly
-  // tiny when a slide was selected. Overflow is handled by growing the text box.
   const renderScale = 1;
 
-  // Grow text objects when wrapping or edited content exceeds their frame. We
-  // deliberately don't run this on first mount for unchanged imported objects;
-  // it activates on inline editing, text-style changes, or geometry changes.
-  // Cell geometry is owned by the table grid and must never be auto-resized.
+  // While typing, measure the wrapped content and grow only this text element's
+  // frame. The callback updates a temporary geometry draft; no neighboring
+  // elements are moved or resized. Persist the same measured height on commit.
+  const measureRequiredHeight = React.useCallback(() => {
+    if (cellMode || !editing || !containerRef.current || !contentRef.current) return null;
+    const container = containerRef.current;
+    const content = contentRef.current;
+    const css = window.getComputedStyle(container);
+    const verticalPadding = (Number.parseFloat(css.paddingTop) || 0) + (Number.parseFloat(css.paddingBottom) || 0);
+    const contentRect = content.getBoundingClientRect();
+    const naturalContentHeight = Math.max(content.scrollHeight, content.offsetHeight, contentRect.height);
+    if (!Number.isFinite(naturalContentHeight) || naturalContentHeight <= 0) return null;
+    return Math.ceil((naturalContentHeight + verticalPadding + 1) * EMU_PER_PX);
+  }, [cellMode, editing]);
+
   const requestContentFit = React.useCallback(() => {
-    if (cellMode || !onAutoSize || !elementId || !Number.isFinite(frameH) || typeof window === "undefined") return;
+    if (cellMode || !editing || !onAutoSize || !elementId || typeof window === "undefined") return;
     if (autoSizeFrameRef.current) window.cancelAnimationFrame(autoSizeFrameRef.current);
     autoSizeFrameRef.current = window.requestAnimationFrame(() => {
       autoSizeFrameRef.current = 0;
-      const container = containerRef.current;
-      const content = contentRef.current;
-      if (!container || !content || !container.isConnected || !content.isConnected) return;
-      const css = window.getComputedStyle(container);
-      const verticalPadding = (Number.parseFloat(css.paddingTop) || 0) + (Number.parseFloat(css.paddingBottom) || 0);
-      const contentRect = content.getBoundingClientRect();
-      // scrollHeight captures wrapped lines and contenteditable-created line breaks;
-      // the bounding-box height covers fractional line metrics in Chromium/WebKit.
-      const naturalContentHeight = Math.max(content.scrollHeight, content.offsetHeight, contentRect.height);
-      if (!Number.isFinite(naturalContentHeight) || naturalContentHeight <= 0) return;
-      const requiredHeight = Math.ceil((naturalContentHeight + verticalPadding + 1) * EMU_PER_PX);
-      if (requiredHeight > frameH + 2 * EMU_PER_PX) onAutoSize(elementId, requiredHeight, editing);
+      const requiredHeight = measureRequiredHeight();
+      if (Number.isFinite(requiredHeight)) onAutoSize(elementId, requiredHeight, true);
     });
-  }, [cellMode, onAutoSize, elementId, frameH, editing]);
-
-  React.useLayoutEffect(() => {
-    // During a live resize Canvas deliberately suspends auto-sizing so that the
-    // user's pointer controls the frame. Do NOT consume the new dimensions while
-    // the callback is absent: after the drag commits, the callback returns and
-    // we must still detect the geometry change and measure the wrapped content.
-    // The previous implementation updated these refs before checking onAutoSize,
-    // making the final committed size look unchanged and leaving wrapped lines clipped.
-    if (cellMode || !onAutoSize) return undefined;
-
-    const previous = previousBoundsRef.current;
-    const boundsChanged = previous.w !== frameW || previous.h !== frameH;
-    const textChanged = previousTextLayoutKeyRef.current !== textLayoutKey;
-    previousBoundsRef.current = { w: frameW, h: frameH };
-    previousTextLayoutKeyRef.current = textLayoutKey;
-    if (!editing && !boundsChanged && !textChanged) return undefined;
-
-    requestContentFit();
-    return () => {
-      if (autoSizeFrameRef.current && typeof window !== "undefined") {
-        window.cancelAnimationFrame(autoSizeFrameRef.current);
-        autoSizeFrameRef.current = 0;
-      }
-    };
-  }, [cellMode, onAutoSize, editing, frameW, frameH, textLayoutKey, requestContentFit]);
+  }, [cellMode, editing, onAutoSize, elementId, measureRequiredHeight]);
 
   React.useEffect(() => () => {
     if (autoSizeFrameRef.current && typeof window !== "undefined") window.cancelAnimationFrame(autoSizeFrameRef.current);
@@ -177,7 +142,33 @@ export function TextBody({ text, hint, cellMode = false, editing = false, elemen
       <div key={editing ? "editing-content" : "view-content"} ref={contentRef} className="pptx-text-content" data-auto-fit="none" data-auto-scale="1.000"
         contentEditable={editing} suppressContentEditableWarning={editing}
         onPointerDown={(event) => { if (editing) event.stopPropagation(); }}
-        onInput={() => { if (editing) requestContentFit(); }}
+        onInput={() => {
+          if (!editing) return;
+          requestContentFit();
+          // contenteditable may scroll the slide/canvas viewport to keep the
+          // caret visible. Preserve ancestor scroll positions so typing past
+          // the slide bottom never makes the whole slide appear to move.
+          const positions = [];
+          let node = contentRef.current?.parentElement;
+          while (node) {
+            positions.push([node, node.scrollLeft, node.scrollTop]);
+            node = node.parentElement;
+          }
+          const winX = window.scrollX, winY = window.scrollY;
+          window.requestAnimationFrame(() => {
+            for (const [target, left, top] of positions) {
+              if (target.isConnected) { target.scrollLeft = left; target.scrollTop = top; }
+            }
+            if (window.scrollX !== winX || window.scrollY !== winY) window.scrollTo(winX, winY);
+            // Chromium can perform its caret auto-scroll after the first frame.
+            window.requestAnimationFrame(() => {
+              for (const [target, left, top] of positions) {
+                if (target.isConnected) { target.scrollLeft = left; target.scrollTop = top; }
+              }
+              if (window.scrollX !== winX || window.scrollY !== winY) window.scrollTo(winX, winY);
+            });
+          });
+        }}
         onKeyDown={(event) => {
           if (!editing) return;
           if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onCancel?.(); }
@@ -187,7 +178,9 @@ export function TextBody({ text, hint, cellMode = false, editing = false, elemen
         onBlur={(event) => {
           if (!editing || !onCommit) return;
           const value = String(event.currentTarget.innerText ?? event.currentTarget.textContent ?? "").replace(/[\u200B\uFEFF]/g, "").replace(/\r\n?/g, "\n").replace(/\n+$/, "");
-          onCommit(value.split("\n"));
+          const requiredHeight = measureRequiredHeight();
+          if (Number.isFinite(requiredHeight)) onAutoSize?.(elementId, requiredHeight, true);
+          onCommit(value.split("\n"), requiredHeight);
         }}>
       {empty && hint ? <div className="pptx-hint">{hint}</div> : paragraphs.map((p, i) => {
         const maxPt = Math.max(p.end.size, ...p.runs.map((r) => r.style.size));
@@ -336,7 +329,7 @@ function ElementNode({ el, urls, hints, idPrefix, labels, editingText, tableSele
             elementId={el.id} frameW={el.w} frameH={el.h} onAutoSize={onAutoSizeText}
             editing={editingText?.id === el.id && editingText?.row === undefined}
             onEditStart={() => onEditText?.(el.id)}
-            onCommit={(texts) => onTextCommit?.(el.id, texts)} onCancel={onTextCancel} />}
+            onCommit={(texts, fittedHeight) => onTextCommit?.(el.id, texts, null, fittedHeight)} onCancel={onTextCancel} />}
         </>
       );
   }
