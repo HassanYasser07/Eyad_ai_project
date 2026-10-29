@@ -16,7 +16,7 @@ export function collectImagePaths(model) {
   return [...out];
 }
 
-function fillAttr(fill, id, defs) {
+function fillAttr(fill, id, defs, urls) {
   if (!fill || fill.type === "none") return { fill: "none" };
   if (fill.type === "solid") return { fill: `#${fill.hex}`, fillOpacity: fill.alpha };
   if (fill.type === "gradient") {
@@ -27,12 +27,26 @@ function fillAttr(fill, id, defs) {
       : <linearGradient key={gid} id={gid} gradientTransform={`rotate(${fill.angle} .5 .5)`}>{stops}</linearGradient>);
     return { fill: `url(#${gid})` };
   }
+  // Picture fills on shapes (a:blipFill) are how Canva and many template
+  // exporters store every photo. Stretch the image over the shape's box;
+  // until its blob URL arrives keep the neutral fallback and re-render.
+  if (fill.type === "image") {
+    const url = urls?.[fill.path];
+    if (!url) return { fill: "#e2e8f0" };
+    const pid = `img-${id}`;
+    defs.push(
+      <pattern key={pid} id={pid} patternUnits="objectBoundingBox" patternContentUnits="objectBoundingBox" width="1" height="1">
+        <image href={url} x="0" y="0" width="1" height="1" preserveAspectRatio="none" />
+      </pattern>
+    );
+    return { fill: `url(#${pid})` };
+  }
   return { fill: "#e2e8f0" };
 }
 
-function Geometry({ el, w, h, idPrefix }) {
+function Geometry({ el, w, h, idPrefix, urls }) {
   const defs = [];
-  const f = fillAttr(el.fill, `${idPrefix}${el.id}`, defs);
+  const f = fillAttr(el.fill, `${idPrefix}${el.id}`, defs, urls);
   const ln = el.line || {};
   const sw = ln.none || ln.hex === undefined ? 0 : Math.max(0.5, px(ln.w ?? 12700));
   const stroke = sw ? { stroke: `#${ln.hex}`, strokeOpacity: ln.alpha, strokeWidth: sw, strokeDasharray: DASH[ln.dash], strokeLinejoin: "round" } : { stroke: "none" };
@@ -317,7 +331,7 @@ function ElementNode({ el, urls, hints, idPrefix, labels, editingText, tableSele
     default:
       inner = (
         <>
-          <Geometry el={el} w={w} h={h} idPrefix={idPrefix} />
+          <Geometry el={el} w={w} h={h} idPrefix={idPrefix} urls={urls} />
           {el.text && <TextBody text={el.text} hint={hints && el.ph ? labels.placeholderHint : null}
             elementId={el.id} frameW={el.w} frameH={el.h} onAutoSize={onAutoSizeText}
             editing={editingText?.id === el.id && editingText?.row === undefined}
