@@ -8,6 +8,7 @@ import { fitFrame, fitTableToContent, fitTableGrid } from "./textFit.js";
 import TableHandles from "./TableHandles.jsx";
 
 const MIN_SIZE = 91440;
+const SNAP_MAX_SPEED = 0.45; // px/ms: dragging faster than this ignores alignment guides so quick moves are never "caught"
 const MIN_COL = 285750; // 30 px: narrowest column a border drag can produce
 const MIN_ROW = 190500; // 20 px: shortest row (content may force more)
 const GRID = 228600; // 0.25 in
@@ -19,8 +20,26 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
   const stageRef = React.useRef(null);
   const [size, setSize] = React.useState({ w: 800, h: 600 });
   const [view, setView] = React.useState({ zoom: 1, pan: { x: 0, y: 0 } });
-  const [draft, setDraft] = React.useState(null);
+  const [draft, setDraftState] = React.useState(null);
   const [guides, setGuides] = React.useState(null);
+  // The live drag result is kept in a ref that is updated synchronously on every pointer event, so releasing
+  // the pointer always commits the very last position - even when the drag was faster than React could render.
+  // Screen updates are coalesced to one per animation frame (latest wins) to keep fast drags smooth.
+  const draftRef = React.useRef(null), uiRaf = React.useRef(0), uiPending = React.useRef(null);
+  const dropPending = () => { if (uiRaf.current) cancelAnimationFrame(uiRaf.current); uiRaf.current = 0; uiPending.current = null; };
+  const setDraft = (v) => { dropPending(); draftRef.current = v; setDraftState(v); };
+  const pushDraft = (v, g) => {
+    draftRef.current = v;
+    uiPending.current = g === undefined ? { draft: v } : { draft: v, guides: g };
+    if (!uiRaf.current) uiRaf.current = requestAnimationFrame(() => {
+      uiRaf.current = 0;
+      const p = uiPending.current; uiPending.current = null;
+      if (!p) return;
+      setDraftState(p.draft);
+      if ("guides" in p) setGuides(p.guides);
+    });
+  };
+  React.useEffect(() => dropPending, []);
   const [marquee, setMarquee] = React.useState(null);
   const [cellFit, setCellFit] = React.useState(null); // live row/frame growth while typing in a table cell
   const [tblDrag, setTblDrag] = React.useState(null); // { kind: "col"|"row", index } while a table border is dragged
@@ -266,10 +285,22 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
       let dx = (dxs / sc) * EMU_PER_PX, dy = (dys / sc) * EMU_PER_PX;
       if (e.shiftKey) { if (Math.abs(dx) > Math.abs(dy)) dy = 0; else dx = 0; }
       const boxes = [...g.starts.values()].map((b) => rotatedBox({ ...b, x: b.x + dx, y: b.y + dy }));
-      const sn = e.altKey ? { dx: 0, dy: 0, guideX: null, guideY: null } : applySnap(unionBox(boxes), ids, (6 / sc) * EMU_PER_PX);
+      // Alignment (snap + red guides) only kicks in while the pointer is moving slowly, i.e. when the user is
+      // fine-positioning; fast drags stay free of it. Speed is smoothed so a single jittery event doesn't flip it.
+      const prev = g.lastMove;
+      if (prev) { const inst = Math.hypot(e.clientX - prev.x, e.clientY - prev.y) / Math.max(1, e.timeStamp - prev.t); g.speed = g.speed == null ? inst : g.speed * 0.5 + inst * 0.5; }
+      g.lastMove = { x: e.clientX, y: e.clientY, t: e.timeStamp };
+      const slow = prev && g.speed <= SNAP_MAX_SPEED;
+      const sn = e.altKey || !slow ? { dx: 0, dy: 0, guideX: null, guideY: null } : applySnap(unionBox(boxes), ids, (6 / sc) * EMU_PER_PX);
       dx += sn.dx; dy += sn.dy;
-      setGuides({ x: sn.guideX, y: sn.guideY });
-      setDraft(new Map([...g.starts].map(([id, b]) => [id, { ...b, x: b.x + dx, y: b.y + dy }])));
+      pushDraft(new Map([...g.starts].map(([id, b]) => [id, { ...b, x: b.x + dx, y: b.y + dy }])), { x: sn.guideX, y: sn.guideY });
+      // Holding still ends the "fast" state: re-run this step once the pointer has been idle so the guides appear.
+      clearTimeout(g.idle);
+      g.idle = setTimeout(() => {
+        if (gesture.current !== g) return;
+        g.speed = 0;
+        onPointerMove({ pointerId: e.pointerId, pointerType: e.pointerType, clientX: e.clientX, clientY: e.clientY, shiftKey: e.shiftKey, altKey: e.altKey, timeStamp: performance.now() });
+      }, 90);
       return;
     }
     if (g.type === "handle") {
@@ -284,7 +315,7 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
         deg = ((deg % 360) + 360) % 360;
         const snapped = Math.round(deg / 15) * 15;
         if (e.shiftKey || Math.abs(deg - snapped) < 3) deg = snapped % 360;
-        setDraft(new Map([[g.id, { ...b0, rot: deg }]]));
+        pushDraft(new Map([[g.id, { ...b0, rot: deg }]]));
         return;
       }
       const lx = ex * cos + ey * sin, ly = -ex * sin + ey * cos;
@@ -301,7 +332,7 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
       // A height forced by text on a width-only handle grows downward (top edge stays put).
       const lcx = (sx * dw) / 2, lcy = ((sy || 1) * dh) / 2;
       const cx = b0.x + b0.w / 2 + lcx * cos - lcy * sin, cy = b0.y + b0.h / 2 + lcx * sin + lcy * cos;
-      setDraft(new Map([[g.id, { ...b0, x: cx - w / 2, y: cy - h / 2, w, h, ...(tableGrid ? { tableGrid } : {}) }]]));
+      pushDraft(new Map([[g.id, { ...b0, x: cx - w / 2, y: cy - h / 2, w, h, ...(tableGrid ? { tableGrid } : {}) }]]));
     }
   };
 
@@ -313,7 +344,8 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
     if (g?.type === "idle") { if (!pointers.current.size) gesture.current = null; return; }
     if (pointers.current.size) return;
     gesture.current = null;
-    const d = R.current.draft;
+    const d = draftRef.current;
+    clearTimeout(g?.idle);
     setGuides(null);
     if (!g || cancelled) { setDraft(null); setMarquee(null); return; }
     if ((g.type === "press" || g.type === "handle") && g.moved && d) {
@@ -427,7 +459,7 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
       const x = atStart && kind === "col" ? base.x + (cols[0] - c[0]) : base.x;
       const y = atStart && kind === "row" ? base.y + (rows[0] - r[0]) : base.y;
       last = { ...base, x, y, w: c.reduce((a, b) => a + b, 0), h: r.reduce((a, b) => a + b, 0), tableGrid: { cols: c, rows: r } };
-      setDraft(new Map([[el.id, last]]));
+      pushDraft(new Map([[el.id, last]]));
     };
     const end = (ev, cancelled) => {
       if (ev.pointerId !== pointerId) return;

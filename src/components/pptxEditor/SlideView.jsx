@@ -342,6 +342,9 @@ function ElementNode({ el, urls, hints, idPrefix, labels, editingText, tableSele
   return <div className={`pptx-el pptx-el-${el.kind}`} data-id={el.id} style={style}>{inner}</div>;
 }
 
+// Shallow-compared wrapper used by SlideView; ElementNode itself recurses into groups with the plain component.
+const MemoElement = React.memo(ElementNode);
+
 function backgroundStyle(bg, urls) {
   if (!bg) return { background: "#fff" };
   if (bg.type === "solid") return { background: rgba(bg) };
@@ -360,11 +363,20 @@ function backgroundStyle(bg, urls) {
  */
 export default function SlideView({ model, urls, overrides, geometryDrafts, hints = false, labels, editingText, tableSelection, onTableCellSelect, onAutoSizeText, onEditText, onTextCommit, onTextCancel }) {
   const idPrefix = React.useId().replace(/:/g, "");
+  // Stable callbacks (always calling the latest handler) so unchanged elements can skip rendering while another
+  // one is being dragged: a drag then re-renders only the moving element instead of the whole slide.
+  const handlers = React.useRef({});
+  handlers.current = { onTableCellSelect, onAutoSizeText, onEditText, onTextCommit, onTextCancel };
+  const st = React.useMemo(() => {
+    const proxy = (name) => (handlers.current[name] ? (...args) => handlers.current[name]?.(...args) : undefined);
+    return { onTableCellSelect: proxy("onTableCellSelect"), onAutoSizeText: proxy("onAutoSizeText"), onEditText: proxy("onEditText"), onTextCommit: proxy("onTextCommit"), onTextCancel: proxy("onTextCancel") };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [!!onTableCellSelect, !!onAutoSizeText, !!onEditText, !!onTextCommit, !!onTextCancel]);
   const W = px(model.size.w), H = px(model.size.h);
   const renderTop = (el) => {
     if (el.hidden) return null;
     const ov = overrides?.get(el.id);
-    if (!ov) return <ElementNode key={el.id} el={el} urls={urls} hints={hints} idPrefix={idPrefix} labels={labels} editingText={editingText} tableSelection={tableSelection} onTableCellSelect={onTableCellSelect} onAutoSizeText={onAutoSizeText} onEditText={onEditText} onTextCommit={onTextCommit} onTextCancel={onTextCancel} />;
+    if (!ov) return <MemoElement key={el.id} el={el} urls={urls} hints={hints} idPrefix={idPrefix} labels={labels} editingText={editingText} tableSelection={tableSelection} onTableCellSelect={st.onTableCellSelect} onAutoSizeText={st.onAutoSizeText} onEditText={st.onEditText} onTextCommit={st.onTextCommit} onTextCancel={st.onTextCancel} />;
     // `geometryDrafts` is only the active pointer drag/resize preview. A height
     // override coming from textAutoSizeHeights is different: keep auto-sizing live
     // so additional typing or wrapping can continue to grow the selected frame.
@@ -375,7 +387,7 @@ export default function SlideView({ model, urls, overrides, geometryDrafts, hint
       return (
         <div key={el.id} className="pptx-group-preview" style={{ left: px(el.x), top: px(el.y), width: px(el.w), height: px(el.h), transform: `translate(${px(dx)}px,${px(dy)}px) rotate(${ov.rot - el.rot}deg) scale(${sx},${sy})` }}>
           <div style={{ position: "absolute", left: -px(el.x), top: -px(el.y) }}>
-            {el.children.map((c, ci) => <ElementNode key={`${c.id}-${ci}`} el={c} urls={urls} hints={hints} idPrefix={idPrefix} labels={labels} editingText={editingText} tableSelection={tableSelection} onTableCellSelect={onTableCellSelect} onAutoSizeText={null} onEditText={onEditText} onTextCommit={onTextCommit} onTextCancel={onTextCancel} />)}
+            {el.children.map((c, ci) => <MemoElement key={`${c.id}-${ci}`} el={c} urls={urls} hints={hints} idPrefix={idPrefix} labels={labels} editingText={editingText} tableSelection={tableSelection} onTableCellSelect={st.onTableCellSelect} onAutoSizeText={null} onEditText={st.onEditText} onTextCommit={st.onTextCommit} onTextCancel={st.onTextCancel} />)}
           </div>
         </div>
       );
@@ -384,11 +396,11 @@ export default function SlideView({ model, urls, overrides, geometryDrafts, hint
     const previewEl = el.kind === "table" && ov.tableGrid && el.table
       ? { ...el, ...ov, table: { ...el.table, cols: ov.tableGrid.cols, rows: el.table.rows.map((r, i) => ({ ...r, h: ov.tableGrid.rows[i] ?? r.h })) } }
       : { ...el, ...ov };
-    return <ElementNode key={el.id} el={previewEl} urls={urls} hints={hints} idPrefix={idPrefix} labels={labels} editingText={editingText} tableSelection={tableSelection} onTableCellSelect={onTableCellSelect} onAutoSizeText={suspendAutoSize ? null : onAutoSizeText} onEditText={onEditText} onTextCommit={onTextCommit} onTextCancel={onTextCancel} />;
+    return <MemoElement key={el.id} el={previewEl} urls={urls} hints={hints} idPrefix={idPrefix} labels={labels} editingText={editingText} tableSelection={tableSelection} onTableCellSelect={st.onTableCellSelect} onAutoSizeText={suspendAutoSize ? null : st.onAutoSizeText} onEditText={st.onEditText} onTextCommit={st.onTextCommit} onTextCancel={st.onTextCancel} />;
   };
   return (
     <div className="pptx-slide" style={{ width: W, height: H, ...backgroundStyle(model.background, urls) }}>
-      {model.under.map((el, ui) => <ElementNode key={`u${ui}`} el={el} urls={urls} hints={false} idPrefix={idPrefix} labels={labels} />)}
+      {model.under.map((el, ui) => <MemoElement key={`u${ui}`} el={el} urls={urls} hints={false} idPrefix={idPrefix} labels={labels} />)}
       {model.elements.map(renderTop)}
     </div>
   );
