@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { ArrowLeft, Check, Download, FileText, Image as ImageIcon, Loader2, Menu, Palette, Pencil, Plus, Presentation, RefreshCw, Send, Sparkles, Wand2, X } from "lucide-react";
+import { ArrowLeft, Check, Download, FileText, Image as ImageIcon, Loader2, Maximize2, Menu, Palette, Pencil, Plus, Presentation, RefreshCw, Send, Sparkles, Wand2, X } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useI18n } from "@/i18n/I18nContext";
 import { runEyadEngine } from "@/services/eyadEngineService";
@@ -21,6 +21,34 @@ import VoiceOverlay from "@/components/chat/VoiceOverlay";
 import { splitIntoSentences } from "@/utils/sentenceSegmenter";
 import { getStudioById } from "@/studios/studioRegistry";
 import "./chat.css";
+
+// The SVG editor is large and only needed after a logo is approved and edited.
+const SvgEditorDialog = React.lazy(() => import("@/components/svgEditor/SvgEditorDialog"));
+
+// Existing chat PNG download behaviour (fetch -> blob -> anchor download),
+// shared by every download button in this page so there is one implementation.
+async function downloadImageAsPng(url, filename) {
+  const response = await fetch(url, { mode: "cors" });
+  if (!response.ok) throw new Error("DOWNLOAD_FETCH_FAILED");
+  const blob = await response.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = objectUrl;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+}
+
+// A generated asset belongs to exactly one assistant message. Matching by asset
+// id (instead of messageId, which live messages do not have) guarantees that a
+// selection/approval only ever touches the message that really owns the image.
+function messageOwnsAsset(item, assetId) {
+  if (!item || !assetId) return false;
+  if (Array.isArray(item.images) && item.images.some((image) => image?.asset_id === assetId)) return true;
+  return item.assetId === assetId;
+}
 
 export default function Chat() {
   const navigate = useNavigate();
@@ -62,6 +90,15 @@ export default function Chat() {
   const [lastImage, setLastImage] = useState(null);
   const [approvingLogoAssetId, setApprovingLogoAssetId] = useState(null);
   const [approvedLogoAssetId, setApprovedLogoAssetId] = useState(null);
+  // Logo Download/Edit step state. `logoBusy` makes the three async actions
+  // (PNG, SVG, Edit) mutually exclusive; the format menu is per approved asset.
+  const [logoBusy, setLogoBusy] = useState(null); // { assetId, kind: "png" | "svg" | "edit" }
+  const [logoDownloadMenuAssetId, setLogoDownloadMenuAssetId] = useState(null);
+  const [logoActionError, setLogoActionError] = useState(null); // { assetId, message }
+  const [svgEditorSource, setSvgEditorSource] = useState(null); // { url, name }
+  const logoSvgCacheRef = useRef(new Map());
+  const logoVectorizeInflightRef = useRef(new Map());
+  const logoSelectionQueueRef = useRef(Promise.resolve());
   const [attachments, setAttachments] = useState([]);
   const [lightboxImage, setLightboxImage] = useState(null);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -282,6 +319,11 @@ export default function Chat() {
       setProjectId(null);
       setStudioId(null);
       setProjectContext(null);
+      setApprovedLogoAssetId(null);
+      setLogoBusy(null);
+      setLogoDownloadMenuAssetId(null);
+      setLogoActionError(null);
+      setSvgEditorSource(null);
       setMessages([]);
       setChoices([]);
       setSelections({});
@@ -293,7 +335,12 @@ export default function Chat() {
     setProjectLoading(true);
     setProjectId(requestedProjectId);
     getProjectContext(requestedProjectId).then((context) => {
-      if (active) setProjectContext(context);
+      if (!active) return;
+      setProjectContext(context);
+      const persistedData = context?.project?.project_data || {};
+      if (persistedData.approved_studio === "logo" && persistedData.approved_asset_id) {
+        setApprovedLogoAssetId((current) => current || persistedData.approved_asset_id);
+      }
     }).catch(() => {
       if (active) setProjectContext(null);
     });
@@ -1200,29 +1247,53 @@ export default function Chat() {
   const selectGeneratedImage = async (message, image) => {
     const assetId = image?.asset_id;
     if (!projectId || !assetId) return;
+    const messageIdForPersist = message?.messageId || null;
+    const previousAssetId = (messages.find((item) => messageOwnsAsset(item, assetId)) || {}).selectedAssetId || null;
+    if (previousAssetId === assetId) return;
 
+    // Optimistic: the chosen logo is highlighted immediately. Only the message
+    // that owns this asset is updated.
+    setLogoActionError(null);
+    setLogoDownloadMenuAssetId(null);
+    setMessages((items) => items.map((item) => (
+      messageOwnsAsset(item, assetId)
+        ? { ...item, selectedAssetId: assetId, assetId, asset: { id: assetId, url: image.data_url || null } }
+        : item
+    )));
+    setLastImage(image.data_url || null);
+
+    // Persist selections one after another so quickly tapping image 1 then 2
+    // always leaves image 2 as the stored selection.
+    const persist = logoSelectionQueueRef.current
+      .catch(() => {})
+      .then(() => assetService.selectAsset(projectId, assetId, messageIdForPersist));
+    logoSelectionQueueRef.current = persist;
     try {
-      const selected = await assetService.selectAsset(projectId, assetId, message.messageId || null);
-      setLastImage(selected.url || image.data_url || null);
-      setMessages((items) => items.map((item) => {
-        if (item.messageId !== message.messageId) return item;
-        return {
-          ...item,
-          selectedAssetId: assetId,
-          assetId,
-          asset: { id: assetId, url: selected.url || image.data_url || null },
-        };
-      }));
+      const selected = await persist;
+      if (selected?.url) setLastImage(selected.url);
     } catch (error) {
       console.error("EYAD asset selection failed", error);
+      setMessages((items) => items.map((item) => (
+        messageOwnsAsset(item, assetId)
+          ? { ...item, selectedAssetId: previousAssetId }
+          : item
+      )));
+      setLogoActionError({
+        assetId,
+        message: isAr ? "تعذر اختيار الشعار. حاول مرة أخرى." : "Could not select the logo. Please try again.",
+      });
     }
   };
 
+  // Approval records WHICH logo was approved. Vectorization is deliberately not
+  // done here: SVG is produced on demand (Download > SVG, or Edit), exactly like
+  // the SVG export in the studios, so approving stays instant.
   const approveGeneratedLogo = async (message, image) => {
     const assetId = image?.asset_id;
     if (!projectId || !assetId || approvingLogoAssetId) return;
 
     setApprovingLogoAssetId(assetId);
+    setLogoActionError(null);
     try {
       const current = await projectService.get(projectId);
       if (!current) throw new Error("PROJECT_NOT_FOUND");
@@ -1244,8 +1315,8 @@ export default function Chat() {
           asset_id: assetId,
           url: assetUrl,
           name: brandName || "Approved Logo",
-          // The newly selected asset becomes the active source immediately.
-          // Never inherit an older logo SVG while this asset is being vectorized.
+          // The newly approved asset is the only source of truth. Never inherit
+          // an older logo's SVG: it is vectorized on demand for this asset.
           svg_url: null,
         },
       };
@@ -1259,58 +1330,116 @@ export default function Chat() {
         },
       });
 
-      let svgUrl = null;
-      try {
-        const vectorized = await runEyadEngine({
-          message: "Vectorize the approved logo asset into a production SVG.",
-          projectId,
-          studioId: "logo",
-          language: isAr ? "ar" : "en",
-          action: "vectorize_logo",
-          designOptions: { selected_asset_id: assetId },
-        });
-        svgUrl = vectorized?.svg_url || null;
-      } catch (vectorError) {
-        console.warn("[Chat] approved-logo vectorization failed", vectorError);
-      }
-
-      await saveBrandIdentity(projectId, {
-        ...brandIdentity,
-        logo: {
-          ...brandIdentity.logo,
-          svg_url: svgUrl,
-        },
-      });
+      await saveBrandIdentity(projectId, brandIdentity);
 
       setApprovedLogoAssetId(assetId);
-      setMessages((items) => items.map((item) => {
-        if (item.messageId !== message.messageId) return item;
-        return {
-          ...item,
-          selectedAssetId: assetId,
-          approvedAssetId: assetId,
-        };
-      }));
+      setLogoDownloadMenuAssetId(null);
+      setMessages((items) => items.map((item) => (
+        messageOwnsAsset(item, assetId)
+          ? { ...item, selectedAssetId: assetId, approvedAssetId: assetId }
+          : item
+      )));
     } catch (error) {
       console.error("[Chat] logo approval failed", error);
+      setLogoActionError({
+        assetId,
+        message: isAr ? "تعذر اعتماد الشعار. حاول مرة أخرى." : "Could not approve the logo. Please try again.",
+      });
     } finally {
       setApprovingLogoAssetId(null);
     }
   };
 
+  // Vectorizes the approved logo through the existing Recraft `vectorize_logo`
+  // engine action and resolves to a real SVG URL. Concurrent callers for the
+  // same asset (Download SVG + Edit) share one request, and finished results
+  // are remembered, so Recraft is never called twice for the same logo.
+  const ensureLogoSvg = (assetId) => {
+    if (!projectId || !assetId) return Promise.reject(new Error("SVG_SOURCE_MISSING"));
+    const key = `${projectId}:${assetId}`;
+    const cached = logoSvgCacheRef.current.get(key);
+    if (cached) return Promise.resolve(cached);
+    const inflight = logoVectorizeInflightRef.current.get(key);
+    if (inflight) return inflight;
+
+    const run = (async () => {
+      const result = await runEyadEngine({
+        message: "Vectorize the approved logo asset into a production SVG.",
+        projectId,
+        studioId: "logo",
+        language: isAr ? "ar" : "en",
+        action: "vectorize_logo",
+        designOptions: { selected_asset_id: assetId },
+      });
+      const svgUrl = result?.svg_url || result?.asset?.svg_url || null;
+      if (!svgUrl) throw new Error("SVG_VECTORIZE_FAILED");
+      logoSvgCacheRef.current.set(key, svgUrl);
+      return svgUrl;
+    })().finally(() => {
+      logoVectorizeInflightRef.current.delete(key);
+    });
+    logoVectorizeInflightRef.current.set(key, run);
+    return run;
+  };
+
+  // Download the approved logo. PNG reuses the existing chat PNG download;
+  // SVG is a genuine Recraft vector (never a renamed or wrapped PNG).
+  const downloadApprovedLogo = async (format, image, imageIndex) => {
+    const assetId = image?.asset_id;
+    if (!assetId || logoBusy || approvingLogoAssetId) return;
+    if (approvedLogoAssetId !== assetId) return;
+
+    setLogoActionError(null);
+    setLogoBusy({ assetId, kind: format });
+    try {
+      if (format === "png") {
+        await downloadImageAsPng(image.data_url, `eyad-logo-${imageIndex + 1}.png`);
+      } else {
+        const svgUrl = await ensureLogoSvg(assetId);
+        const { exportImageSvg } = await import("@/services/exportService");
+        await exportImageSvg(image.data_url, `eyad-logo-${imageIndex + 1}.svg`, svgUrl);
+      }
+      setLogoDownloadMenuAssetId(null);
+    } catch (error) {
+      console.error(`[Chat] approved logo ${format} download failed`, error);
+      setLogoActionError({
+        assetId,
+        message: format === "png"
+          ? (isAr ? "تعذر تنزيل ملف PNG. حاول مرة أخرى." : "Could not download the PNG. Please try again.")
+          : (isAr ? "تعذر تحويل الشعار إلى SVG. حاول مرة أخرى." : "Could not convert the logo to SVG. Please try again."),
+      });
+    } finally {
+      setLogoBusy(null);
+    }
+  };
+
+  // Edit the approved logo: vectorize it with Recraft first, and only when that
+  // succeeds open the existing SVG editor with the resulting SVG loaded.
+  const editApprovedLogo = async (image) => {
+    const assetId = image?.asset_id;
+    if (!assetId || logoBusy || approvingLogoAssetId) return;
+    if (approvedLogoAssetId !== assetId) return;
+
+    setLogoActionError(null);
+    setLogoDownloadMenuAssetId(null);
+    setLogoBusy({ assetId, kind: "edit" });
+    try {
+      const svgUrl = await ensureLogoSvg(assetId);
+      setSvgEditorSource({ url: svgUrl, name: "eyad-logo" });
+    } catch (error) {
+      console.error("[Chat] approved logo vectorization for editing failed", error);
+      setLogoActionError({
+        assetId,
+        message: isAr ? "تعذر تجهيز الشعار للتعديل. حاول مرة أخرى." : "Could not prepare the logo for editing. Please try again.",
+      });
+    } finally {
+      setLogoBusy(null);
+    }
+  };
+
   const handleCreativeAction = async (action, message) => {
     if (action.kind === "download" && message.image) {
-      const response = await fetch(message.image, { mode: "cors" });
-      if (!response.ok) throw new Error("DOWNLOAD_FETCH_FAILED");
-      const blob = await response.blob();
-      const objectUrl = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = objectUrl;
-      link.download = `eyad-${message.studioId || "design"}.png`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+      await downloadImageAsPng(message.image, `eyad-${message.studioId || "design"}.png`);
       return;
     }
 
@@ -1530,14 +1659,19 @@ export default function Chat() {
                           {images.slice(0, 2).map((image, imageIndex) => {
                             const assetId = image.asset_id;
                             const isSelected = Boolean(assetId && selectedId === assetId);
+                            const isApprovedImage = Boolean(isLogoResult && assetId && approvedLogoAssetId === assetId);
+                            const selectsOnTap = Boolean(isLogoResult && assetId);
 
                             return (
-                              <article key={assetId || imageIndex} className={`eyad-chat-page__generated-card ${isSelected ? "is-selected" : ""}`}>
+                              <article key={assetId || imageIndex} className={`eyad-chat-page__generated-card ${isSelected ? "is-selected" : ""} ${isSelected && isApprovedImage ? "is-approved" : ""}`}>
                                 <button
                                   type="button"
-                                  className="eyad-chat-page__generated-card-image"
-                                  onClick={() => setLightboxImage(image.data_url)}
-                                  aria-label={isAr ? `فتح التصميم ${imageIndex + 1}` : `Open design ${imageIndex + 1}`}
+                                  className={`eyad-chat-page__generated-card-image ${selectsOnTap ? "is-selectable" : ""}`}
+                                  onClick={() => (selectsOnTap ? selectGeneratedImage(message, image) : setLightboxImage(image.data_url))}
+                                  aria-label={selectsOnTap
+                                    ? (isAr ? `اختيار الشعار ${imageIndex + 1}` : `Select logo ${imageIndex + 1}`)
+                                    : (isAr ? `فتح التصميم ${imageIndex + 1}` : `Open design ${imageIndex + 1}`)}
+                                  aria-pressed={selectsOnTap ? isSelected : undefined}
                                 >
                                   <img src={image.data_url} alt={isAr ? `التصميم ${imageIndex + 1}` : `Design ${imageIndex + 1}`} />
                                 </button>
@@ -1556,98 +1690,145 @@ export default function Chat() {
                                   </button>
                                 )}
 
-                                <div className="eyad-chat-page__generated-card-actions">
-                                  <button type="button" onClick={async () => {
-                                    const response = await fetch(image.data_url, { mode: "cors" });
-                                    if (!response.ok) throw new Error("DOWNLOAD_FETCH_FAILED");
-                                    const blob = await response.blob();
-                                    const objectUrl = URL.createObjectURL(blob);
-                                    const link = document.createElement("a");
-                                    link.href = objectUrl;
-                                    link.download = `eyad-${isLogoResult ? "logo" : "design"}-${imageIndex + 1}.png`;
-                                    document.body.appendChild(link);
-                                    link.click();
-                                    link.remove();
-                                    setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
-                                  }}>
-                                    <Download />
-                                    <span>{isAr ? "تنزيل PNG" : "Download PNG"}</span>
-                                  </button>
+                                {isLogoResult && isSelected && (
+                                  <span className="eyad-chat-page__generated-badge">
+                                    {isApprovedImage ? (isAr ? "معتمد" : "Approved") : (isAr ? "تم الاختيار" : "Selected")}
+                                  </span>
+                                )}
 
+                                {selectsOnTap && (
                                   <button
                                     type="button"
-                                    className="is-primary"
-                                    onClick={() => {
-                                      const chosen = { ...message, assetId: assetId || message.assetId, image: image.data_url };
-                                      handleCreativeAction(
-                                        { id: "open_studio", kind: "route", studioId: isLogoResult ? "logo" : (message.studioId || "ai-images"), mode: isLogoResult ? "ai" : undefined },
-                                        chosen
-                                      );
-                                    }}
+                                    className="eyad-chat-page__generated-zoom"
+                                    onClick={() => setLightboxImage(image.data_url)}
+                                    aria-label={isAr ? `عرض الشعار ${imageIndex + 1} بالحجم الكامل` : `View logo ${imageIndex + 1} full size`}
                                   >
-                                    <Pencil />
-                                    <span>{isAr ? (isLogoResult ? "تعديل هذا الشعار" : "فتح هذا التصميم") : (isLogoResult ? "Edit this logo" : "Open this design")}</span>
+                                    <Maximize2 />
                                   </button>
-                                </div>
+                                )}
+
+                                {!isLogoResult && (
+                                  <div className="eyad-chat-page__generated-card-actions">
+                                    <button type="button" onClick={() => downloadImageAsPng(image.data_url, `eyad-design-${imageIndex + 1}.png`).catch((error) => console.error("[Chat] PNG download failed", error))}>
+                                      <Download />
+                                      <span>{isAr ? "تنزيل PNG" : "Download PNG"}</span>
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      className="is-primary"
+                                      onClick={() => {
+                                        const chosen = { ...message, assetId: assetId || message.assetId, image: image.data_url };
+                                        handleCreativeAction(
+                                          { id: "open_studio", kind: "route", studioId: message.studioId || "ai-images", mode: undefined },
+                                          chosen
+                                        );
+                                      }}
+                                    >
+                                      <Pencil />
+                                      <span>{isAr ? "فتح هذا التصميم" : "Open this design"}</span>
+                                    </button>
+                                  </div>
+                                )}
                               </article>
                             );
                           })}
                         </div>
 
-                        <div className="eyad-chat-page__generated-selection-actions">
-                          {selectedImage && isLogoResult ? (
+                        {(() => {
+                          const selectedAssetIdValue = selectedImage?.asset_id || null;
+                          const selectedImageIndex = selectedImage ? images.findIndex((item) => item.asset_id === selectedAssetIdValue) : -1;
+                          const isApproved = Boolean(isLogoResult && selectedAssetIdValue && approvedLogoAssetId === selectedAssetIdValue);
+                          const approvingHere = Boolean(selectedAssetIdValue && approvingLogoAssetId === selectedAssetIdValue);
+                          const busyKind = selectedAssetIdValue && logoBusy?.assetId === selectedAssetIdValue ? logoBusy.kind : null;
+                          const menuOpen = Boolean(isApproved && logoDownloadMenuAssetId === selectedAssetIdValue);
+                          const anyBusy = Boolean(logoBusy) || Boolean(approvingLogoAssetId);
+                          const errorHere = logoActionError && images.some((item) => item.asset_id === logoActionError.assetId)
+                            ? logoActionError.message
+                            : "";
+
+                          return (
                             <>
-                              <button
-                                type="button"
-                                className="is-primary"
-                                onClick={() => approveGeneratedLogo(
-                                  messages.find((item) => item.messageId === message.messageId) || message,
-                                  selectedImage
+                              <div className="eyad-chat-page__generated-selection-actions">
+                                {isLogoResult && selectedImage ? (
+                                  isApproved ? (
+                                    <>
+                                      <button
+                                        type="button"
+                                        className="is-primary"
+                                        onClick={() => setLogoDownloadMenuAssetId(menuOpen ? null : selectedAssetIdValue)}
+                                        disabled={anyBusy}
+                                        aria-expanded={menuOpen}
+                                      >
+                                        <Download />
+                                        <span>{isAr ? "تنزيل" : "Download"}</span>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="is-primary"
+                                        onClick={() => editApprovedLogo(selectedImage)}
+                                        disabled={anyBusy}
+                                      >
+                                        {busyKind === "edit" ? <Loader2 className="eyad-chat-page__spin" /> : <Pencil />}
+                                        <span>{isAr ? "تعديل" : "Edit"}</span>
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      className="is-primary"
+                                      onClick={() => approveGeneratedLogo(message, selectedImage)}
+                                      disabled={sending || approvingHere || anyBusy}
+                                    >
+                                      {approvingHere ? <Loader2 className="eyad-chat-page__spin" /> : <Check />}
+                                      <span>{isAr ? "اعتماد الشعار" : "Approve logo"}</span>
+                                    </button>
+                                  )
+                                ) : (
+                                  <div className="eyad-chat-page__generated-hint">
+                                    <Check />
+                                    <span>{isLogoResult
+                                      ? (isAr ? "اختر أحد الشعارين للمتابعة." : "Select one of the two logos to continue.")
+                                      : (isAr ? "اختر صورة واحدة للمتابعة." : "Select one image to continue.")}</span>
+                                  </div>
                                 )}
-                                disabled={sending || approvingLogoAssetId === selectedImage.asset_id}
-                              >
-                                {approvingLogoAssetId === selectedImage.asset_id ? <Loader2 /> : approvedLogoAssetId === selectedImage.asset_id ? <Check /> : <Check />}
-                                <span>{approvedLogoAssetId === selectedImage.asset_id
-                                  ? (isAr ? "تم اعتماد الشعار" : "Logo approved")
-                                  : (isAr ? "اعتماد الشعار" : "Approve logo")}</span>
-                              </button>
+                              </div>
 
-                              <button
-                                type="button"
-                                className="is-primary"
-                                onClick={() => handleCreativeAction(
-                                  { id: "open_logo_studio", kind: "route", studioId: "logo", mode: "ai" },
-                                  { ...message, assetId: selectedImage.asset_id, image: selectedImage.data_url }
-                                )}
-                                disabled={sending}
-                              >
-                                <Pencil />
-                                <span>{isAr ? "تعديل في استوديو الشعارات" : "Edit in Logo Studio"}</span>
-                              </button>
+                              {menuOpen && (
+                                <div className="eyad-chat-page__generated-format-row" role="group" aria-label={isAr ? "اختر صيغة التنزيل" : "Choose a download format"}>
+                                  <button type="button" onClick={() => downloadApprovedLogo("png", selectedImage, selectedImageIndex)} disabled={anyBusy}>
+                                    {busyKind === "png" ? <Loader2 className="eyad-chat-page__spin" /> : <Download />}
+                                    <span>PNG</span>
+                                  </button>
+                                  <button type="button" onClick={() => downloadApprovedLogo("svg", selectedImage, selectedImageIndex)} disabled={anyBusy}>
+                                    {busyKind === "svg" ? <Loader2 className="eyad-chat-page__spin" /> : <Download />}
+                                    <span>SVG</span>
+                                  </button>
+                                </div>
+                              )}
 
-                              <button
-                                type="button"
-                                onClick={() => handleCreativeAction(
-                                  { id: "visual_identity", kind: "route", studioId: "brand-kit" },
-                                  { ...message, assetId: selectedImage.asset_id, image: selectedImage.data_url }
-                                )}
-                                disabled={sending}
-                              >
-                                <Palette />
-                                <span>{isAr ? "الذهاب إلى الهوية البصرية" : "Go to Visual Identity"}</span>
-                              </button>
+                              {(busyKind === "svg" || busyKind === "edit") && (
+                                <div className="eyad-chat-page__generated-status" role="status">
+                                  <Loader2 className="eyad-chat-page__spin" />
+                                  <span>{busyKind === "svg"
+                                    ? (isAr ? "جارٍ تحويل الشعار إلى SVG عبر Recraft... قد يستغرق ذلك حتى دقيقة." : "Converting your logo to SVG with Recraft... this can take up to a minute.")
+                                    : (isAr ? "جارٍ تجهيز الشعار للتعديل (تحويله إلى SVG)... قد يستغرق ذلك حتى دقيقة." : "Preparing your logo for editing (vectorizing)... this can take up to a minute.")}</span>
+                                </div>
+                              )}
+
+                              {errorHere && (
+                                <div className="eyad-chat-page__generated-error" role="alert">{errorHere}</div>
+                              )}
                             </>
-                          ) : (
-                            <div className="eyad-chat-page__generated-hint">
-                              <Check />
-                              <span>{isAr ? "اختر صورة واحدة للمتابعة." : "Select one image to continue."}</span>
-                            </div>
-                          )}
-                        </div>
+                          );
+                        })()}
 
                         <div className="eyad-chat-page__creative-actions" aria-label={isAr ? "إجراءات التصميم" : "Design actions"}>
                           {getCreativeActions(message.studioId || studioId, language)
                             .filter((action) => !["open_studio", "visual_identity", "ai_images", "presentation"].includes(action.id))
+                            // Logos are downloaded only through Select > Approve > Download, so the
+                            // generic (unapproved) Download shortcut is hidden for logo results.
+                            .filter((action) => !(isLogoResult && action.id === "download"))
                             .map((action) => {
                               const Icon = actionIcons[action.icon] || Wand2;
                               return (
@@ -1807,6 +1988,17 @@ export default function Chat() {
         />
         </div>
       </div>
+
+      {svgEditorSource && (
+        <React.Suspense fallback={null}>
+          <SvgEditorDialog
+            direction={isAr ? "rtl" : "ltr"}
+            initialSvgUrl={svgEditorSource.url}
+            initialName={svgEditorSource.name}
+            onClose={() => setSvgEditorSource(null)}
+          />
+        </React.Suspense>
+      )}
 
       {lightboxImage && (
         <div className="eyad-chat-page__image-lightbox" onClick={() => setLightboxImage(null)} role="dialog" aria-modal="true" aria-label={isAr ? "عرض الصورة بالحجم الكامل" : "Full screen image"}>
