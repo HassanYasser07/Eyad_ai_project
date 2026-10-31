@@ -16,7 +16,7 @@ const HANDLES = [["nw", 0, 0], ["n", 0.5, 0], ["ne", 1, 0], ["e", 1, 0.5], ["se"
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const boundsOf = (e) => ({ x: e.x, y: e.y, w: e.w, h: e.h, rot: e.rot, flipH: e.flipH, flipV: e.flipV });
 
-const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelect, onSelectionComplete, onInteractionStart, onCommit, onEditText, onTextCommit, onTextCancel, onTableCellSelect, onAutoSizeText, textAutoSizeHeights, editingText, tableSelection, cellToolbar, onTableAdd, onTableSelectAll, onCopy, onDelete, onRotate, multi, grid, locked, labels, onZoom, compact, onSwipe, canPrev, canNext }, ref) {
+const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelect, onSelectionComplete, onInteractionStart, onCommit, onEditText, onTextCommit, onTextCancel, onTableCellSelect, onAutoSizeText, textAutoSizeHeights, editingText, tableSelection, cellToolbar, onTableAdd, onTableSelectAll, onCopy, onDelete, onRotate, multi, grid, locked, labels, onZoom, compact, onSwipe, canPrev, canNext, keepInView }, ref) {
   const stageRef = React.useRef(null);
   const [size, setSize] = React.useState({ w: 800, h: 600 });
   const [view, setView] = React.useState({ zoom: 1, pan: { x: 0, y: 0 } });
@@ -58,7 +58,7 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
 
   // Everything the pointer handlers need, kept fresh without re-binding listeners.
   const R = React.useRef({});
-  R.current = { onSwipe, canPrev, canNext, s, ox, oy, fit, size, W, H, model, selection, multi, grid, locked, view, onSelect, onSelectionComplete, onInteractionStart, onCommit, onEditText, draft, editingText, tableSelection };
+  R.current = { compact, onSwipe, canPrev, canNext, s, ox, oy, fit, size, W, H, model, selection, multi, grid, locked, view, onSelect, onSelectionComplete, onInteractionStart, onCommit, onEditText, draft, editingText, tableSelection };
   const pointers = React.useRef(new Map());
   const gesture = React.useRef(null);
   const lastTap = React.useRef({ t: 0, id: null, x: 0, y: 0 });
@@ -105,7 +105,10 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
 
   const clampPan = React.useCallback((zoom, pan, sz = R.current.size) => {
     const sc = R.current.fit * zoom;
-    const maxX = Math.max(0, (R.current.W * sc) / 2 + sz.w / 2 - 60), maxY = Math.max(0, (R.current.H * sc) / 2 + sz.h / 2 - 60);
+    // Touch layouts: the slide may never be dragged out of the stage (a sheet would then hide it); it can only be
+    // panned while it is larger than the stage. Desktop keeps the loose limit.
+    const maxX = R.current.compact ? Math.max(0, (R.current.W * sc - sz.w) / 2 + 10) : Math.max(0, (R.current.W * sc) / 2 + sz.w / 2 - 60);
+    const maxY = R.current.compact ? Math.max(0, (R.current.H * sc - sz.h) / 2 + 10) : Math.max(0, (R.current.H * sc) / 2 + sz.h / 2 - 60);
     return { x: clamp(pan.x, -maxX, maxX), y: clamp(pan.y, -maxY, maxY) };
   }, []);
   // A sheet opening / closing resizes the stage. On touch layouts the slide must stay in view, so at fit zoom it is
@@ -117,6 +120,11 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
       return pan.x === v.pan.x && pan.y === v.pan.y ? v : { ...v, pan };
     });
   }, [compact, size.w, size.h, clampPan]);
+  // A sheet / drawer is open: whatever zoom or pan the user left behind, show the whole slide in the space that remains.
+  React.useEffect(() => {
+    if (!compact || !keepInView) return;
+    setView((v) => (v.zoom === 1 && v.pan.x === 0 && v.pan.y === 0 ? v : { zoom: 1, pan: { x: 0, y: 0 } }));
+  }, [compact, keepInView, size.w, size.h]);
   const zoomAt = React.useCallback((factor, cx, cy) => {
     setView((v) => {
       const { fit: f, size: sz, W: w, H: h } = R.current;
