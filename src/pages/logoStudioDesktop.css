@@ -182,3 +182,49 @@
   .logo-desktop-svg-test-row{align-items:flex-start;flex-direction:column}
   .logo-desktop-svg-test-row>button{width:100%}
 }
+
+/* ---- Detailed brief card: brand fields, 10 style cards, 10 palette cards ---- */
+@media (min-width:1024px){
+  .logo-desktop-brand-fields{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:12px 0 4px}
+  .logo-desktop-brand-field{display:flex;flex-direction:column;gap:6px;min-width:0}
+  .logo-desktop-brand-field>span{font-size:.72rem;font-weight:800;color:#334155}
+  .logo-desktop-brand-field input{height:46px;padding:0 14px;border:1.5px solid #e2e8f0;border-radius:12px;background:#fff;font:inherit;font-size:.85rem;color:#111b36;outline:none;transition:border-color .15s,box-shadow .15s}
+  .logo-desktop-brand-field input:focus{border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.12)}
+  .logo-desktop-choice-section{margin-top:22px}
+  .logo-desktop-choice-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px}
+  .logo-desktop-choice-kicker{display:block;font-size:.6rem;font-weight:900;letter-spacing:.08em;color:#2563eb}
+  .logo-desktop-choice-heading h3{margin:4px 0 2px;font-size:1rem;font-weight:900;color:#111b36}
+  .logo-desktop-choice-heading p{margin:0;font-size:.72rem;color:#64748b}
+  .logo-desktop-choice-count{flex:none;padding:5px 10px;border-radius:999px;background:#eef4ff;color:#2563eb;font-size:.66rem;font-weight:800}
+  .logo-desktop-style-cards{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}
+  .logo-desktop-palette-cards{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}
+  .logo-desktop-style-card,.logo-desktop-palette-card{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;min-height:104px;padding:12px 8px;border:2px solid #e8edf5;border-radius:14px;background:#fff;color:#111b36;text-align:center;cursor:pointer;transition:border-color .15s,box-shadow .15s,transform .15s}
+  .logo-desktop-style-card:hover,.logo-desktop-palette-card:hover{border-color:#93c5fd;transform:translateY(-2px)}
+  .logo-desktop-style-card.is-selected,.logo-desktop-palette-card.is-selected{border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.14);background:#f5f9ff}
+  .logo-desktop-style-card strong,.logo-desktop-palette-card strong{font-size:.78rem;font-weight:850}
+  .logo-desktop-style-card small,.logo-desktop-palette-card small{font-size:.62rem;color:#64748b;line-height:1.3}
+  .logo-desktop-style-icon{display:grid;place-items:center;width:36px;height:36px;border-radius:11px;background:#eef4ff;color:#2563eb}
+  .logo-desktop-style-icon svg{width:19px;height:19px}
+  .tone-slate .logo-desktop-style-icon{background:#eef1f5;color:#475569}
+  .tone-gold .logo-desktop-style-icon{background:#fff5d6;color:#b7791f}
+  .tone-navy .logo-desktop-style-icon{background:#e3e9f6;color:#1e3a8a}
+  .tone-red .logo-desktop-style-icon{background:#fde8e8;color:#d71920}
+  .tone-purple .logo-desktop-style-icon{background:#f0e9ff;color:#6d28d9}
+  .tone-teal .logo-desktop-style-icon{background:#dcf5ef;color:#0f9d85}
+  .tone-cyan .logo-desktop-style-icon{background:#dff6fc;color:#0891b2}
+  .tone-brown .logo-desktop-style-icon{background:#f3e9e0;color:#8a6247}
+  .tone-gradient .logo-desktop-style-icon{background:linear-gradient(135deg,#6d28d9,#d946ef 55%,#fb923c);color:#fff}
+  .logo-desktop-palette-swatches{display:flex;direction:ltr}
+  .logo-desktop-palette-swatches i{display:block;width:26px;height:26px;border-radius:50%;border:2px solid #fff;box-shadow:0 2px 6px rgba(15,23,42,.14);margin-left:-8px}
+  .logo-desktop-palette-swatches i:first-child{margin-left:0}
+  .logo-desktop-selected-check{position:absolute;top:8px;right:8px;display:grid;place-items:center;width:20px;height:20px;border-radius:50%;background:#2563eb;color:#fff}
+  .logo-desktop-selected-check svg{width:12px;height:12px}
+  .logo-desktop-prompt-controls-final{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:22px}
+  .logo-desktop-selected-summary{display:flex;align-items:center;gap:10px;font-size:.72rem;color:#64748b}
+  .logo-desktop-selected-summary strong{padding:5px 10px;border-radius:999px;background:#eef4ff;color:#2563eb;font-weight:800}
+  .logo-desktop-selected-summary em{font-style:normal;padding:5px 10px;border-radius:999px;background:#f1f5f9;color:#334155;font-weight:800}
+  .logo-desktop-error{margin-top:12px;padding:10px 14px;border-radius:10px;background:#fef2f2;color:#b91c1c;font-size:.76rem;font-weight:700}
+}
+@media (min-width:1024px) and (max-width:1280px){
+  .logo-desktop-style-cards,.logo-desktop-palette-cards{grid-template-columns:repeat(4,minmax(0,1fr))}
+}
