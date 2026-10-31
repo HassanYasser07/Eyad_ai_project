@@ -66,8 +66,12 @@ function Geometry({ el, w, h, idPrefix, urls }) {
       </>
     );
   } else body = <rect x="0" y="0" width={w} height={h} {...f} {...stroke} />;
+  // Outlines (path / custom) are plain coordinates for the size they were read at. While a resize drag is previewed the
+  // element is wider/taller than that, so map the original coordinate box onto the new size instead of waiting for the
+  // drop to re-read the shape. Ellipse / rect / line are drawn from w and h directly and need no mapping.
+  const scaled = (g.kind === "path" || g.kind === "custom") && g.baseW > 0 && g.baseH > 0 && (Math.abs(g.baseW - w) > 0.01 || Math.abs(g.baseH - h) > 0.01);
   return (
-    <svg className="pptx-geom" width={Math.max(w, 1)} height={Math.max(h, 1)} viewBox={`0 0 ${Math.max(w, 1)} ${Math.max(h, 1)}`} aria-hidden="true">
+    <svg className="pptx-geom" width={Math.max(w, 1)} height={Math.max(h, 1)} viewBox={scaled ? `0 0 ${g.baseW} ${g.baseH}` : `0 0 ${Math.max(w, 1)} ${Math.max(h, 1)}`} preserveAspectRatio={scaled ? "none" : undefined} aria-hidden="true">
       {defs.length > 0 && <defs>{defs}</defs>}
       {body}
     </svg>
