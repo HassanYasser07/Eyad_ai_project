@@ -6,7 +6,7 @@ import {
   ChevronLeft, Sparkles, FileText, Palette, Wand2, HeartPulse, Building2,
   Gem, Dumbbell, ShoppingBag, Utensils, Cpu, Store, MoreVertical, Check,
   ArrowRight, Download, Layers3, CircleCheck, Clock3, BadgeCheck, Lightbulb,
-  Workflow, FileCheck2, Boxes, FileCode2
+  Workflow, FileCheck2, Boxes, FileCode2, Minus, Landmark, Zap, PenTool, Shapes, Hourglass
 } from "lucide-react";
 import Logo from "@/components/Logo";
 import { useI18n } from "@/i18n/I18nContext";
@@ -97,10 +97,53 @@ function LogoMock({ item, interactive = false }) {
   );
 }
 
+// Parses prompts like "logo for Faragany for chicken" into { brandName, activity }.
+function parseBrief(value = "") {
+  const text = String(value).trim();
+  if (!text) return { brandName: "", activity: "" };
+  const match = text
+    .replace(/^(?:من فضلك\s+)?(?:عايز|عاوز|أريد|اريد|صمم|تصميم)\s+/i, "")
+    .replace(/^(?:اعمل|إنشاء|انشاء)\s+/i, "")
+    .replace(/^(?:شعار|لوجو|logo)\s+/i, "")
+    .trim()
+    .match(/^(.+?)\s+(?:لـ|ل|for)\s*(.+)$/i);
+  if (!match || !match[1].trim() || !match[2].trim()) return { brandName: "", activity: "" };
+  const brandName = match[1].trim().replace(/[،,.!?؟]+$/, "");
+  let activity = match[2].trim().replace(/[،,.!?؟]+$/, "");
+  if (!/^ال/.test(activity) && /^ل/.test(activity)) activity = "ال" + activity.slice(1);
+  return { brandName, activity };
+}
+
+const STYLE_CARDS = [
+  { id: "modern", ar: "حديث وعصري", en: "Modern", descAr: "متوازن ومعاصر", descEn: "Clean & current", Icon: Sparkles, color: "blue" },
+  { id: "minimal", ar: "بسيط", en: "Minimal", descAr: "أقل عناصر وأكثر وضوحًا", descEn: "Simple & clear", Icon: Minus, color: "slate" },
+  { id: "luxury", ar: "فاخر", en: "Luxury", descAr: "أناقة وتفاصيل راقية", descEn: "Elegant & premium", Icon: Crown, color: "gold" },
+  { id: "classic", ar: "كلاسيكي", en: "Classic", descAr: "ثابت وخالد", descEn: "Timeless", Icon: Landmark, color: "navy" },
+  { id: "bold", ar: "جريء", en: "Bold", descAr: "قوي ولافت", descEn: "Strong & striking", Icon: Zap, color: "red" },
+  { id: "creative", ar: "إبداعي", en: "Creative", descAr: "حر ومختلف", descEn: "Expressive", Icon: Palette, color: "purple" },
+  { id: "hand-drawn", ar: "مرسوم يدويًا", en: "Hand-drawn", descAr: "لمسة بشرية", descEn: "Personal touch", Icon: PenTool, color: "teal" },
+  { id: "geometric", ar: "هندسي", en: "Geometric", descAr: "أشكال دقيقة", descEn: "Structured forms", Icon: Shapes, color: "cyan" },
+  { id: "vintage", ar: "ريترو", en: "Vintage", descAr: "روح كلاسيكية", descEn: "Heritage feel", Icon: Hourglass, color: "brown" },
+  { id: "eyad-decides", ar: "اختيار إياد", en: "AI Decides", descAr: "أفضل اتجاه لفكرتك", descEn: "Best fit for your idea", Icon: Wand2, color: "gradient" },
+];
+
+const PALETTE_CARDS = [
+  { id: "blue", ar: "أزرق احترافي", en: "Professional Blue", noteAr: "ثقة واستقرار", noteEn: "Trust & stability", swatches: ["#0866C6", "#2798F2", "#B5DAFF"] },
+  { id: "green", ar: "أخضر طبيعي", en: "Natural Green", noteAr: "نمو وحيوية", noteEn: "Growth & vitality", swatches: ["#087A50", "#18B96B", "#B6E7CF"] },
+  { id: "purple", ar: "بنفسجي إبداعي", en: "Creative Purple", noteAr: "ابتكار وتميز", noteEn: "Innovation", swatches: ["#4C16C8", "#8A55F5", "#DCCBFF"] },
+  { id: "sunset", ar: "أحمر قوي", en: "Power Red", noteAr: "طاقة وشغف", noteEn: "Energy & passion", swatches: ["#D71920", "#F45D63", "#FFC4C6"] },
+  { id: "orange", ar: "برتقالي دافئ", en: "Warm Orange", noteAr: "حماس وإيجابية", noteEn: "Warm & positive", swatches: ["#F47716", "#FFAA45", "#FFE0B9"] },
+  { id: "gold", ar: "ذهبي فاخر", en: "Luxury Gold", noteAr: "فخامة ورقي", noteEn: "Premium & refined", swatches: ["#D99A08", "#F6C84B", "#FFF0B9"] },
+  { id: "pink", ar: "وردي عصري", en: "Modern Pink", noteAr: "أنوثة وأناقة", noteEn: "Soft & stylish", swatches: ["#D81B72", "#F45BA4", "#FFD0E5"] },
+  { id: "earth", ar: "ترابي طبيعي", en: "Natural Earth", noteAr: "استدامة ودفء", noteEn: "Warm & grounded", swatches: ["#8A6247", "#B99A83", "#E9D9CB"] },
+  { id: "mono", ar: "رمادي متوازن", en: "Balanced Gray", noteAr: "احترافية وحيادية", noteEn: "Neutral & pro", swatches: ["#292D32", "#8B929B", "#E3E6EA"] },
+  { id: "vibrant", ar: "متعدد الألوان", en: "Vibrant Mix", noteAr: "إبداع بلا حدود", noteEn: "Playful & bold", swatches: ["#7C3AED", "#0EA5E9", "#10B981", "#F59E0B"] },
+];
+
 export default function LogoStudioDesktop({
   step, setStep, name, setName, activity, setActivity, selections, updateSelection,
   generate, loading, canGenerate, isAnonymous, images, selectedImage, selectedIndex, setSelectedImage,
-  approve, approved, error, back, onSelectImage, onOpenSvgEditor,
+  approve, approved, error, back, onSelectImage, onOpenSvgEditor, approvedActions,
 }) {
   const { t, direction, toggleLanguage } = useI18n();
   const { user } = useAuth();
@@ -111,6 +154,14 @@ export default function LogoStudioDesktop({
   // This state is isolated to the desktop studio component; mobile is unchanged.
   const [brief, setBrief] = React.useState(() => new URLSearchParams(location.search).get("brief") || "");
   const [industry, setIndustry] = React.useState("");
+  const [formError, setFormError] = React.useState("");
+  // Typing "logo for X for Y" in the brief auto-fills the brand name and activity.
+  React.useEffect(() => {
+    if (!brief.trim()) return;
+    const parsed = parseBrief(brief);
+    if (!name.trim() && parsed.brandName) setName(parsed.brandName);
+    if (!activity.trim() && parsed.activity) setActivity(parsed.activity);
+  }, [brief, name, activity, setName, setActivity]);
   const [showMoreColors, setShowMoreColors] = React.useState(false);
 
   const chooseIndustry = (value) => {
@@ -139,23 +190,31 @@ export default function LogoStudioDesktop({
   };
 
   const createFromBrief = () => {
-    const idea = brief.trim();
-    const selectedIndustry = industry || activity.trim();
-    const nextActivity = idea && selectedIndustry && idea !== selectedIndustry
-      ? `${idea} (Industry: ${selectedIndustry})`
-      : idea || selectedIndustry;
-    const nextName = name.trim() || "Brand";
-    if (!nextActivity) {
-      document.getElementById("logo-desktop-brief")?.focus();
+    setFormError("");
+    const text = brief.trim();
+    const parsed = parseBrief(text);
+    const finalName = name.trim() || parsed.brandName;
+    const finalActivity = activity.trim() || industry || parsed.activity || text;
+    if (!finalName) {
+      setFormError(ar ? "اكتب اسم الشركة أو العلامة التجارية أولًا." : "Enter the company or brand name first.");
+      document.getElementById("logo-desktop-brand-name")?.focus();
       return;
     }
-    setName(nextName);
-    setActivity(nextActivity);
-    // Provide valid desktop defaults so this CTA always advances into a usable workflow.
-    if (!selections.style) updateSelection("style", "modern");
-    if (!selections.colors) updateSelection("colors", "blue");
-    if (!selections.logo_type) updateSelection("logo_type", "symbol-wordmark");
+    if (!finalActivity) {
+      setFormError(ar ? "اكتب نشاط الشركة أولًا." : "Enter the business activity first.");
+      document.getElementById("logo-desktop-activity")?.focus();
+      return;
+    }
+    const finalSelections = {
+      ...selections,
+      style: selections.style || "modern",
+      colors: selections.colors || "blue",
+      logo_type: selections.logo_type || "symbol-wordmark",
+    };
+    setName(finalName);
+    setActivity(finalActivity);
     setStep("choices");
+    generate({ name: finalName, activity: finalActivity, selections: finalSelections });
   };
 
   return (
@@ -223,28 +282,73 @@ export default function LogoStudioDesktop({
               <h2>{ar ? "أو اكتب فكرتك بنفسك" : "Or write your idea"}</h2>
               <span>{brief.length}</span>
             </div>
-            <p className="logo-desktop-prompt-sub">{ar ? "اكتب نشاطك أو أسلوبك أو أي فكرة تريد أن يظهر بها شعارك." : "Describe your business, style, or any idea you have for your logo."}</p>
-            <textarea id="logo-desktop-brief" value={brief} onChange={e=>setBrief(e.target.value)} placeholder={ar ? "مثال: أريد شعاراً لمقهى متخصص في القهوة المختصة، بطابع عصري وحديث..." : "Example: I want a modern logo for a specialty coffee shop..."}/>
-            <div className="logo-desktop-prompt-controls">
-              <label className="logo-desktop-color-control">
-                <span>{ar ? "الألوان المفضلة" : "Preferred colors"}</span>
-                <div className="logo-desktop-color-options">
-                  <button type="button" aria-label="Blue" title={ar ? "أزرق" : "Blue"} aria-pressed={selections.colors === "blue"} className={`color-dot blue ${selections.colors === "blue" ? "is-selected" : ""}`} onClick={() => chooseColor("blue")}/>
-                  <button type="button" aria-label="Purple" title={ar ? "بنفسجي" : "Purple"} aria-pressed={selections.colors === "purple"} className={`color-dot purple ${selections.colors === "purple" ? "is-selected" : ""}`} onClick={() => chooseColor("purple")}/>
-                  <button type="button" aria-label="Pink" title={ar ? "وردي" : "Pink"} aria-pressed={selections.colors === "pink"} className={`color-dot pink ${selections.colors === "pink" ? "is-selected" : ""}`} onClick={() => chooseColor("pink")}/>
-                  <button type="button" aria-label="Orange" title={ar ? "غروب" : "Sunset"} aria-pressed={selections.colors === "sunset"} className={`color-dot orange ${selections.colors === "sunset" ? "is-selected" : ""}`} onClick={() => chooseColor("sunset")}/>
-                  <button type="button" aria-label="Yellow" title={ar ? "ذهبي" : "Gold"} aria-pressed={selections.colors === "navy-gold"} className={`color-dot yellow ${selections.colors === "navy-gold" ? "is-selected" : ""}`} onClick={() => chooseColor("navy-gold")}/>
-                  <button type="button" aria-label="Teal" title={ar ? "أخضر" : "Green"} aria-pressed={selections.colors === "green"} className={`color-dot teal ${selections.colors === "green" ? "is-selected" : ""}`} onClick={() => chooseColor("green")}/>
-                  <button type="button" aria-label="More colors" aria-expanded={showMoreColors} className={`color-plus ${showMoreColors ? "is-open" : ""}`} onClick={() => setShowMoreColors(value => !value)}>+</button>
-                </div>
-                {showMoreColors && <div className="logo-desktop-extra-colors">{extraColorOptions.map(([id, label, swatches]) => <button type="button" key={id} className={`logo-desktop-extra-color ${selections.colors === id ? "is-selected" : ""}`} onClick={() => chooseColor(id)} aria-pressed={selections.colors === id}><span>{swatches.map(color => <i key={color} style={{ backgroundColor: color }} />)}</span><b>{label}</b></button>)}</div>}
+            <p className="logo-desktop-prompt-sub">{ar ? "راجع بيانات العلامة وعدّلها قبل إنشاء الشعار." : "Review your brand details and edit them before generating the logo."}</p>
+            <div className="logo-desktop-brand-fields" dir={direction}>
+              <label className="logo-desktop-brand-field" htmlFor="logo-desktop-brand-name">
+                <span>{ar ? "اسم الشركة / العلامة التجارية" : "Company / brand name"}</span>
+                <input id="logo-desktop-brand-name" value={name} onChange={e => { setName(e.target.value); setFormError(""); }} placeholder={ar ? "مثال: فرجاني" : "e.g. Faragany"} autoComplete="organization"/>
               </label>
-              <label className="logo-desktop-style-control">
-                <span>{ar ? "أسلوب التصميم" : "Design style"}</span>
-                <div className="logo-desktop-style-select-wrap"><select aria-label={ar ? "أسلوب التصميم" : "Design style"} className="logo-desktop-style-select" value={selections.style || "modern"} onChange={event => updateSelection("style", event.target.value)}>{styleOptions.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select><ChevronDown aria-hidden="true"/></div>
+              <label className="logo-desktop-brand-field" htmlFor="logo-desktop-activity">
+                <span>{ar ? "نشاط الشركة" : "Business activity"}</span>
+                <input id="logo-desktop-activity" value={activity} onChange={e => { setActivity(e.target.value); setIndustry(""); setFormError(""); }} placeholder={ar ? "مثال: الدجاج والوجبات" : "e.g. Chicken & food"}/>
               </label>
-              <button className="logo-desktop-generate logo-desktop-prompt-cta" disabled={loading} onClick={createFromBrief}><Sparkles/>{ar ? "إنشاء الشعارات" : "Create logos"}</button>
             </div>
+            <p className="logo-desktop-prompt-sub">{ar ? "وصف إضافي للتصميم (اختياري)" : "Additional design brief (optional)"}</p>
+            <textarea id="logo-desktop-brief" value={brief} onChange={e => { setBrief(e.target.value); setFormError(""); }} placeholder={ar ? "مثال: شعار عصري واضح، مناسب للواجهة والتغليف..." : "Example: A clean modern logo for storefront and packaging..."}/>
+
+            <section className="logo-desktop-choice-section" aria-labelledby="logo-desktop-styles-heading">
+              <div className="logo-desktop-choice-heading">
+                <div>
+                  <span className="logo-desktop-choice-kicker">{ar ? "اختر الاتجاه البصري" : "PICK YOUR DIRECTION"}</span>
+                  <h3 id="logo-desktop-styles-heading">{ar ? "أسلوب التصميم" : "Design style"}</h3>
+                  <p>{ar ? "10 أساليب مميزة — اختر الشكل الأقرب لشخصية علامتك." : "10 distinctive styles — choose the direction that fits your brand."}</p>
+                </div>
+                <span className="logo-desktop-choice-count">10 {ar ? "أساليب" : "styles"}</span>
+              </div>
+              <div className="logo-desktop-style-cards">
+                {STYLE_CARDS.map(({ id, ar: labelAr, en, descAr, descEn, Icon, color }) => (
+                  <button type="button" key={id} className={`logo-desktop-style-card tone-${color} ${selections.style === id ? "is-selected" : ""}`} aria-pressed={selections.style === id} onClick={() => updateSelection("style", id)}>
+                    <span className="logo-desktop-style-icon"><Icon/></span>
+                    <strong>{ar ? labelAr : en}</strong>
+                    <small>{ar ? descAr : descEn}</small>
+                    {selections.style === id && <span className="logo-desktop-selected-check"><Check/></span>}
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            <section className="logo-desktop-choice-section logo-desktop-palette-section" aria-labelledby="logo-desktop-palettes-heading">
+              <div className="logo-desktop-choice-heading">
+                <div>
+                  <span className="logo-desktop-choice-kicker">{ar ? "ألوان تعكس هوية علامتك" : "COLORS THAT DEFINE YOUR BRAND"}</span>
+                  <h3 id="logo-desktop-palettes-heading">{ar ? "الألوان المفضلة" : "Preferred colors"}</h3>
+                  <p>{ar ? "اختر مجموعة لونية متناسقة لتوجيه تصميم الشعار." : "Choose a coordinated palette to guide your logo design."}</p>
+                </div>
+                <span className="logo-desktop-choice-count">10 {ar ? "مجموعات" : "palettes"}</span>
+              </div>
+              <div className="logo-desktop-palette-cards">
+                {PALETTE_CARDS.map(({ id, ar: labelAr, en, noteAr, noteEn, swatches }) => (
+                  <button type="button" key={id} className={`logo-desktop-palette-card ${selections.colors === id ? "is-selected" : ""}`} aria-pressed={selections.colors === id} onClick={() => chooseColor(id)}>
+                    <span className="logo-desktop-palette-swatches">{swatches.map((color, i) => <i key={`${color}-${i}`} style={{ backgroundColor: color }}/>)}</span>
+                    <strong>{ar ? labelAr : en}</strong>
+                    <small>{ar ? noteAr : noteEn}</small>
+                    {selections.colors === id && <span className="logo-desktop-selected-check"><Check/></span>}
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            <div className="logo-desktop-prompt-controls logo-desktop-prompt-controls-final" dir="ltr">
+              <button type="button" className={`logo-desktop-generate logo-desktop-prompt-cta ${loading ? "is-generating" : ""}`} disabled={loading} aria-busy={loading} onClick={createFromBrief}>
+                <Sparkles/>{loading ? (ar ? "جاري إنشاء الشعار..." : "Generating logos...") : (ar ? "إنشاء الشعارات" : "Create logos")}
+              </button>
+              <div className="logo-desktop-selected-summary" dir={direction}>
+                <span>{ar ? "اختياراتك" : "Your selections"}</span>
+                <strong>{ar ? (STYLE_CARDS.find(i => i.id === selections.style)?.ar || "حديث وعصري") : (STYLE_CARDS.find(i => i.id === selections.style)?.en || "Modern")}</strong>
+                <em>{ar ? (PALETTE_CARDS.find(i => i.id === selections.colors)?.ar || "أزرق احترافي") : (PALETTE_CARDS.find(i => i.id === selections.colors)?.en || "Professional Blue")}</em>
+              </div>
+            </div>
+            {(formError || error) && <div className="logo-desktop-error" role="alert">{formError || error}</div>}
             <div className="logo-desktop-svg-test-row">
               <div><FileCode2 aria-hidden="true"/><span>{t("svgEditor.entryHint")}</span></div>
               <button type="button" onClick={onOpenSvgEditor}><FileCode2 aria-hidden="true"/>{t("svgEditor.testEnvironment")}</button>
@@ -265,7 +369,7 @@ export default function LogoStudioDesktop({
               <div className="logo-desktop-advanced-head"><div><b>{ar ? "مسار التصميم المتقدم" : "Advanced logo workflow"}</b><span>{name} · {activity}</span></div><button onClick={back}>{ar ? "رجوع" : "Back"}</button></div>
               {step === "choices" && <div className="logo-desktop-advanced-actions"><button onClick={generate} disabled={!canGenerate || loading}><Sparkles/>{ar ? "توليد الآن" : "Generate now"}</button><span>{canGenerate ? "✓" : ""}</span></div>}
               {step === "generating" && <div className="logo-desktop-status"><Sparkles/><b>{ar ? "إياد يصمم الشعار الآن..." : "EYAD is designing your logo..."}</b></div>}
-              {step === "results" && <div className="logo-desktop-results">{images.slice(0,2).map((image,index)=>{const id="concept-"+index; const selected=selectedIndex===index; const selectConcept=()=>{const selectHandler=typeof setSelectedImage==="function"?setSelectedImage:onSelectImage; if(typeof selectHandler==="function") selectHandler(index);}; return <button type="button" key={String(id)} aria-pressed={selected} aria-label={ar?`اختيار الشعار ${index+1}`:`Select logo ${index+1}`} className={"logo-desktop-result "+(selected?"selected":"")} onClick={selectConcept}><img src={image.data_url||image.url} alt={ar?`الشعار المقترح ${index+1}`:`Generated logo ${index+1}`} draggable="false"/><span aria-hidden="true">{selected?"✓":""}</span><strong>{ar?`الشعار ${index+1}`:`Logo ${index+1}`}</strong></button>})}{!approved && <div className="logo-desktop-result-actions"><button type="button" className="logo-desktop-regenerate" disabled={loading} onClick={generate}><Sparkles/>{loading?(ar?"جاري التوليد...":"Generating..."):(ar?"توليد مرة أخرى":"Generate again")}</button><button type="button" className="logo-desktop-approve logo-desktop-approve-gradient" disabled={!selectedImage||loading} onClick={approve}>{ar?"اعتماد الشعار":"Approve logo"}</button></div>}{approved && <button type="button" className="logo-desktop-approve" disabled>{ar?"تم اعتماد الشعار":"Logo approved"}</button>}</div>}
+              {step === "results" && <div className="logo-desktop-results">{images.slice(0,2).map((image,index)=>{const id="concept-"+index; const selected=selectedIndex===index; const selectConcept=()=>{const selectHandler=typeof setSelectedImage==="function"?setSelectedImage:onSelectImage; if(typeof selectHandler==="function") selectHandler(index);}; return <button type="button" key={String(id)} aria-pressed={selected} aria-label={ar?`اختيار الشعار ${index+1}`:`Select logo ${index+1}`} className={"logo-desktop-result "+(selected?"selected":"")} onClick={selectConcept}><img src={image.data_url||image.url} alt={ar?`الشعار المقترح ${index+1}`:`Generated logo ${index+1}`} draggable="false"/><span aria-hidden="true">{selected?"✓":""}</span><strong>{ar?`الشعار ${index+1}`:`Logo ${index+1}`}</strong></button>})}{!approved && <div className="logo-desktop-result-actions"><button type="button" className="logo-desktop-regenerate" disabled={loading} onClick={generate}><Sparkles/>{loading?(ar?"جاري التوليد...":"Generating..."):(ar?"توليد مرة أخرى":"Generate again")}</button><button type="button" className="logo-desktop-approve logo-desktop-approve-gradient" disabled={!selectedImage||loading} onClick={approve}>{ar?"اعتماد الشعار":"Approve logo"}</button></div>}{approved && <div style={{gridColumn:"1 / -1"}}><button type="button" className="logo-desktop-approve" disabled style={{width:"100%",marginBottom:12}}>{ar?"تم اعتماد الشعار":"Logo approved"}</button>{approvedActions}</div>}</div>}
             </section>
           )}
 

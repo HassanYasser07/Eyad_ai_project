@@ -1,5 +1,5 @@
 import React from "react";
-import { ArrowLeft, Check, ChevronRight, Loader2, Sparkles, Shapes, Minus, Crown, Landmark, Zap, Type, Badge, ShieldCheck, TextCursorInput, Palette, FileCode2 } from "lucide-react";
+import { Download, Pencil, ArrowLeft, Check, ChevronRight, Loader2, Sparkles, Shapes, Minus, Crown, Landmark, Zap, Type, Badge, ShieldCheck, TextCursorInput, Palette, FileCode2 } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useI18n } from "@/i18n/I18nContext";
 import { useAuth } from "@/lib/AuthContext";
@@ -9,6 +9,7 @@ import { projectService } from "@/services/projectService";
 import { saveBrandIdentity } from "@/services/brandService";
 import { saveStudioOutput } from "@/services/projectContextService";
 import { storePendingAction, getPendingAction, clearPendingAction } from "@/services/guestUsageService";
+import { exportImagePng, exportImageSvg } from "@/services/exportService";
 import StudioNextActions from "@/components/studios/StudioNextActions";
 import "./logoStudio.css";
 import LogoStudioDesktop from "@/pages/LogoStudioDesktop";
@@ -136,6 +137,13 @@ export default function LogoStudio() {
   }, []);
   const [previewImage, setPreviewImage] = React.useState(null);
   const [svgEditorOpen, setSvgEditorOpen] = React.useState(false);
+  // Approved-logo actions: "png" | "svg" | "edit" while running.
+  const [logoBusy, setLogoBusy] = React.useState(null);
+  const [logoActionError, setLogoActionError] = React.useState("");
+  const [downloadMenuOpen, setDownloadMenuOpen] = React.useState(false);
+  const [editorSource, setEditorSource] = React.useState(null);
+  const svgCacheRef = React.useRef(new Map());
+  const svgInflightRef = React.useRef(new Map());
   const [mobileTab, setMobileTab] = React.useState("style");
 
   const ar = direction === "rtl";
@@ -187,8 +195,15 @@ export default function LogoStudio() {
     setStep("choices");
   };
 
-  const generate = async () => {
-    if (!canGenerate || loading) return;
+  // `override` ({ name, activity, selections }) lets the desktop card generate immediately
+  // with the values it just collected, before React state has re-rendered.
+  const generate = async (override) => {
+    const ov = override && override.selections ? override : null;
+    const gName = ov ? ov.name : name;
+    const gActivity = ov ? ov.activity : activity;
+    const gSelections = ov ? ov.selections : selections;
+    const gCanGenerate = ov ? Boolean(gSelections.style && gSelections.colors && gSelections.logo_type) : canGenerate;
+    if (!gCanGenerate || loading) return;
     if (isAnonymous) {
       storePendingAction({
         type: "logo_generation",
@@ -197,9 +212,9 @@ export default function LogoStudio() {
           // Do not carry an anonymous-session project id across login.
           // The authenticated generation flow will create/reuse the proper project.
           projectId: null,
-          name: name.trim(),
-          activity: activity.trim(),
-          selections: { ...selections },
+          name: gName.trim(),
+          activity: gActivity.trim(),
+          selections: { ...gSelections },
           step: "choices",
         },
       });
@@ -212,8 +227,11 @@ export default function LogoStudio() {
     setPolling(false);
     setImages([]);
     setSelectedIndex(null);
+    setApproved(false);
+    setDownloadMenuOpen(false);
+    setLogoActionError("");
 
-    const briefMessage = `صمم لوجو جديد. اسم العلامة: ${name.trim()}. النشاط: ${activity.trim()}.`;
+    const briefMessage = `صمم لوجو جديد. اسم العلامة: ${gName.trim()}. النشاط: ${gActivity.trim()}.`;
     try {
       let data;
       try {
@@ -224,10 +242,10 @@ export default function LogoStudio() {
           language: ar ? "ar" : "en",
           action: "generate",
           designOptions: {
-            ...selections,
+            ...gSelections,
             // The values currently edited in this studio are the source of truth for generation.
-            brand_name: name.trim(),
-            activity: activity.trim(),
+            brand_name: gName.trim(),
+            activity: gActivity.trim(),
           },
         });
       } catch (firstError) {
@@ -244,10 +262,10 @@ export default function LogoStudio() {
           language: ar ? "ar" : "en",
           action: "generate",
           designOptions: {
-            ...selections,
+            ...gSelections,
             // The values currently edited in this studio are the source of truth for generation.
-            brand_name: name.trim(),
-            activity: activity.trim(),
+            brand_name: gName.trim(),
+            activity: gActivity.trim(),
           },
         });
       }
@@ -262,7 +280,7 @@ export default function LogoStudio() {
         setImages(nextImages);
         setSelectedIndex(null);
         setApproved(false);
-        setProject({ id: durableProjectId, title: name.trim() });
+        setProject({ id: durableProjectId, title: gName.trim() });
         setStep("results");
         setLoading(false);
         return;
@@ -357,26 +375,9 @@ export default function LogoStudio() {
         },
       });
 
-      // Vectorization is deliberately deferred until approval. Draft concepts
-      // remain PNG-only, while the selected logo gets a real SVG production
-      // master through Recraft's vectorization API.
-      let vectorized = null;
-      try {
-        vectorized = await runEyadEngine({
-          message: "Vectorize the approved logo asset into a production SVG.",
-          projectId: currentProjectId,
-          studioId: "logo",
-          language: ar ? "ar" : "en",
-          action: "vectorize_logo",
-          designOptions: { selected_asset_id: selectedImage },
-        });
-      } catch (vectorError) {
-        console.warn("[Logo Studio] approved-logo vectorization failed", vectorError);
-      }
-
-      // Never fall back to the previous approved logo. If vectorization fails,
-      // the newly selected PNG remains the active logo.
-      const svgUrl = vectorized?.svg_url || null;
+      // Vectorization is deferred until the user asks for SVG or Edit
+      // (see ensureLogoSvg), so approving never calls Recraft.
+      const svgUrl = null;
       await saveBrandIdentity(currentProjectId, {
         ...brandIdentity,
         logo: {
@@ -397,6 +398,102 @@ export default function LogoStudio() {
       setError(formatError(err));
     }
   };
+
+  // Vectorizes the approved logo through the existing Recraft `vectorize_logo`
+  // engine action. Concurrent callers (SVG download + Edit) share one request
+  // and finished results are cached per project/asset.
+  const ensureLogoSvg = () => {
+    const currentProjectId = project?.id || projectId;
+    const assetId = selectedImage;
+    if (!currentProjectId || !assetId) return Promise.reject(new Error("SVG_SOURCE_MISSING"));
+    const key = `${currentProjectId}:${assetId}`;
+    const cached = svgCacheRef.current.get(key);
+    if (cached) return Promise.resolve(cached);
+    const inflight = svgInflightRef.current.get(key);
+    if (inflight) return inflight;
+    const run = (async () => {
+      const result = await runEyadEngine({
+        message: "Vectorize the approved logo asset into a production SVG.",
+        projectId: currentProjectId,
+        studioId: "logo",
+        language: ar ? "ar" : "en",
+        action: "vectorize_logo",
+        designOptions: { selected_asset_id: assetId },
+      });
+      const url = result?.svg_url || result?.asset?.svg_url || null;
+      if (!url) throw new Error("SVG_VECTORIZE_FAILED");
+      svgCacheRef.current.set(key, url);
+      return url;
+    })().finally(() => { svgInflightRef.current.delete(key); });
+    svgInflightRef.current.set(key, run);
+    return run;
+  };
+
+  const approvedSourceUrl = selectedAsset?.url || selectedAsset?.data_url || null;
+  const baseFilename = `eyad-logo-${(selectedIndex ?? 0) + 1}`;
+
+  const downloadApprovedLogo = async (format) => {
+    if (!approved || logoBusy || !approvedSourceUrl) return;
+    setLogoActionError("");
+    setLogoBusy(format);
+    try {
+      if (format === "png") {
+        await exportImagePng(approvedSourceUrl, `${baseFilename}.png`);
+      } else {
+        const svgUrl = await ensureLogoSvg();
+        await exportImageSvg(approvedSourceUrl, `${baseFilename}.svg`, svgUrl);
+      }
+      setDownloadMenuOpen(false);
+    } catch (err) {
+      console.error(`[Logo Studio] ${format} download failed`, err);
+      setLogoActionError(format === "png"
+        ? (ar ? "تعذر تنزيل ملف PNG. حاول مرة أخرى." : "Could not download the PNG. Please try again.")
+        : (ar ? "تعذر تحويل الشعار إلى SVG. حاول مرة أخرى." : "Could not convert the logo to SVG. Please try again."));
+    } finally {
+      setLogoBusy(null);
+    }
+  };
+
+  const editApprovedLogo = async () => {
+    if (!approved || logoBusy) return;
+    setLogoActionError("");
+    setDownloadMenuOpen(false);
+    setLogoBusy("edit");
+    try {
+      const svgUrl = await ensureLogoSvg();
+      setEditorSource({ url: svgUrl, name: baseFilename });
+    } catch (err) {
+      console.error("[Logo Studio] vectorization for editing failed", err);
+      setLogoActionError(ar ? "تعذر تجهيز الشعار للتعديل. حاول مرة أخرى." : "Could not prepare the logo for editing. Please try again.");
+    } finally {
+      setLogoBusy(null);
+    }
+  };
+
+  const approvedActions = approved ? (
+    <div className="logo-approved-actions flex flex-col gap-3 w-full" style={{ gridColumn: "1 / -1" }}>
+      <div className="grid grid-cols-2 gap-3">
+        <button type="button" disabled={Boolean(logoBusy)} onClick={() => setDownloadMenuOpen((open) => !open)} aria-expanded={downloadMenuOpen} className="h-14 rounded-2xl border-2 border-primary bg-white text-primary font-extrabold disabled:opacity-40 flex items-center justify-center gap-2">
+          <Download className="w-4 h-4" />{ar ? "تنزيل" : "Download"}
+        </button>
+        <button type="button" disabled={Boolean(logoBusy)} onClick={editApprovedLogo} className="h-14 rounded-2xl bg-gradient-to-r from-violet-600 via-fuchsia-500 to-orange-400 text-white font-extrabold disabled:opacity-40 flex items-center justify-center gap-2">
+          {logoBusy === "edit" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Pencil className="w-4 h-4" />}
+          {logoBusy === "edit" ? (ar ? "جارٍ تجهيز الشعار…" : "Preparing vector…") : (ar ? "تعديل" : "Edit")}
+        </button>
+      </div>
+      {downloadMenuOpen && (
+        <div className="grid grid-cols-2 gap-3">
+          <button type="button" disabled={Boolean(logoBusy)} onClick={() => downloadApprovedLogo("png")} className="h-12 rounded-xl bg-slate-100 text-slate-800 font-extrabold disabled:opacity-40 flex items-center justify-center gap-2">
+            {logoBusy === "png" ? <Loader2 className="w-4 h-4 animate-spin" /> : null}PNG
+          </button>
+          <button type="button" disabled={Boolean(logoBusy)} onClick={() => downloadApprovedLogo("svg")} className="h-12 rounded-xl bg-slate-100 text-slate-800 font-extrabold disabled:opacity-40 flex items-center justify-center gap-2">
+            {logoBusy === "svg" ? <Loader2 className="w-4 h-4 animate-spin" /> : null}{logoBusy === "svg" ? (ar ? "جارٍ التحويل…" : "Converting…") : "SVG"}
+          </button>
+        </div>
+      )}
+      {logoActionError && <p role="alert" className="text-xs font-bold text-red-600 text-center">{logoActionError}</p>}
+    </div>
+  ) : null;
 
   const back = () => {
     if (step === "results" || step === "generating") {
@@ -441,6 +538,7 @@ export default function LogoStudio() {
         setPreviewImage={setPreviewImage}
         back={back}
         onOpenSvgEditor={() => setSvgEditorOpen(true)}
+        approvedActions={approvedActions}
       />
       <div className="logo-lab-page min-h-[calc(100dvh-8rem)] flex flex-col gap-5" data-step={step}>
       <header className="flex items-center justify-between gap-3">
@@ -480,6 +578,9 @@ export default function LogoStudio() {
             </label>
             <button disabled={!canStart} onClick={beginChoices} className="h-12 rounded-2xl bg-primary text-white font-extrabold disabled:opacity-40 flex items-center justify-center gap-2">
               {ar ? "التالي" : "Continue"} <ChevronRight className="w-4 h-4" />
+            </button>
+            <button type="button" onClick={() => setSvgEditorOpen(true)} className="h-11 rounded-2xl border border-slate-200 bg-white/80 text-slate-700 text-sm font-bold flex items-center justify-center gap-2">
+              <FileCode2 className="w-4 h-4" />{t("svgEditor.testEnvironment")}
             </button>
           </div>
         )}
@@ -567,7 +668,8 @@ export default function LogoStudio() {
                 <img src={previewImage.data_url || previewImage.url} alt={ar ? "معاينة الشعار بالحجم الكامل" : "Full screen logo preview"} className="max-w-full max-h-full object-contain rounded-2xl logo-transparency-grid" onClick={(event) => event.stopPropagation()} />
               </div>
             )}
-            {approved && <StudioNextActions projectId={project?.id || projectId} fromStudio="logo" asset={{ id: selectedImage, url: selectedAsset?.url || selectedAsset?.data_url || null }} title={loc({ ar: "تم اعتماد الشعار. ماذا تريد أن تفعل الآن؟", en: "Logo approved. What would you like to do next?" })} description={loc({ ar: "حوّل الشعار إلى هوية بصرية أو عرض تقديمي، أو نزّل الشعار.", en: "Turn the logo into a visual identity or presentation, or download the logo." })} />}
+            {approvedActions}
+            {approved && <StudioNextActions projectId={project?.id || projectId} fromStudio="logo" asset={{ id: selectedImage, url: selectedAsset?.url || selectedAsset?.data_url || null }} hideExports title={loc({ ar: "تم اعتماد الشعار. ماذا تريد أن تفعل الآن؟", en: "Logo approved. What would you like to do next?" })} description={loc({ ar: "حوّل الشعار إلى هوية بصرية أو عرض تقديمي، أو نزّل الشعار.", en: "Turn the logo into a visual identity or presentation, or download the logo." })} />}
           </div>
         )}
 
@@ -596,6 +698,7 @@ export default function LogoStudio() {
       )}
     </div>
       {svgEditorOpen && <SvgEditorDialog onClose={() => setSvgEditorOpen(false)} direction={direction} />}
+      {editorSource && <SvgEditorDialog key={editorSource.url} onClose={() => setEditorSource(null)} direction={direction} initialSvgUrl={editorSource.url} initialName={editorSource.name} />}
     </>
   );
 }
