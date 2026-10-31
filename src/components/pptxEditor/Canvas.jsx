@@ -225,6 +225,25 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
     gesture.current = { type: "pinch", d0: d, zoom0: R.current.view.zoom, pan0: R.current.view.pan, o0: { x: R.current.ox, y: R.current.oy }, s0: R.current.s, c0: { x: (pts[0].x + pts[1].x) / 2 - r.left, y: (pts[0].y + pts[1].y) / 2 - r.top } };
   };
 
+  // Closest column / row border of the selected table to a touch point (screen px), or null.
+  const nearTableBorder = (e) => {
+    const t = R.current.tblSel;
+    if (!t) return null;
+    const r = stageRef.current.getBoundingClientRect(), { s: sc, ox: ox0, oy: oy0 } = R.current;
+    const px = e.clientX - r.left, py = e.clientY - r.top;
+    const x0 = ox0 + (t.b.x / EMU_PER_PX) * sc, y0 = oy0 + (t.b.y / EMU_PER_PX) * sc;
+    const cum = (sizes) => sizes.reduce((acc, v) => { acc.push(acc[acc.length - 1] + v); return acc; }, [0]);
+    const xs = cum(t.cols).map((v) => x0 + (v / EMU_PER_PX) * sc), ys = cum(t.rows).map((v) => y0 + (v / EMU_PER_PX) * sc);
+    const x1 = xs[xs.length - 1], y1 = ys[ys.length - 1];
+    const minCol = Math.min(...t.cols) / EMU_PER_PX * sc, minRow = Math.min(...t.rows) / EMU_PER_PX * sc;
+    const TOL = 14;
+    const tolC = Math.min(TOL, minCol * 0.35), tolR = Math.min(TOL, minRow * 0.35); // tiny cells keep room for plain taps / table moves
+    let best = null;
+    if (py >= y0 - TOL && py <= y1 + TOL) xs.forEach((x, b) => { const d = Math.abs(px - x); if (d <= tolC && (!best || d < best.d)) best = { kind: "col", border: b, d }; });
+    if (px >= x0 - TOL && px <= x1 + TOL) ys.forEach((y, b) => { const d = Math.abs(py - y); if (d <= tolR && (!best || d < best.d)) best = { kind: "row", border: b, d }; });
+    return best ? { kind: best.kind, border: best.border } : null;
+  };
+
   const onPointerDown = (e) => {
     if (e.pointerType === "mouse" && e.button !== 0 && e.button !== 1) return;
     R.current.onInteractionStart?.();
@@ -260,6 +279,13 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
     // object, handles, multi-select mode, text editing and zoomed-in panning keep their normal behaviour.
     const swipe = touch && !additive && !e.altKey && typeof R.current.onSwipe === "function" && R.current.view.zoom <= 1.02 && !R.current.editingText && (!target || !sel.includes(target));
     gesture.current = { type: target ? "press" : "empty", id: target, tapId, pending, start: { x: e.clientX, y: e.clientY }, touch, moved: false, toggleOff, additive, pan0: R.current.view.pan, wasSelected: !!target && sel.includes(target), swipe, axis: null, t0: e.timeStamp };
+    // Touch / pen on the selected table: pressing near a column / row border only ARMS a border drag. A plain tap
+    // still selects the cell under the finger; the border moves only once the finger actually drags along it.
+    const tid = R.current.tblSel?.el.id;
+    if (touch && !additive && !e.altKey && tid && (target === tid || !target)) {
+      const nb = nearTableBorder(e);
+      if (nb) { gesture.current.arm = { ...nb, id: tid }; gesture.current.swipe = false; }
+    }
   };
 
   const startHandle = (e, kind, id) => {
@@ -293,6 +319,20 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
     if (g.type === "pan") { setView((v) => ({ ...v, pan: clampPan(v.zoom, { x: g.pan0.x + e.clientX - g.start.x, y: g.pan0.y + e.clientY - g.start.y }) })); return; }
     const dxs = e.clientX - g.start.x, dys = e.clientY - g.start.y;
     const moved = Math.hypot(dxs, dys) > (g.touch ? 7 : 4);
+    if (g.arm && moved) {
+      // The finger started on a table border and has now travelled: dragging ALONG the border resizes that
+      // column / row; any other direction falls back to the normal gesture (move the table / pan).
+      const { kind, border, id } = g.arm;
+      const along = kind === "col" ? Math.abs(dxs) > Math.abs(dys) * 0.8 : Math.abs(dys) > Math.abs(dxs) * 0.8;
+      g.arm = null;
+      if (along && R.current.tblSel?.el.id === id) {
+        clearTimeout(g.idle);
+        gesture.current = { type: "idle" };
+        setDraft(null); setGuides(null); setMarquee(null); setSwipe(null);
+        runTableResize(e.pointerId, g.start.x, g.start.y, kind, border);
+        return;
+      }
+    }
     if (g.swipe) {
       if (!g.axis) {
         if (Math.hypot(dxs, dys) < 10) return;
@@ -428,7 +468,7 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
       // Tapping a table cell puts the caret straight into that cell. A drag never gets here
       // (g.moved), so moving/resizing the table is unaffected.
       const tbl = R.current.model.elements.find((x) => x.id === tapped && x.kind === "table");
-      const cellEl = tbl ? document.elementFromPoint(e.clientX, e.clientY)?.closest?.("td[data-row]") : null;
+      const cellEl = tbl ? document.elementsFromPoint(e.clientX, e.clientY).find((n) => n.matches?.("td[data-row]")) : null;
       if (cellEl && !R.current.locked.has(tapped)) {
         const cell = { row: Number(cellEl.dataset.row), col: Number(cellEl.dataset.col) };
         const cur = R.current.editingText;
@@ -496,10 +536,17 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
   // Drag a column / row border: only that column (or row) changes size, like PowerPoint; the frame grows or
   // shrinks with it. Rows never get shorter than their wrapped text, and the drag previews live via the draft.
   const startTableResize = (e, kind, border) => {
-    const t = R.current.tblSel;
+    // Touch / pen never start a border drag from the strip itself: they go through the stage gesture, so a tap on
+    // a cell edge selects the cell and the border only moves once the finger drags along it.
+    if (e.pointerType && e.pointerType !== "mouse") return;
     e.stopPropagation();
-    if (!t || (e.button !== undefined && e.button > 0)) return;
-    const { el, cols, rows } = t, base = boundsOf(el), startX = e.clientX, startY = e.clientY, pointerId = e.pointerId;
+    if (e.button !== undefined && e.button > 0) return;
+    runTableResize(e.pointerId, e.clientX, e.clientY, kind, border);
+  };
+  function runTableResize(pointerId, startX, startY, kind, border) {
+    const t = R.current.tblSel;
+    if (!t) return;
+    const { el, cols, rows } = t, base = boundsOf(el);
     // Border b sits after column/row b-1; the first border (b = 0) belongs to the first one and moves the frame origin.
     const atStart = border === 0, index = atStart ? 0 : border - 1;
     let last = null;
@@ -535,7 +582,7 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
     window.addEventListener("pointercancel", cancel);
-  };
+  }
   const quickActionBox = single ? rotatedBox(single.b) : union;
   const quickActionsEnabled = frames.length > 0 && frames.every(({ el }) => !locked.has(el.id) && !el.readOnlyGeometry);
   const quickActionWidth = 110;
@@ -561,7 +608,7 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
         {frames.map(({ el, b }) => {
           const f = toScreen(b), isLocked = locked.has(el.id) || el.readOnlyGeometry;
           return (
-            <div key={el.id} className={`pptx-frame ${single ? "single" : "multi"} ${isLocked ? "locked" : ""}`} data-testid="pptx-frame" data-id={el.id}
+            <div key={el.id} className={`pptx-frame ${single ? "single" : "multi"} ${isLocked ? "locked" : ""} ${el.kind === "table" ? "is-table" : ""}`} data-testid="pptx-frame" data-id={el.id}
               style={{ left: f.cx - f.w / 2, top: f.cy - f.h / 2, width: f.w, height: f.h, transform: `rotate(${b.rot || 0}deg)` }}>
               {single && !isLocked && (
                 <>
@@ -582,7 +629,7 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
           <button type="button" className="is-danger" title={labels.quickDelete} aria-label={labels.quickDelete} onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onDelete?.(); }}><Trash2 size={15} aria-hidden="true" /></button>
         </div>}
         {tblSel && <TableHandles x0={ox + (tblSel.b.x / EMU_PER_PX) * s} y0={oy + (tblSel.b.y / EMU_PER_PX) * s} s={s} cols={tblSel.cols} rows={tblSel.rows}
-          canAdd={!tblSel.el.table.hasMerge} drag={tblDrag} selected={tableSelection?.id === tblSel.el.id && tableSelection.picked && tableSelection.scope === "table"} labels={labels}
+          canAdd={!tblSel.el.table.hasMerge} compact={compact} drag={tblDrag} selected={tableSelection?.id === tblSel.el.id && tableSelection.picked && tableSelection.scope === "table"} labels={labels}
           onSelectAll={() => onTableSelectAll?.(tblSel.el.id)} onAdd={(kind, boundary) => onTableAdd?.(kind, boundary)} onResizeStart={startTableResize} />}
         {/* Docked at the top of the workspace, under the editor ribbon; shown only while a cell / table is picked. */}
         {cellToolbar && <div className="pptx-cell-toolbar" role="toolbar" aria-label={labels.cellToolbar}

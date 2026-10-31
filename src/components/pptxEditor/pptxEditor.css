@@ -280,7 +280,7 @@
 .pptx-tbl-add:hover, .pptx-tbl-add:focus-visible { background: hsl(var(--primary)); box-shadow: 0 2px 8px rgba(15,23,42,.3); }
 .pptx-tbl-add:hover::before, .pptx-tbl-add:focus-visible::before { opacity: 0; }
 .pptx-tbl-add:hover svg, .pptx-tbl-add:focus-visible svg { opacity: 1; transform: scale(1); }
-@media (hover: none) { .pptx-tbl-add { width: 24px; height: 24px; background: hsl(var(--primary) / .85); } .pptx-tbl-add::before { display: none; } .pptx-tbl-add svg { opacity: 1; transform: none; } .pptx-tbl-resize.is-col { width: 22px; } .pptx-tbl-resize.is-row { height: 22px; } }
+@media (hover: none) { .pptx-tbl-add { width: 20px; height: 20px; background: hsl(var(--primary) / .85); } .pptx-tbl-add::before { display: none; } .pptx-tbl-add svg { opacity: 1; transform: none; } .pptx-tbl-resize.is-col { width: 22px; } .pptx-tbl-resize.is-row { height: 22px; } }
 @media (max-width: 640px) { .pptx-cell-toolbar { min-height: 50px; } .pptx-cell-btn { width: 36px; height: 36px; } .pptx-cell-font { height: 36px; } }
 .pptx-handle { position: absolute; width: 44px; height: 44px; transform: translate(-50%, -50%); display: flex; align-items: center; justify-content: center; pointer-events: auto; touch-action: none; }
 .pptx-handle i { display: block; width: 12px; height: 12px; background: #fff; border: 2px solid hsl(var(--primary)); border-radius: 3px; box-shadow: 0 1px 4px rgba(0,0,0,.35); }
@@ -480,3 +480,16 @@
 .pe-root.is-compact.has-drawer .pe-slidenav .pe-btn { display: none; }
 .pe-root.is-compact.has-sheet .pe-slidenav > button:not(.pe-btn),
 .pe-root.is-compact.has-drawer .pe-slidenav > button:not(.pe-btn) { min-width: 0; min-height: 22px; padding: 0 9px; font-size: 11px; }
+
+/* Table controls on touch: smaller "+" buttons, border strips never swallow taps, corner handles always on top. */
+.pptx-frame.is-table { z-index: 8; }
+.pe-root.is-compact .pptx-tbl-add { width: 18px; height: 18px; }
+.pe-root.is-compact .pptx-tbl-add svg { width: 10px; height: 10px; }
+.pe-root.is-compact .pptx-tbl-select { width: 22px; height: 22px; }
+.pe-root.is-compact .pptx-tbl-select svg { width: 13px; height: 13px; }
+.pe-root.is-compact .pptx-tbl-resize { pointer-events: none; }
+.pe-root.is-compact .pptx-tbl-resize i { opacity: .3; }
+.pe-root.is-compact .pptx-tbl-resize.is-col i { width: 2px; }
+.pe-root.is-compact .pptx-tbl-resize.is-row i { height: 2px; }
+.pe-root.is-compact .pptx-tbl-resize.is-dragging i { opacity: .9; }
+@media (pointer: coarse) { .pptx-tbl-resize { pointer-events: none; } }
