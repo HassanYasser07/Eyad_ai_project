@@ -1,6 +1,28 @@
 import React from "react";
 import { Eye, EyeOff, Lock, Unlock, Layers3, GripVertical, ChevronLeft, ChevronRight } from "lucide-react";
 
+// Layer thumbnails embed their own copy of the artwork. Duplicate element ids
+// (e.g. the background gradient "svg-editor-bg-gradient") make `url(#id)` resolve to the
+// FIRST copy in the document, which on mobile lives inside a hidden panel
+// (display:none), so gradients silently stopped rendering on the real canvas.
+// Prefixing every id in the thumbnail keeps the canvas ids unique.
+function scopeMarkupIds(markup, prefix) {
+  if (!markup || markup.indexOf("id=") === -1) return markup;
+  const ids = new Set();
+  markup.replace(/\sid=("|')([^"']+)\1/g, (_, __, id) => { ids.add(id); return ""; });
+  if (!ids.size) return markup;
+  let out = markup;
+  ids.forEach((id) => {
+    const safe = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const next = `${prefix}${id}`;
+    out = out
+      .replace(new RegExp(`(\\sid=)("|')${safe}\\2`, "g"), `$1$2${next}$2`)
+      .replace(new RegExp(`url\\((["']?)#${safe}\\1\\)`, "g"), `url(#${next})`)
+      .replace(new RegExp(`((?:xlink:)?href=)("|')#${safe}\\2`, "g"), `$1$2#${next}$2`);
+  });
+  return out;
+}
+
 function LayerRow({ node, depth, selectedIds, onSelect, onHide, onLock, onReorder, t }) {
   const selected = selectedIds.includes(node.id);
   const hidden = node.hidden;
@@ -84,7 +106,7 @@ function LayerRow({ node, depth, selectedIds, onSelect, onHide, onLock, onReorde
         title={node.label}
       >
         <span className="svg-editor-layer-drag-handle" aria-hidden="true"><GripVertical size={15} /></span>
-        <span ref={thumbnailRef} className="svg-editor-layer-thumbnail" aria-hidden="true" dangerouslySetInnerHTML={{ __html: node.previewMarkup }} />
+        <span ref={thumbnailRef} className="svg-editor-layer-thumbnail" aria-hidden="true" dangerouslySetInnerHTML={{ __html: scopeMarkupIds(node.previewMarkup, `lp${String(node.id).replace(/[^a-zA-Z0-9_-]/g, "")}-`) }} />
         <span className="svg-editor-layer-copy"><strong>{node.label}</strong></span>
       </button>
       {selectable && (

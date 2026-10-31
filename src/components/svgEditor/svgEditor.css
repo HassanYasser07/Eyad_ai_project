@@ -1649,3 +1649,23 @@
 @media (prefers-reduced-motion: reduce) {
   .svg-editor-tool, .svg-editor-layer-row, .svg-editor-layer-actions button, .svg-editor-action, .svg-editor-mobile-tab { transition: none !important; }
 }
+
+/* ---- Gradient background: tidy custom-gradient color pickers ----
+   The two color cards used to sit side by side in a narrow panel, so the long
+   "Choose any color" label overflowed and overlapped the neighbouring card.
+   Stack them, keep each card on one clean row, and show the picker button as a
+   compact icon (the full label stays as tooltip / aria-label). */
+.svg-editor-custom-gradient-box > strong { font-size: 12px; font-weight: 800; letter-spacing: .01em; }
+.svg-editor-gradient-color-pickers { flex-direction: column; gap: 8px; min-width: 0; }
+.svg-editor-gradient-color-pickers .svg-editor-color-picker-card {
+  width: 100%; box-sizing: border-box; margin: 0; padding: 8px 10px; gap: 10px; overflow: hidden;
+}
+.svg-editor-gradient-color-pickers .svg-editor-color-value-copy { gap: 4px; }
+.svg-editor-gradient-color-pickers .svg-editor-color-value-copy strong {
+  overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap;
+}
+.svg-editor-gradient-color-pickers .svg-editor-color-picker-edit {
+  width: 34px; min-width: 34px; height: 34px; min-height: 34px; padding: 0; border-radius: 9px; gap: 0;
+}
+.svg-editor-gradient-color-pickers .svg-editor-color-picker-edit span { display: none; }
+.svg-editor-color-picker-edit span { white-space: nowrap; }
