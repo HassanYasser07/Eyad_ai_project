@@ -96,7 +96,7 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
         setCellFit(fit ? { id, h: fit.h, tableGrid: fit.tableGrid } : null);
       });
     };
-    stage.addEventListener("input", onInput);
+    stage.addEventListener("in    put", onInput);
     return () => { cancelAnimationFrame(raf); stage.removeEventListener("input", onInput); };
   }, []);
   React.useEffect(() => { setCellFit(null); }, [model, editingText?.id, editingText?.row, editingText?.col]);
