@@ -300,12 +300,18 @@ function TableView({ el, w, h, tableSelection, editingText, onTableCellSelect, o
   );
 }
 
+// While a table is only being MOVED its `el.table` is the same object, so the (expensive) cell DOM is left alone and
+// only the wrapper's position changes. Resizing passes a new table object per frame and re-renders as needed.
+const MemoTableView = React.memo(TableView, (a, b) => a.el.id === b.el.id && a.el.table === b.el.table && a.w === b.w && a.h === b.h
+  && a.tableSelection === b.tableSelection && a.editingText === b.editingText && a.onTableCellSelect === b.onTableCellSelect
+  && a.onEditText === b.onEditText && a.onTextCommit === b.onTextCommit && a.onTextCancel === b.onTextCancel);
+
 function ElementNode({ el, urls, hints, idPrefix, labels, editingText, tableSelection, onTableCellSelect, onAutoSizeText, onEditText, onTextCommit, onTextCancel }) {
   if (el.hidden) return null;
   if (el.kind === "group") return <>{el.children.map((c, ci) => <ElementNode key={`${c.id}-${ci}`} el={c} urls={urls} hints={hints} idPrefix={idPrefix} labels={labels} editingText={editingText} tableSelection={tableSelection} onTableCellSelect={onTableCellSelect} onAutoSizeText={onAutoSizeText} onEditText={onEditText} onTextCommit={onTextCommit} onTextCancel={onTextCancel} />)}</>;
   const w = px(el.w), h = px(el.h);
   const transforms = [el.rot ? `rotate(${el.rot}deg)` : "", el.flipH ? "scaleX(-1)" : "", el.flipV ? "scaleY(-1)" : ""].filter(Boolean).join(" ");
-  const style = { left: px(el.x), top: px(el.y), width: w, height: h, transform: transforms || undefined, transformOrigin: "center center" };
+  const style = { left: px(el.x), top: px(el.y), width: w, height: h, transform: transforms || undefined, transformOrigin: "center center", willChange: el.dragging ? "transform" : undefined };
   let inner = null;
   switch (el.kind) {
     case "image": {
@@ -321,7 +327,7 @@ function ElementNode({ el, urls, hints, idPrefix, labels, editingText, tableSele
       if (el.line && !el.line.none && el.line.hex) inner = <>{inner}<div className="pptx-img-border" style={{ borderColor: `#${el.line.hex}`, borderWidth: Math.max(1, px(el.line.w ?? 12700)), borderRadius: round, opacity: el.line.alpha ?? 1 }} /></>;
       break;
     }
-    case "table": inner = <TableView el={el} w={w} h={h} tableSelection={tableSelection} editingText={editingText} onTableCellSelect={onTableCellSelect} onEditText={onEditText} onTextCommit={onTextCommit} onTextCancel={onTextCancel} />; break;
+    case "table": inner = <MemoTableView el={el} w={w} h={h} tableSelection={tableSelection} editingText={editingText} onTableCellSelect={onTableCellSelect} onEditText={onEditText} onTextCommit={onTextCommit} onTextCancel={onTextCancel} />; break;
     case "chart": inner = el.chartInfo.preview
       ? <ChartPreview info={el.chartInfo} w={w} h={h} note={labels.chartPreview} />
       : <div className="pptx-object-card"><strong>{el.chartInfo.title || el.chartInfo.type}</strong>{el.chartInfo.title && <span>{el.chartInfo.type}</span>}<em>{labels.chartNote}</em></div>; break;
@@ -396,6 +402,7 @@ export default function SlideView({ model, urls, overrides, geometryDrafts, hint
     const previewEl = el.kind === "table" && ov.tableGrid && el.table
       ? { ...el, ...ov, table: { ...el.table, cols: ov.tableGrid.cols, rows: el.table.rows.map((r, i) => ({ ...r, h: ov.tableGrid.rows[i] ?? r.h })) } }
       : { ...el, ...ov };
+    if (el.kind === "table") previewEl.dragging = true; // own compositor layer while it is being dragged
     return <MemoElement key={el.id} el={previewEl} urls={urls} hints={hints} idPrefix={idPrefix} labels={labels} editingText={editingText} tableSelection={tableSelection} onTableCellSelect={st.onTableCellSelect} onAutoSizeText={suspendAutoSize ? null : st.onAutoSizeText} onEditText={st.onEditText} onTextCommit={st.onTextCommit} onTextCancel={st.onTextCancel} />;
   };
   return (

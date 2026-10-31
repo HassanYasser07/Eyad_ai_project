@@ -4,7 +4,7 @@ import SlideView, { collectImagePaths } from "./SlideView.jsx";
 import { useMediaUrls } from "./useMediaUrls.js";
 import { EMU_PER_PX } from "./engine/slideModel.js";
 import { hitTest, rotatedBox, unionBox, snapBox } from "./engine/geometry.js";
-import { fitFrame, fitTableToContent, fitTableGrid } from "./textFit.js";
+import { fitFrame, fitTableToContent, fitTableGrid, measureTableRowHeights } from "./textFit.js";
 import TableHandles from "./TableHandles.jsx";
 
 const MIN_SIZE = 91440;
@@ -295,7 +295,7 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY, type: e.pointerType });
     if (pointers.current.size >= 2) { startPinch(); return; }
     const el = R.current.model.elements.find((x) => x.id === id);
-    gesture.current = { type: "handle", kind, id, start: { x: e.clientX, y: e.clientY }, b0: boundsOf(el), isImage: el.kind === "image", moved: false };
+    gesture.current = { type: "handle", kind, id, start: { x: e.clientX, y: e.clientY }, b0: boundsOf(el), isImage: el.kind === "image", isTable: el.kind === "table", moved: false };
   };
 
   const onPointerMove = (e) => {
@@ -387,6 +387,13 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
     if (g.type === "handle") {
       if (!moved && !g.moved) return;
       g.moved = true;
+      // Table re-fit measures the real DOM (clone + layout), so it runs at most once per animation frame with the
+      // latest pointer position instead of on every (possibly >60 Hz) touch event. finish() flushes the last one.
+      if (g.isTable && g.kind !== "rotate" && !e.__raf) {
+        g.lastEv = { pointerId: e.pointerId, pointerType: e.pointerType, clientX: e.clientX, clientY: e.clientY, shiftKey: e.shiftKey, altKey: e.altKey, timeStamp: e.timeStamp };
+        if (!g.raf) g.raf = requestAnimationFrame(() => { g.raf = 0; if (gesture.current === g && g.lastEv) onPointerMove({ ...g.lastEv, __raf: true }); });
+        return;
+      }
       const b0 = g.b0, th = (b0.rot * Math.PI) / 180, cos = Math.cos(th), sin = Math.sin(th);
       const ex = (dxs / sc) * EMU_PER_PX, ey = (dys / sc) * EMU_PER_PX;
       if (g.kind === "rotate") {
@@ -418,6 +425,11 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
   };
 
   const finish = (e, cancelled) => {
+    const g0 = gesture.current;
+    if (g0?.type === "handle" && g0.raf) {
+      cancelAnimationFrame(g0.raf); g0.raf = 0;
+      if (g0.lastEv && !cancelled) onPointerMove({ ...g0.lastEv, __raf: true });
+    }
     pointers.current.delete(e.pointerId);
     try { stageRef.current.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
     const g = gesture.current;
@@ -549,18 +561,25 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
     const { el, cols, rows } = t, base = boundsOf(el);
     // Border b sits after column/row b-1; the first border (b = 0) belongs to the first one and moves the frame origin.
     const atStart = border === 0, index = atStart ? 0 : border - 1;
-    let last = null;
+    // Natural row heights at the starting columns, measured once. Row drags never change the columns and widening a
+    // column never needs taller rows, so only narrowing a column has to measure again (once per frame, see below).
+    const natStart = measureTableRowHeights(stageRef.current, el.id, cols) || undefined;
+    let last = null, queued = null, raf = 0;
     setTblDrag({ kind, border });
     R.current.onInteractionStart?.();
-    const move = (ev) => {
-      if (ev.pointerId !== pointerId) return;
+    const apply = () => {
+      raf = 0;
+      const pt = queued;
+      if (!pt) return;
+      queued = null;
       const sc = R.current.s;
       let c = cols.slice(), r = rows.slice();
-      const raw = (((kind === "col" ? ev.clientX - startX : ev.clientY - startY) / sc) * EMU_PER_PX);
+      const raw = (((kind === "col" ? pt.x - startX : pt.y - startY) / sc) * EMU_PER_PX);
       const delta = atStart ? -raw : raw;
       if (kind === "col") c[index] = Math.max(MIN_COL, Math.round(cols[index] + delta));
       else r[index] = Math.max(MIN_ROW, Math.round(rows[index] + delta));
-      const fit = fitTableGrid(stageRef.current, el, c, r);
+      const known = kind === "row" || c[index] >= cols[index] ? natStart : undefined;
+      const fit = fitTableGrid(stageRef.current, el, c, r, known);
       if (fit) { c = fit.tableGrid.cols; r = fit.tableGrid.rows; }
       // Dragging the top / left edge grows the first row / column outwards: the origin follows so the rest stays put.
       const x = atStart && kind === "col" ? base.x + (cols[0] - c[0]) : base.x;
@@ -568,11 +587,18 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
       last = { ...base, x, y, w: c.reduce((a, b) => a + b, 0), h: r.reduce((a, b) => a + b, 0), tableGrid: { cols: c, rows: r } };
       pushDraft(new Map([[el.id, last]]));
     };
+    const move = (ev) => {
+      if (ev.pointerId !== pointerId) return;
+      queued = { x: ev.clientX, y: ev.clientY };
+      if (!raf) raf = requestAnimationFrame(apply);
+    };
     const end = (ev, cancelled) => {
       if (ev.pointerId !== pointerId) return;
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
       window.removeEventListener("pointercancel", cancel);
+      if (raf) { cancelAnimationFrame(raf); raf = 0; }
+      if (!cancelled && queued) apply(); // the very last finger position is always committed
       setTblDrag(null);
       setDraft(null);
       if (!cancelled && last) R.current.onCommit([{ id: el.id, ...last }], "Resize table cells");

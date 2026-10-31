@@ -119,9 +119,11 @@ export function fitTableToContent(root, el) {
  * column grows the affected rows and shrinking a row stops at its content. Returns null when the
  * table cannot be measured; callers then use the requested grid as is.
  */
-export function fitTableGrid(root, el, cols, rows) {
+export function fitTableGrid(root, el, cols, rows, knownNatural) {
   if (el?.kind !== "table") return null;
-  const natural = measureTableRowHeights(root, el.id, cols);
+  // `knownNatural` lets a drag reuse a measurement it already has (e.g. row drags never change the columns),
+  // so the table is not cloned and re-laid-out on every pointer move.
+  const natural = knownNatural || measureTableRowHeights(root, el.id, cols);
   if (!natural || natural.length !== rows.length) return null;
   const fitted = rows.map((h, i) => Math.max(h, natural[i]));
   return { w: cols.reduce((a, b) => a + b, 0), h: fitted.reduce((a, b) => a + b, 0), tableGrid: { cols: cols.slice(), rows: fitted } };
