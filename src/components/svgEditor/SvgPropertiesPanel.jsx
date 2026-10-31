@@ -241,7 +241,7 @@ function ColorPickerCard({ label, value, onChange, disabled = false, t }) {
         <strong>{label}</strong>
         <input className="svg-editor-color-hex-field" aria-label={`${label} HEX`} value={draft} maxLength={7} spellCheck={false} disabled={disabled} onChange={(event) => setDraft(event.target.value.toUpperCase())} onBlur={commitHex} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); commitHex(); event.currentTarget.blur(); } }} />
       </span>
-      <button type="button" className="svg-editor-color-picker-edit" onClick={() => pickerRef.current?.click()} disabled={disabled} aria-label={t?.("svgEditor.chooseColor") || "Choose any color"}>
+      <button type="button" className="svg-editor-color-picker-edit" onClick={() => pickerRef.current?.click()} disabled={disabled} aria-label={t?.("svgEditor.chooseColor") || "Choose any color"} title={t?.("svgEditor.chooseColor") || "Choose any color"}>
         <Pipette size={13} aria-hidden="true" />
         <span>{t?.("svgEditor.chooseColor") || "Choose any color"}</span>
       </button>
