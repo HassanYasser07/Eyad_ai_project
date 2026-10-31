@@ -5,8 +5,9 @@ import { ColorField } from "./Controls.jsx";
 const FONTS = ["Arial", "Calibri", "Verdana", "Georgia", "Times New Roman", "Courier New", "Inter", "Roboto", "Montserrat", "Poppins", "Cairo", "Tajawal", "Almarai"];
 
 /**
- * Floating formatting bar shown above the selected table cell.
- * Every control formats only that cell (scope "cell"); the parent decides when it is visible.
+ * Text formatting controls for the floating selection bar. Used for a picked table cell (pass `onFill`
+ * to also get the cell-fill colour) and for any selected text box / shape with text (omit `onFill`).
+ * The parent decides when it is visible and what `onText` applies to.
  *
  * Clicking a control blurs an in-progress cell edit first, which commits the typed text
  * (same path the ribbon uses), then the format is applied to the saved cell text.
@@ -59,10 +60,10 @@ export default function CellToolbar({ style, fill, themeColors, onText, onFill, 
         <ColorField label={t("pptxEditor.highlight")} value={style?.highlight?.hex || null} themeColors={themeColors} customColorLabel={t("pptxEditor.customColor")}
           onChange={(hex) => onText({ highlight: hex })} onNone={() => onText({ highlight: null })} noneLabel={t("pptxEditor.noHighlight")} />
       </span>
-      <span className="pptx-cell-color"><PaintBucket size={15} aria-hidden="true" />
+      {onFill && <span className="pptx-cell-color"><PaintBucket size={15} aria-hidden="true" />
         <ColorField label={t("pptxEditor.tableCellFill")} value={fill?.type === "solid" ? fill.hex : null} themeColors={themeColors} customColorLabel={t("pptxEditor.customColor")}
           onChange={(hex) => onFill(hex)} onNone={() => onFill(null)} noneLabel={t("pptxEditor.noFill")} />
-      </span>
+      </span>}
       <i className="pptx-cell-sep" aria-hidden="true" />
       {[["l", AlignStartVertical, "alignLeft"], ["ctr", AlignCenterVertical, "alignCenter"], ["r", AlignEndVertical, "alignRight"]].map(([value, Icon, key]) => (
         <button key={value} type="button" className="pptx-cell-btn" title={t(`pptxEditor.${key}`)} aria-label={t(`pptxEditor.${key}`)} onClick={() => onText({ align: value })}>

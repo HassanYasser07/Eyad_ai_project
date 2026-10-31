@@ -4,3 +4,4 @@ export { readPresentation, readSlide, flattenElements, layoutPathOf, EMU_PER_PX 
 export * from "./ops.js";
 export * from "./slides.js";
 export * from "./geometry.js";
+export * from "./defaults.js";

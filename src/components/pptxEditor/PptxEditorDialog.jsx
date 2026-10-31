@@ -14,6 +14,7 @@ import { checkPptxFile, readFile, saveBytes, pickFile, PPTX_ACCEPT, IMAGE_ACCEPT
 import { disposeMediaUrls, useMediaUrls } from "./useMediaUrls.js";
 import Canvas from "./Canvas.jsx";
 import CellToolbar from "./CellToolbar.jsx";
+import SelectionToolbar from "./SelectionToolbar.jsx";
 import SlideView, { collectImagePaths } from "./SlideView.jsx";
 import Inspector from "./Inspector.jsx";
 import ColorPalettePicker from "../shared/ColorPalettePicker.jsx";
@@ -266,7 +267,7 @@ export default function PptxEditorDialog({ onClose }) {
     finally { paletteSnapshotsRef.current = null; setAllSlidesPalette(false); }
   };
   const lockedIds = React.useMemo(() => new Set([...locked].filter((k) => okModel && k.startsWith(`${okModel.path}#`)).map((k) => k.split("#")[1])), [locked, okModel]);
-  const labels = React.useMemo(() => ({ canvas: t("pptxEditor.canvas"), locked: t("pptxEditor.locked"), loading: t("pptxEditor.loadingImage"), imageUnavailable: t("pptxEditor.imageUnavailable"), chartNote: t("pptxEditor.chartNote"), chartPreview: t("pptxEditor.chartPreview"), viewOnly: t("pptxEditor.viewOnly"), placeholderHint: t("pptxEditor.placeholderHint"), selectionActions: t("pptxEditor.selectionActions"), quickCopy: t("pptxEditor.quickCopyHint"), quickRotate: t("pptxEditor.quickRotateHint"), quickDelete: t("pptxEditor.quickDeleteHint"), cellToolbar: t("pptxEditor.cellToolbar"), selectTable: t("pptxEditor.selectWholeTable"), addColumn: t("pptxEditor.insertColumnHere"), addRow: t("pptxEditor.insertRowHere"), resizeColumn: t("pptxEditor.resizeColumn"), resizeRow: t("pptxEditor.resizeRow") }), [t]);
+  const labels = React.useMemo(() => ({ canvas: t("pptxEditor.canvas"), locked: t("pptxEditor.locked"), loading: t("pptxEditor.loadingImage"), imageUnavailable: t("pptxEditor.imageUnavailable"), chartNote: t("pptxEditor.chartNote"), chartPreview: t("pptxEditor.chartPreview"), viewOnly: t("pptxEditor.viewOnly"), placeholderHint: t("pptxEditor.placeholderHint"), selectionActions: t("pptxEditor.selectionActions"), quickCopy: t("pptxEditor.quickCopyHint"), quickRotate: t("pptxEditor.quickRotateHint"), quickDelete: t("pptxEditor.quickDeleteHint"), cellToolbar: t("pptxEditor.cellToolbar"), selectionToolbar: t("pptxEditor.selectionToolbar"), selectTable: t("pptxEditor.selectWholeTable"), addColumn: t("pptxEditor.insertColumnHere"), addRow: t("pptxEditor.insertRowHere"), resizeColumn: t("pptxEditor.resizeColumn"), resizeRow: t("pptxEditor.resizeRow") }), [t]);
 
   React.useEffect(() => { if (pkg) return pkg.subscribe(() => force()); return undefined; }, [pkg]);
   React.useEffect(() => { if (okModel) setSelection((s) => { const n = s.filter((id) => okModel.elements.some((e) => e.id === id)); return n.length === s.length ? s : n; }); }, [okModel]);
@@ -675,6 +676,10 @@ export default function PptxEditorDialog({ onClose }) {
         onText={(props) => a.tableRangeText(tableRowIndex, tableColIndex, tableFocus.scope, props)}
         onFill={(hex) => a.tableRangeFill(tableRowIndex, tableColIndex, tableFocus.scope, hex)} />
     : null;
+  // Any other selection (text box, shape, line, picture, group, several objects...) gets a bar with the tools that fit it.
+  const selectionToolbarNode = !cellToolbarNode && sel.length > 0 && !(sel.length === 1 && focusIsTable && tableFocus.picked)
+    ? <SelectionToolbar sel={sel} locked={lockedIds} a={a} t={t} themeColors={ribbonColors} textStyle={textStyle} opacity={selectedOpacity} />
+    : null;
   const textHasContent = (e) => !!e?.text?.plain?.some((v) => String(v).trim());
   const canTextEdit = sel.length > 0 && sel.every((e) => e.kind !== "table" && (e.kind === "text" || textHasContent(e)));
   const canShapeEdit = sel.length > 0 && sel.every((e) => e.kind === "shape" || e.kind === "line");
@@ -936,7 +941,7 @@ export default function PptxEditorDialog({ onClose }) {
             {!compact && <aside className="pe-left"><SlidesPanel pkg={pkg} pres={pres} idx={safeIdx} onSelect={slideOps.select} onAdd={slideOps.add} onDuplicate={dupSlide} onDelete={slideOps.del} onMove={slideOps.move} t={t} labels={labels} /></aside>}
             <main className="pe-main" dir="ltr">
               {okModel ? (
-                <Canvas ref={canvasRef} pkg={pkg} model={canvasModel} selection={selection} onSelect={setSelection} onSelectionComplete={activateContextForSelection} onInteractionStart={clearContextSheetTimer} onCommit={commitBounds} onEditText={openText} editingText={textEdit} tableSelection={tableFocus} cellToolbar={cellToolbarNode} onTableAdd={addTableLine} onTableSelectAll={selectWholeTable} textAutoSizeHeights={textAutoSizeDrafts} onTableCellSelect={selectTableCell} onAutoSizeText={autoSizeTextHeight} onTextCommit={commitInlineText} onTextCancel={cancelInlineText} onCopy={copyNow} onDelete={a.remove} onRotate={() => a.rotate(90)} multi={multi} grid={grid} locked={lockedIds} labels={labels} onZoom={setZoom} compact={compact} onSwipe={compact ? swipeSlide : undefined} canPrev={safeIdx > 0} canNext={!!pres && safeIdx < pres.slides.length - 1} keepInView={hasSheet || hasDrawer} />
+                <Canvas ref={canvasRef} pkg={pkg} model={canvasModel} selection={selection} onSelect={setSelection} onSelectionComplete={activateContextForSelection} onInteractionStart={clearContextSheetTimer} onCommit={commitBounds} onEditText={openText} editingText={textEdit} tableSelection={tableFocus} cellToolbar={cellToolbarNode || selectionToolbarNode} toolbarLabel={cellToolbarNode ? labels.cellToolbar : labels.selectionToolbar} onTableAdd={addTableLine} onTableSelectAll={selectWholeTable} textAutoSizeHeights={textAutoSizeDrafts} onTableCellSelect={selectTableCell} onAutoSizeText={autoSizeTextHeight} onTextCommit={commitInlineText} onTextCancel={cancelInlineText} onCopy={copyNow} onDelete={a.remove} onRotate={() => a.rotate(90)} multi={multi} grid={grid} locked={lockedIds} labels={labels} onZoom={setZoom} compact={compact} onSwipe={compact ? swipeSlide : undefined} canPrev={safeIdx > 0} canNext={!!pres && safeIdx < pres.slides.length - 1} keepInView={hasSheet || hasDrawer} />
               ) : <div className="pe-error"><AlertTriangle aria-hidden="true" />{t("pptxEditor.slideUnreadable")}</div>}
               {compact && pres && (
                 <div className="pe-slidenav">

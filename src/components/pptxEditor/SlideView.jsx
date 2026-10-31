@@ -1,5 +1,6 @@
 import React from "react";
 import { EMU_PER_PX } from "./engine/slideModel.js";
+import { NEW_SHAPE_FONT_PT, newCellFontPt } from "./engine/defaults.js";
 
 const px = (emu) => emu / EMU_PER_PX;
 const ptToPx = (pt) => (pt * 4) / 3;
@@ -79,7 +80,7 @@ function bulletText(b) {
   return "";
 }
 
-export function TextBody({ text, hint, cellMode = false, newCell = false, editing = false, elementId, frameW, frameH, onAutoSize, onEditStart, onCommit, onCancel }) {
+export function TextBody({ text, hint, cellMode = false, newCell = false, emptyPt = null, editing = false, elementId, frameW, frameH, onAutoSize, onEditStart, onCommit, onCancel }) {
   const containerRef = React.useRef(null);
   const contentRef = React.useRef(null);
   const autoSizeFrameRef = React.useRef(0);
@@ -184,7 +185,7 @@ export function TextBody({ text, hint, cellMode = false, newCell = false, editin
         }}>
       {empty && hint ? <div className="pptx-hint">{hint}</div> : paragraphs.map((p, i) => {
         // An empty table cell previews the style its first text will be saved with: centred, medium size.
-        const maxPt = newCell ? Math.max(20, ...p.runs.map((r) => r.style.size)) : Math.max(p.end.size, ...p.runs.map((r) => r.style.size));
+        const maxPt = newCell ? Math.max(emptyPt || 20, ...p.runs.map((r) => r.style.size)) : emptyPt && empty ? Math.max(emptyPt, ...p.runs.map((r) => r.style.size)) : Math.max(p.end.size, ...p.runs.map((r) => r.style.size));
         const fs = ptToPx(maxPt) * renderScale;
         const lh = p.lnSpc ? (p.lnSpc.pct ? p.lnSpc.pct * 1.2 : ptToPx(p.lnSpc.pts) / Math.max(1, fs / renderScale)) : 1.2;
         const sp = (s) => (s ? (s.pts !== undefined ? ptToPx(s.pts) * renderScale : s.pct * fs * 1.2) : 0);
@@ -287,7 +288,7 @@ function TableView({ el, w, h, tableSelection, editingText, onTableCellSelect, o
                     if (!onEditText) onTableCellSelect?.(el.id, ri, ci);
                   }}
                   onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); onEditText?.(el.id, { row: ri, col: ci }); }}>
-                  <TextBody text={c.text} cellMode newCell={!!c.text?.isEmpty} editing={editingText?.id === el.id && editingText?.row === ri && editingText?.col === ci}
+                  <TextBody text={c.text} cellMode newCell={!!c.text?.isEmpty} emptyPt={newCellFontPt(el.table.cols.length)} editing={editingText?.id === el.id && editingText?.row === ri && editingText?.col === ci}
                     onEditStart={() => onEditText?.(el.id, { row: ri, col: ci })}
                     onCommit={(texts) => onTextCommit?.(el.id, texts, { row: ri, col: ci })} onCancel={onTextCancel} />
                 </td>
@@ -337,7 +338,7 @@ function ElementNode({ el, urls, hints, idPrefix, labels, editingText, tableSele
       inner = (
         <>
           <Geometry el={el} w={w} h={h} idPrefix={idPrefix} urls={urls} />
-          {el.text && <TextBody text={el.text} hint={hints && el.ph ? labels.placeholderHint : null}
+          {el.text && <TextBody text={el.text} hint={hints && el.ph ? labels.placeholderHint : null} emptyPt={el.kind === "shape" && !el.ph ? NEW_SHAPE_FONT_PT : null}
             elementId={el.id} frameW={el.w} frameH={el.h} onAutoSize={onAutoSizeText}
             editing={editingText?.id === el.id && editingText?.row === undefined}
             onEditStart={() => onEditText?.(el.id)}

@@ -16,7 +16,7 @@ const HANDLES = [["nw", 0, 0], ["n", 0.5, 0], ["ne", 1, 0], ["e", 1, 0.5], ["se"
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const boundsOf = (e) => ({ x: e.x, y: e.y, w: e.w, h: e.h, rot: e.rot, flipH: e.flipH, flipV: e.flipV });
 
-const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelect, onSelectionComplete, onInteractionStart, onCommit, onEditText, onTextCommit, onTextCancel, onTableCellSelect, onAutoSizeText, textAutoSizeHeights, editingText, tableSelection, cellToolbar, onTableAdd, onTableSelectAll, onCopy, onDelete, onRotate, multi, grid, locked, labels, onZoom, compact, onSwipe, canPrev, canNext, keepInView }, ref) {
+const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelect, onSelectionComplete, onInteractionStart, onCommit, onEditText, onTextCommit, onTextCancel, onTableCellSelect, onAutoSizeText, textAutoSizeHeights, editingText, tableSelection, cellToolbar, toolbarLabel, onTableAdd, onTableSelectAll, onCopy, onDelete, onRotate, multi, grid, locked, labels, onZoom, compact, onSwipe, canPrev, canNext, keepInView }, ref) {
   const stageRef = React.useRef(null);
   const [size, setSize] = React.useState({ w: 800, h: 600 });
   const [view, setView] = React.useState({ zoom: 1, pan: { x: 0, y: 0 } });
@@ -96,7 +96,7 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
         setCellFit(fit ? { id, h: fit.h, tableGrid: fit.tableGrid } : null);
       });
     };
-    stage.addEventListener("in    put", onInput);
+    stage.addEventListener("input", onInput);
     return () => { cancelAnimationFrame(raf); stage.removeEventListener("input", onInput); };
   }, []);
   React.useEffect(() => { setCellFit(null); }, [model, editingText?.id, editingText?.row, editingText?.col]);
@@ -657,8 +657,8 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
         {tblSel && <TableHandles x0={ox + (tblSel.b.x / EMU_PER_PX) * s} y0={oy + (tblSel.b.y / EMU_PER_PX) * s} s={s} cols={tblSel.cols} rows={tblSel.rows}
           canAdd={!tblSel.el.table.hasMerge} compact={compact} drag={tblDrag} selected={tableSelection?.id === tblSel.el.id && tableSelection.picked && tableSelection.scope === "table"} labels={labels}
           onSelectAll={() => onTableSelectAll?.(tblSel.el.id)} onAdd={(kind, boundary) => onTableAdd?.(kind, boundary)} onResizeStart={startTableResize} />}
-        {/* Docked at the top of the workspace, under the editor ribbon; shown only while a cell / table is picked. */}
-        {cellToolbar && <div className="pptx-cell-toolbar" role="toolbar" aria-label={labels.cellToolbar}
+        {/* Docked at the top of the workspace, under the editor ribbon; shown while something is selected (cell formatting for a picked table cell, otherwise tools matching the selected object). */}
+        {cellToolbar && <div className="pptx-cell-toolbar" role="toolbar" aria-label={toolbarLabel || labels.cellToolbar}
           onPointerDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>{cellToolbar}</div>}
         {union && <div className="pptx-union" style={{ left: ox + (union.x / EMU_PER_PX) * s, top: oy + (union.y / EMU_PER_PX) * s, width: (union.w / EMU_PER_PX) * s, height: (union.h / EMU_PER_PX) * s }}><span>{frames.length}</span></div>}
         {marquee && <div className="pptx-marquee" style={{ left: Math.min(marquee.x0, marquee.x1), top: Math.min(marquee.y0, marquee.y1), width: Math.abs(marquee.x1 - marquee.x0), height: Math.abs(marquee.y1 - marquee.y0) }} />}

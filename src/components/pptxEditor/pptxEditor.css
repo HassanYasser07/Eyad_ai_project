@@ -493,3 +493,17 @@
 .pe-root.is-compact .pptx-tbl-resize.is-row i { height: 2px; }
 .pe-root.is-compact .pptx-tbl-resize.is-dragging i { opacity: .9; }
 @media (pointer: coarse) { .pptx-tbl-resize { pointer-events: none; } }
+
+/* ---- Selection bar: thicker, easier to hit, with an opacity slider ---- */
+.pptx-cell-toolbar { min-height: 52px; padding: 7px 10px; gap: 5px; border-radius: 16px; }
+.pptx-cell-btn { width: 36px; height: 36px; }
+.pptx-cell-btn:disabled { opacity: .38; cursor: not-allowed; }
+.pptx-cell-font { height: 36px; }
+.pptx-cell-size .pptx-cell-btn { width: 28px; height: 34px; }
+.pptx-cell-size input { height: 34px; }
+.pptx-tb-suffix { font-style: normal; font-size: 11px; color: hsl(var(--muted-foreground)); }
+.pptx-tb-slider { display: inline-flex; align-items: center; gap: 6px; width: 150px; padding: 0 6px; color: hsl(var(--muted-foreground)); }
+.pptx-tb-slider .pe-wave-slider-root { flex: 1 1 auto; min-width: 70px; }
+.pptx-tb-slider em { font-style: normal; font-size: 12px; min-width: 34px; text-align: end; font-variant-numeric: tabular-nums; color: hsl(var(--foreground)); }
+.pptx-cell-toolbar > *, .pptx-cell-toolbar .pptx-cell-size > * { flex: 0 0 auto; }
+@media (max-width: 640px) { .pptx-cell-toolbar { min-height: 56px; } .pptx-cell-btn { width: 40px; height: 40px; } .pptx-cell-font { height: 40px; } .pptx-tb-slider { width: 130px; } }
