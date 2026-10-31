@@ -7,16 +7,20 @@ const cumulative = (sizes) => sizes.reduce((acc, v) => { acc.push(acc[acc.length
 /**
  * Overlay controls around the single selected table (all in screen pixels, laid out from the model grid):
  *  - a small button at the top-left corner that selects the whole table,
- *  - draggable strips on every column / row border, the four outer edges included,
+ *  - draggable strips on every column / row border, the four outer edges included (mouse only: on touch the Canvas
+ *    arms a border drag from the finger position instead, so taps always reach the cell underneath),
  *  - "+" buttons on all four edges, one per border point, that insert a column / row there.
  * Dragging itself is handled by the Canvas (onResizeStart); this component only renders and reports.
  */
-export default function TableHandles({ x0, y0, s, cols, rows, canAdd, drag, selected, labels, onSelectAll, onAdd, onResizeStart }) {
+export default function TableHandles({ x0, y0, s, cols, rows, canAdd, compact, drag, selected, labels, onSelectAll, onAdd, onResizeStart }) {
   const xs = cumulative(cols).map((v) => x0 + (v / EMU_PER_PX) * s);
   const ys = cumulative(rows).map((v) => y0 + (v / EMU_PER_PX) * s);
   const W = xs[xs.length - 1] - x0, H = ys[ys.length - 1] - y0;
   const stop = (e) => e.stopPropagation();
-  const OUT = 18; // distance of the "+" buttons from the border
+  const OUT = compact ? 12 : 18; // distance of the "+" buttons from the border
+  // On touch layouts the "+" buttons that sit at a table corner would land on top of the corner resize handle,
+  // so those few are pushed further out of the handle's touch area.
+  const CORNER_OUT = compact ? 32 : OUT;
   // Border strips: every border (outer ones too) resizes its own column / row. Whole-table scaling is left to the
   // four corner handles, so the outer strips stop short of the corners to keep those handles reachable.
   const inset = 14;
@@ -24,7 +28,7 @@ export default function TableHandles({ x0, y0, s, cols, rows, canAdd, drag, sele
   const outerR = (b) => (b === 0 || b === ys.length - 1) && W > 4 * inset;
   return (
     <>
-      <button type="button" className={`pptx-tbl-select ${selected ? "is-active" : ""}`} style={{ left: Math.max(4, x0 - 30), top: Math.max(4, y0 - 30) }}
+      <button type="button" className={`pptx-tbl-select ${selected ? "is-active" : ""}`} style={{ left: Math.max(4, x0 - (compact ? 36 : 30)), top: Math.max(4, y0 - (compact ? 36 : 30)) }}
         title={labels.selectTable} aria-label={labels.selectTable} aria-pressed={!!selected}
         onPointerDown={stop} onClick={(e) => { e.stopPropagation(); onSelectAll(); }}><Table2 size={14} aria-hidden="true" /></button>
       {xs.map((x, b) => (
@@ -40,14 +44,14 @@ export default function TableHandles({ x0, y0, s, cols, rows, canAdd, drag, sele
           onPointerDown={(e) => onResizeStart(e, "row", b)}><i /></div>
       ))}
       {canAdd && !drag && <>
-        {xs.map((x, j) => [["top", y0 - OUT], ["bottom", y0 + H + OUT]].map(([edge, y]) => (
+        {xs.map((x, j) => { const cornerX = j === 0 || j === xs.length - 1, out = cornerX ? CORNER_OUT : OUT; return [["top", y0 - out], ["bottom", y0 + H + out]].map(([edge, y]) => (
           <button key={`ac${j}${edge}`} type="button" className="pptx-tbl-add" style={{ left: x, top: y }} title={labels.addColumn} aria-label={labels.addColumn}
             onPointerDown={stop} onClick={(e) => { e.stopPropagation(); onAdd("col", j); }}><Plus size={12} aria-hidden="true" /></button>
-        )))}
-        {ys.map((y, i) => [["left", x0 - OUT], ["right", x0 + W + OUT]].map(([edge, x]) => (
+        )); })}
+        {ys.map((y, i) => { const cornerY = i === 0 || i === ys.length - 1, out = cornerY ? CORNER_OUT : OUT; return [["left", x0 - out], ["right", x0 + W + out]].map(([edge, x]) => (
           <button key={`ar${i}${edge}`} type="button" className="pptx-tbl-add" style={{ left: x, top: y }} title={labels.addRow} aria-label={labels.addRow}
             onPointerDown={stop} onClick={(e) => { e.stopPropagation(); onAdd("row", i); }}><Plus size={12} aria-hidden="true" /></button>
-        )))}
+        )); })}
       </>}
     </>
   );

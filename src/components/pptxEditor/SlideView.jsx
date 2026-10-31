@@ -1,5 +1,6 @@
 import React from "react";
 import { EMU_PER_PX } from "./engine/slideModel.js";
+import { NEW_SHAPE_FONT_PT, newCellFontPt } from "./engine/defaults.js";
 
 const px = (emu) => emu / EMU_PER_PX;
 const ptToPx = (pt) => (pt * 4) / 3;
@@ -65,8 +66,12 @@ function Geometry({ el, w, h, idPrefix, urls }) {
       </>
     );
   } else body = <rect x="0" y="0" width={w} height={h} {...f} {...stroke} />;
+  // Outlines (path / custom) are plain coordinates for the size they were read at. While a resize drag is previewed the
+  // element is wider/taller than that, so map the original coordinate box onto the new size instead of waiting for the
+  // drop to re-read the shape. Ellipse / rect / line are drawn from w and h directly and need no mapping.
+  const scaled = (g.kind === "path" || g.kind === "custom") && g.baseW > 0 && g.baseH > 0 && (Math.abs(g.baseW - w) > 0.01 || Math.abs(g.baseH - h) > 0.01);
   return (
-    <svg className="pptx-geom" width={Math.max(w, 1)} height={Math.max(h, 1)} viewBox={`0 0 ${Math.max(w, 1)} ${Math.max(h, 1)}`} aria-hidden="true">
+    <svg className="pptx-geom" width={Math.max(w, 1)} height={Math.max(h, 1)} viewBox={scaled ? `0 0 ${g.baseW} ${g.baseH}` : `0 0 ${Math.max(w, 1)} ${Math.max(h, 1)}`} preserveAspectRatio={scaled ? "none" : undefined} aria-hidden="true">
       {defs.length > 0 && <defs>{defs}</defs>}
       {body}
     </svg>
@@ -79,12 +84,16 @@ function bulletText(b) {
   return "";
 }
 
-export function TextBody({ text, hint, cellMode = false, newCell = false, editing = false, elementId, frameW, frameH, onAutoSize, onEditStart, onCommit, onCancel }) {
+export function TextBody({ text, hint, cellMode = false, newCell = false, emptyPt = null, ghost = null, editing = false, elementId, frameW, frameH, onAutoSize, onEditStart, onCommit, onCancel }) {
   const containerRef = React.useRef(null);
   const contentRef = React.useRef(null);
   const autoSizeFrameRef = React.useRef(0);
   const body = text?.body || {};
   const renderScale = 1;
+  // `ghost` is a grey "type here" hint drawn over an empty text box. It is never part of the editable content,
+  // and it disappears with the first typed character (and returns if the box is emptied again).
+  const [typed, setTyped] = React.useState(false);
+  React.useEffect(() => { setTyped(false); }, [editing]);
 
   // While typing, measure the wrapped content and grow only this text element's
   // frame. The callback updates a temporary geometry draft; no neighboring
@@ -136,14 +145,32 @@ export function TextBody({ text, hint, cellMode = false, newCell = false, editin
   const justify = body.anchor === "ctr" ? "center" : body.anchor === "b" ? "flex-end" : "flex-start";
   const nowrap = body.wrap === "none";
   const empty = text.isEmpty;
+  const ptOf = (p) => (newCell ? Math.max(emptyPt || 20, ...p.runs.map((r) => r.style.size)) : emptyPt && empty ? Math.max(emptyPt, ...p.runs.map((r) => r.style.size)) : Math.max(p.end.size, ...p.runs.map((r) => r.style.size)));
+  // While editing, the first paragraph's look is also set on the editable root. Select-all + delete makes the browser
+  // remove the paragraph/span elements that carry the font size, and the next typed character then lands directly in
+  // the root: without these inherited values it would be drawn at the tiny default size.
+  const p0 = paragraphs[0];
+  const s0 = p0 ? (p0.runs[0]?.style || p0.end) : null;
+  const rootStyle = editing && p0 && s0 ? {
+    fontSize: ptToPx(ptOf(p0)) * renderScale, fontFamily: font(s0.font), color: rgba(s0.color), lineHeight: 1.2,
+    fontWeight: s0.bold ? 700 : 400, fontStyle: s0.italic ? "italic" : "normal",
+    textAlign: newCell || p0.algn === "ctr" ? "center" : p0.algn === "r" ? "right" : p0.algn === "just" ? "justify" : "left",
+  } : undefined;
   return (
     <div ref={containerRef} className={`pptx-text ${editing ? "is-inline-editing" : ""}`} style={{ padding: `${px(ins.t)}px ${px(ins.r)}px ${px(ins.b)}px ${px(ins.l)}px`, justifyContent: cellMode ? "flex-start" : justify, whiteSpace: nowrap ? "pre" : "pre-wrap" }}
       onDoubleClick={(event) => { if (!editing && onEditStart) { event.preventDefault(); event.stopPropagation(); onEditStart(); } }}>
+      {ghost && empty && !typed && (() => {
+        const p0 = paragraphs[0];
+        const pt = p0 ? Math.max(p0.end.size, ...p0.runs.map((r) => r.style.size)) : 18;
+        return <div className="pptx-ghost" aria-hidden="true" dir={p0?.rtl ? "rtl" : undefined} style={{ top: px(ins.t), left: px(ins.l), right: px(ins.r), fontSize: ptToPx(pt) * renderScale, textAlign: p0?.algn === "ctr" ? "center" : p0?.algn === "r" ? "right" : "left", fontFamily: font(p0?.end.font) }}>{ghost}</div>;
+      })()}
       <div key={editing ? "editing-content" : "view-content"} ref={contentRef} className="pptx-text-content" data-auto-fit="none" data-auto-scale="1.000"
+        style={rootStyle}
         contentEditable={editing} suppressContentEditableWarning={editing}
         onPointerDown={(event) => { if (editing) event.stopPropagation(); }}
-        onInput={() => {
+        onInput={(event) => {
           if (!editing) return;
+          if (ghost) setTyped(!!String(event.currentTarget.innerText ?? "").replace(/[\u200B\uFEFF\s]/g, ""));
           requestContentFit();
           // contenteditable may scroll the slide/canvas viewport to keep the
           // caret visible. Preserve ancestor scroll positions so typing past
@@ -184,7 +211,7 @@ export function TextBody({ text, hint, cellMode = false, newCell = false, editin
         }}>
       {empty && hint ? <div className="pptx-hint">{hint}</div> : paragraphs.map((p, i) => {
         // An empty table cell previews the style its first text will be saved with: centred, medium size.
-        const maxPt = newCell ? Math.max(20, ...p.runs.map((r) => r.style.size)) : Math.max(p.end.size, ...p.runs.map((r) => r.style.size));
+        const maxPt = ptOf(p);
         const fs = ptToPx(maxPt) * renderScale;
         const lh = p.lnSpc ? (p.lnSpc.pct ? p.lnSpc.pct * 1.2 : ptToPx(p.lnSpc.pts) / Math.max(1, fs / renderScale)) : 1.2;
         const sp = (s) => (s ? (s.pts !== undefined ? ptToPx(s.pts) * renderScale : s.pct * fs * 1.2) : 0);
@@ -287,7 +314,7 @@ function TableView({ el, w, h, tableSelection, editingText, onTableCellSelect, o
                     if (!onEditText) onTableCellSelect?.(el.id, ri, ci);
                   }}
                   onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); onEditText?.(el.id, { row: ri, col: ci }); }}>
-                  <TextBody text={c.text} cellMode newCell={!!c.text?.isEmpty} editing={editingText?.id === el.id && editingText?.row === ri && editingText?.col === ci}
+                  <TextBody text={c.text} cellMode newCell={!!c.text?.isEmpty} emptyPt={newCellFontPt(el.table.cols.length)} editing={editingText?.id === el.id && editingText?.row === ri && editingText?.col === ci}
                     onEditStart={() => onEditText?.(el.id, { row: ri, col: ci })}
                     onCommit={(texts) => onTextCommit?.(el.id, texts, { row: ri, col: ci })} onCancel={onTextCancel} />
                 </td>
@@ -300,12 +327,18 @@ function TableView({ el, w, h, tableSelection, editingText, onTableCellSelect, o
   );
 }
 
+// While a table is only being MOVED its `el.table` is the same object, so the (expensive) cell DOM is left alone and
+// only the wrapper's position changes. Resizing passes a new table object per frame and re-renders as needed.
+const MemoTableView = React.memo(TableView, (a, b) => a.el.id === b.el.id && a.el.table === b.el.table && a.w === b.w && a.h === b.h
+  && a.tableSelection === b.tableSelection && a.editingText === b.editingText && a.onTableCellSelect === b.onTableCellSelect
+  && a.onEditText === b.onEditText && a.onTextCommit === b.onTextCommit && a.onTextCancel === b.onTextCancel);
+
 function ElementNode({ el, urls, hints, idPrefix, labels, editingText, tableSelection, onTableCellSelect, onAutoSizeText, onEditText, onTextCommit, onTextCancel }) {
   if (el.hidden) return null;
   if (el.kind === "group") return <>{el.children.map((c, ci) => <ElementNode key={`${c.id}-${ci}`} el={c} urls={urls} hints={hints} idPrefix={idPrefix} labels={labels} editingText={editingText} tableSelection={tableSelection} onTableCellSelect={onTableCellSelect} onAutoSizeText={onAutoSizeText} onEditText={onEditText} onTextCommit={onTextCommit} onTextCancel={onTextCancel} />)}</>;
   const w = px(el.w), h = px(el.h);
   const transforms = [el.rot ? `rotate(${el.rot}deg)` : "", el.flipH ? "scaleX(-1)" : "", el.flipV ? "scaleY(-1)" : ""].filter(Boolean).join(" ");
-  const style = { left: px(el.x), top: px(el.y), width: w, height: h, transform: transforms || undefined, transformOrigin: "center center" };
+  const style = { left: px(el.x), top: px(el.y), width: w, height: h, transform: transforms || undefined, transformOrigin: "center center", willChange: el.dragging ? "transform" : undefined };
   let inner = null;
   switch (el.kind) {
     case "image": {
@@ -321,7 +354,7 @@ function ElementNode({ el, urls, hints, idPrefix, labels, editingText, tableSele
       if (el.line && !el.line.none && el.line.hex) inner = <>{inner}<div className="pptx-img-border" style={{ borderColor: `#${el.line.hex}`, borderWidth: Math.max(1, px(el.line.w ?? 12700)), borderRadius: round, opacity: el.line.alpha ?? 1 }} /></>;
       break;
     }
-    case "table": inner = <TableView el={el} w={w} h={h} tableSelection={tableSelection} editingText={editingText} onTableCellSelect={onTableCellSelect} onEditText={onEditText} onTextCommit={onTextCommit} onTextCancel={onTextCancel} />; break;
+    case "table": inner = <MemoTableView el={el} w={w} h={h} tableSelection={tableSelection} editingText={editingText} onTableCellSelect={onTableCellSelect} onEditText={onEditText} onTextCommit={onTextCommit} onTextCancel={onTextCancel} />; break;
     case "chart": inner = el.chartInfo.preview
       ? <ChartPreview info={el.chartInfo} w={w} h={h} note={labels.chartPreview} />
       : <div className="pptx-object-card"><strong>{el.chartInfo.title || el.chartInfo.type}</strong>{el.chartInfo.title && <span>{el.chartInfo.type}</span>}<em>{labels.chartNote}</em></div>; break;
@@ -331,7 +364,7 @@ function ElementNode({ el, urls, hints, idPrefix, labels, editingText, tableSele
       inner = (
         <>
           <Geometry el={el} w={w} h={h} idPrefix={idPrefix} urls={urls} />
-          {el.text && <TextBody text={el.text} hint={hints && el.ph ? labels.placeholderHint : null}
+          {el.text && <TextBody text={el.text} hint={hints && el.ph ? labels.placeholderHint : null} emptyPt={el.kind === "shape" && !el.ph ? NEW_SHAPE_FONT_PT : null} ghost={hints && el.kind === "text" && !el.ph ? labels.newTextHint : null}
             elementId={el.id} frameW={el.w} frameH={el.h} onAutoSize={onAutoSizeText}
             editing={editingText?.id === el.id && editingText?.row === undefined}
             onEditStart={() => onEditText?.(el.id)}
@@ -341,6 +374,9 @@ function ElementNode({ el, urls, hints, idPrefix, labels, editingText, tableSele
   }
   return <div className={`pptx-el pptx-el-${el.kind}`} data-id={el.id} style={style}>{inner}</div>;
 }
+
+// Shallow-compared wrapper used by SlideView; ElementNode itself recurses into groups with the plain component.
+const MemoElement = React.memo(ElementNode);
 
 function backgroundStyle(bg, urls) {
   if (!bg) return { background: "#fff" };
@@ -360,11 +396,20 @@ function backgroundStyle(bg, urls) {
  */
 export default function SlideView({ model, urls, overrides, geometryDrafts, hints = false, labels, editingText, tableSelection, onTableCellSelect, onAutoSizeText, onEditText, onTextCommit, onTextCancel }) {
   const idPrefix = React.useId().replace(/:/g, "");
+  // Stable callbacks (always calling the latest handler) so unchanged elements can skip rendering while another
+  // one is being dragged: a drag then re-renders only the moving element instead of the whole slide.
+  const handlers = React.useRef({});
+  handlers.current = { onTableCellSelect, onAutoSizeText, onEditText, onTextCommit, onTextCancel };
+  const st = React.useMemo(() => {
+    const proxy = (name) => (handlers.current[name] ? (...args) => handlers.current[name]?.(...args) : undefined);
+    return { onTableCellSelect: proxy("onTableCellSelect"), onAutoSizeText: proxy("onAutoSizeText"), onEditText: proxy("onEditText"), onTextCommit: proxy("onTextCommit"), onTextCancel: proxy("onTextCancel") };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [!!onTableCellSelect, !!onAutoSizeText, !!onEditText, !!onTextCommit, !!onTextCancel]);
   const W = px(model.size.w), H = px(model.size.h);
   const renderTop = (el) => {
     if (el.hidden) return null;
     const ov = overrides?.get(el.id);
-    if (!ov) return <ElementNode key={el.id} el={el} urls={urls} hints={hints} idPrefix={idPrefix} labels={labels} editingText={editingText} tableSelection={tableSelection} onTableCellSelect={onTableCellSelect} onAutoSizeText={onAutoSizeText} onEditText={onEditText} onTextCommit={onTextCommit} onTextCancel={onTextCancel} />;
+    if (!ov) return <MemoElement key={el.id} el={el} urls={urls} hints={hints} idPrefix={idPrefix} labels={labels} editingText={editingText} tableSelection={tableSelection} onTableCellSelect={st.onTableCellSelect} onAutoSizeText={st.onAutoSizeText} onEditText={st.onEditText} onTextCommit={st.onTextCommit} onTextCancel={st.onTextCancel} />;
     // `geometryDrafts` is only the active pointer drag/resize preview. A height
     // override coming from textAutoSizeHeights is different: keep auto-sizing live
     // so additional typing or wrapping can continue to grow the selected frame.
@@ -375,7 +420,7 @@ export default function SlideView({ model, urls, overrides, geometryDrafts, hint
       return (
         <div key={el.id} className="pptx-group-preview" style={{ left: px(el.x), top: px(el.y), width: px(el.w), height: px(el.h), transform: `translate(${px(dx)}px,${px(dy)}px) rotate(${ov.rot - el.rot}deg) scale(${sx},${sy})` }}>
           <div style={{ position: "absolute", left: -px(el.x), top: -px(el.y) }}>
-            {el.children.map((c, ci) => <ElementNode key={`${c.id}-${ci}`} el={c} urls={urls} hints={hints} idPrefix={idPrefix} labels={labels} editingText={editingText} tableSelection={tableSelection} onTableCellSelect={onTableCellSelect} onAutoSizeText={null} onEditText={onEditText} onTextCommit={onTextCommit} onTextCancel={onTextCancel} />)}
+            {el.children.map((c, ci) => <MemoElement key={`${c.id}-${ci}`} el={c} urls={urls} hints={hints} idPrefix={idPrefix} labels={labels} editingText={editingText} tableSelection={tableSelection} onTableCellSelect={st.onTableCellSelect} onAutoSizeText={null} onEditText={st.onEditText} onTextCommit={st.onTextCommit} onTextCancel={st.onTextCancel} />)}
           </div>
         </div>
       );
@@ -384,11 +429,12 @@ export default function SlideView({ model, urls, overrides, geometryDrafts, hint
     const previewEl = el.kind === "table" && ov.tableGrid && el.table
       ? { ...el, ...ov, table: { ...el.table, cols: ov.tableGrid.cols, rows: el.table.rows.map((r, i) => ({ ...r, h: ov.tableGrid.rows[i] ?? r.h })) } }
       : { ...el, ...ov };
-    return <ElementNode key={el.id} el={previewEl} urls={urls} hints={hints} idPrefix={idPrefix} labels={labels} editingText={editingText} tableSelection={tableSelection} onTableCellSelect={onTableCellSelect} onAutoSizeText={suspendAutoSize ? null : onAutoSizeText} onEditText={onEditText} onTextCommit={onTextCommit} onTextCancel={onTextCancel} />;
+    if (el.kind === "table") previewEl.dragging = true; // own compositor layer while it is being dragged
+    return <MemoElement key={el.id} el={previewEl} urls={urls} hints={hints} idPrefix={idPrefix} labels={labels} editingText={editingText} tableSelection={tableSelection} onTableCellSelect={st.onTableCellSelect} onAutoSizeText={suspendAutoSize ? null : st.onAutoSizeText} onEditText={st.onEditText} onTextCommit={st.onTextCommit} onTextCancel={st.onTextCancel} />;
   };
   return (
     <div className="pptx-slide" style={{ width: W, height: H, ...backgroundStyle(model.background, urls) }}>
-      {model.under.map((el, ui) => <ElementNode key={`u${ui}`} el={el} urls={urls} hints={false} idPrefix={idPrefix} labels={labels} />)}
+      {model.under.map((el, ui) => <MemoElement key={`u${ui}`} el={el} urls={urls} hints={false} idPrefix={idPrefix} labels={labels} />)}
       {model.elements.map(renderTop)}
     </div>
   );

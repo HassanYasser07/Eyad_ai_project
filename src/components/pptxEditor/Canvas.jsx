@@ -4,10 +4,11 @@ import SlideView, { collectImagePaths } from "./SlideView.jsx";
 import { useMediaUrls } from "./useMediaUrls.js";
 import { EMU_PER_PX } from "./engine/slideModel.js";
 import { hitTest, rotatedBox, unionBox, snapBox } from "./engine/geometry.js";
-import { fitFrame, fitTableToContent, fitTableGrid } from "./textFit.js";
+import { fitFrame, fitTableToContent, fitTableGrid, measureTableRowHeights } from "./textFit.js";
 import TableHandles from "./TableHandles.jsx";
 
 const MIN_SIZE = 91440;
+const SNAP_MAX_SPEED = 0.45; // px/ms: dragging faster than this ignores alignment guides so quick moves are never "caught"
 const MIN_COL = 285750; // 30 px: narrowest column a border drag can produce
 const MIN_ROW = 190500; // 20 px: shortest row (content may force more)
 const GRID = 228600; // 0.25 in
@@ -15,14 +16,37 @@ const HANDLES = [["nw", 0, 0], ["n", 0.5, 0], ["ne", 1, 0], ["e", 1, 0.5], ["se"
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const boundsOf = (e) => ({ x: e.x, y: e.y, w: e.w, h: e.h, rot: e.rot, flipH: e.flipH, flipV: e.flipV });
 
-const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelect, onSelectionComplete, onInteractionStart, onCommit, onEditText, onTextCommit, onTextCancel, onTableCellSelect, onAutoSizeText, textAutoSizeHeights, editingText, tableSelection, cellToolbar, onTableAdd, onTableSelectAll, onCopy, onDelete, onRotate, multi, grid, locked, labels, onZoom, compact }, ref) {
+const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelect, onSelectionComplete, onInteractionStart, onCommit, onEditText, onTextCommit, onTextCancel, onTableCellSelect, onAutoSizeText, textAutoSizeHeights, editingText, tableSelection, cellToolbar, toolbarLabel, onTableAdd, onTableSelectAll, onCopy, onDelete, onRotate, multi, grid, locked, labels, onZoom, compact, onSwipe, canPrev, canNext, keepInView }, ref) {
   const stageRef = React.useRef(null);
   const [size, setSize] = React.useState({ w: 800, h: 600 });
   const [view, setView] = React.useState({ zoom: 1, pan: { x: 0, y: 0 } });
-  const [draft, setDraft] = React.useState(null);
+  const [draft, setDraftState] = React.useState(null);
   const [guides, setGuides] = React.useState(null);
+  // The live drag result is kept in a ref that is updated synchronously on every pointer event, so releasing
+  // the pointer always commits the very last position - even when the drag was faster than React could render.
+  // Screen updates are coalesced to one per animation frame (latest wins) to keep fast drags smooth.
+  const draftRef = React.useRef(null), uiRaf = React.useRef(0), uiPending = React.useRef(null);
+  const dropPending = () => { if (uiRaf.current) cancelAnimationFrame(uiRaf.current); uiRaf.current = 0; uiPending.current = null; };
+  const setDraft = (v) => { dropPending(); draftRef.current = v; setDraftState(v); };
+  const pushDraft = (v, g) => {
+    draftRef.current = v;
+    uiPending.current = g === undefined ? { draft: v } : { draft: v, guides: g };
+    if (!uiRaf.current) uiRaf.current = requestAnimationFrame(() => {
+      uiRaf.current = 0;
+      const p = uiPending.current; uiPending.current = null;
+      if (!p) return;
+      setDraftState(p.draft);
+      if ("guides" in p) setGuides(p.guides);
+    });
+  };
+  React.useEffect(() => dropPending, []);
   const [marquee, setMarquee] = React.useState(null);
   const [cellFit, setCellFit] = React.useState(null); // live row/frame growth while typing in a table cell
+  // One-finger slide swipe (touch only). `swipe.x` is the live horizontal offset of the slide while the finger is
+  // down; `anim` switches on a short CSS transition for the settle / enter animation.
+  const [swipe, setSwipe] = React.useState(null);
+  const swipeTimer = React.useRef(0);
+  React.useEffect(() => () => clearTimeout(swipeTimer.current), []);
   const [tblDrag, setTblDrag] = React.useState(null); // { kind: "col"|"row", index } while a table border is dragged
   const urls = useMediaUrls(pkg, collectImagePaths(model));
 
@@ -34,7 +58,7 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
 
   // Everything the pointer handlers need, kept fresh without re-binding listeners.
   const R = React.useRef({});
-  R.current = { s, ox, oy, fit, size, W, H, model, selection, multi, grid, locked, view, onSelect, onSelectionComplete, onInteractionStart, onCommit, onEditText, draft, editingText, tableSelection };
+  R.current = { compact, onSwipe, canPrev, canNext, s, ox, oy, fit, size, W, H, model, selection, multi, grid, locked, view, onSelect, onSelectionComplete, onInteractionStart, onCommit, onEditText, draft, editingText, tableSelection };
   const pointers = React.useRef(new Map());
   const gesture = React.useRef(null);
   const lastTap = React.useRef({ t: 0, id: null, x: 0, y: 0 });
@@ -81,9 +105,26 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
 
   const clampPan = React.useCallback((zoom, pan, sz = R.current.size) => {
     const sc = R.current.fit * zoom;
-    const maxX = Math.max(0, (R.current.W * sc) / 2 + sz.w / 2 - 60), maxY = Math.max(0, (R.current.H * sc) / 2 + sz.h / 2 - 60);
+    // Touch layouts: the slide may never be dragged out of the stage (a sheet would then hide it); it can only be
+    // panned while it is larger than the stage. Desktop keeps the loose limit.
+    const maxX = R.current.compact ? Math.max(0, (R.current.W * sc - sz.w) / 2 + 10) : Math.max(0, (R.current.W * sc) / 2 + sz.w / 2 - 60);
+    const maxY = R.current.compact ? Math.max(0, (R.current.H * sc - sz.h) / 2 + 10) : Math.max(0, (R.current.H * sc) / 2 + sz.h / 2 - 60);
     return { x: clamp(pan.x, -maxX, maxX), y: clamp(pan.y, -maxY, maxY) };
   }, []);
+  // A sheet opening / closing resizes the stage. On touch layouts the slide must stay in view, so at fit zoom it is
+  // re-centred (pan reset) and when zoomed in the pan is re-clamped to the new stage size.
+  React.useEffect(() => {
+    if (!compact) return;
+    setView((v) => {
+      const pan = v.zoom <= 1.02 ? { x: 0, y: 0 } : clampPan(v.zoom, v.pan, R.current.size);
+      return pan.x === v.pan.x && pan.y === v.pan.y ? v : { ...v, pan };
+    });
+  }, [compact, size.w, size.h, clampPan]);
+  // A sheet / drawer is open: whatever zoom or pan the user left behind, show the whole slide in the space that remains.
+  React.useEffect(() => {
+    if (!compact || !keepInView) return;
+    setView((v) => (v.zoom === 1 && v.pan.x === 0 && v.pan.y === 0 ? v : { zoom: 1, pan: { x: 0, y: 0 } }));
+  }, [compact, keepInView, size.w, size.h]);
   const zoomAt = React.useCallback((factor, cx, cy) => {
     setView((v) => {
       const { fit: f, size: sz, W: w, H: h } = R.current;
@@ -160,7 +201,7 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
     return () => { el.removeEventListener("wheel", wheel); for (const t of ["gesturestart", "gesturechange", "gestureend"]) el.removeEventListener(t, stop); };
   }, [zoomAt, clampPan]);
 
-  const cancelGesture = () => { gesture.current = null; setDraft(null); setGuides(null); setMarquee(null); };
+  const cancelGesture = () => { gesture.current = null; setDraft(null); setGuides(null); setMarquee(null); setSwipe(null); };
 
   const snapCandidates = (ids) => {
     const { model: m, grid: g } = R.current;
@@ -180,8 +221,27 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
     const pts = [...pointers.current.values()].slice(0, 2);
     const r = stageRef.current.getBoundingClientRect();
     const d = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) || 1;
-    setDraft(null); setGuides(null); setMarquee(null);
+    setDraft(null); setGuides(null); setMarquee(null); setSwipe(null);
     gesture.current = { type: "pinch", d0: d, zoom0: R.current.view.zoom, pan0: R.current.view.pan, o0: { x: R.current.ox, y: R.current.oy }, s0: R.current.s, c0: { x: (pts[0].x + pts[1].x) / 2 - r.left, y: (pts[0].y + pts[1].y) / 2 - r.top } };
+  };
+
+  // Closest column / row border of the selected table to a touch point (screen px), or null.
+  const nearTableBorder = (e) => {
+    const t = R.current.tblSel;
+    if (!t) return null;
+    const r = stageRef.current.getBoundingClientRect(), { s: sc, ox: ox0, oy: oy0 } = R.current;
+    const px = e.clientX - r.left, py = e.clientY - r.top;
+    const x0 = ox0 + (t.b.x / EMU_PER_PX) * sc, y0 = oy0 + (t.b.y / EMU_PER_PX) * sc;
+    const cum = (sizes) => sizes.reduce((acc, v) => { acc.push(acc[acc.length - 1] + v); return acc; }, [0]);
+    const xs = cum(t.cols).map((v) => x0 + (v / EMU_PER_PX) * sc), ys = cum(t.rows).map((v) => y0 + (v / EMU_PER_PX) * sc);
+    const x1 = xs[xs.length - 1], y1 = ys[ys.length - 1];
+    const minCol = Math.min(...t.cols) / EMU_PER_PX * sc, minRow = Math.min(...t.rows) / EMU_PER_PX * sc;
+    const TOL = 14;
+    const tolC = Math.min(TOL, minCol * 0.35), tolR = Math.min(TOL, minRow * 0.35); // tiny cells keep room for plain taps / table moves
+    let best = null;
+    if (py >= y0 - TOL && py <= y1 + TOL) xs.forEach((x, b) => { const d = Math.abs(px - x); if (d <= tolC && (!best || d < best.d)) best = { kind: "col", border: b, d }; });
+    if (px >= x0 - TOL && px <= x1 + TOL) ys.forEach((y, b) => { const d = Math.abs(py - y); if (d <= tolR && (!best || d < best.d)) best = { kind: "row", border: b, d }; });
+    return best ? { kind: best.kind, border: best.border } : null;
   };
 
   const onPointerDown = (e) => {
@@ -214,7 +274,18 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
       if (additive) { if (sel.includes(target)) toggleOff = true; else pending = [...sel, target]; }
       else if (!sel.includes(target)) pending = [target];
     }
-    gesture.current = { type: target ? "press" : "empty", id: target, tapId, pending, start: { x: e.clientX, y: e.clientY }, touch, moved: false, toggleOff, additive, pan0: R.current.view.pan, wasSelected: !!target && sel.includes(target) };
+    // A one-finger horizontal swipe changes slide when it starts on empty canvas or on an object that is not
+    // selected yet (select first, then drag, like other mobile slide editors). Dragging an already selected
+    // object, handles, multi-select mode, text editing and zoomed-in panning keep their normal behaviour.
+    const swipe = touch && !additive && !e.altKey && typeof R.current.onSwipe === "function" && R.current.view.zoom <= 1.02 && !R.current.editingText && (!target || !sel.includes(target));
+    gesture.current = { type: target ? "press" : "empty", id: target, tapId, pending, start: { x: e.clientX, y: e.clientY }, touch, moved: false, toggleOff, additive, pan0: R.current.view.pan, wasSelected: !!target && sel.includes(target), swipe, axis: null, t0: e.timeStamp };
+    // Touch / pen on the selected table: pressing near a column / row border only ARMS a border drag. A plain tap
+    // still selects the cell under the finger; the border moves only once the finger actually drags along it.
+    const tid = R.current.tblSel?.el.id;
+    if (touch && !additive && !e.altKey && tid && (target === tid || !target)) {
+      const nb = nearTableBorder(e);
+      if (nb) { gesture.current.arm = { ...nb, id: tid }; gesture.current.swipe = false; }
+    }
   };
 
   const startHandle = (e, kind, id) => {
@@ -224,7 +295,7 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY, type: e.pointerType });
     if (pointers.current.size >= 2) { startPinch(); return; }
     const el = R.current.model.elements.find((x) => x.id === id);
-    gesture.current = { type: "handle", kind, id, start: { x: e.clientX, y: e.clientY }, b0: boundsOf(el), isImage: el.kind === "image", moved: false };
+    gesture.current = { type: "handle", kind, id, start: { x: e.clientX, y: e.clientY }, b0: boundsOf(el), isImage: el.kind === "image", isTable: el.kind === "table", moved: false };
   };
 
   const onPointerMove = (e) => {
@@ -248,6 +319,35 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
     if (g.type === "pan") { setView((v) => ({ ...v, pan: clampPan(v.zoom, { x: g.pan0.x + e.clientX - g.start.x, y: g.pan0.y + e.clientY - g.start.y }) })); return; }
     const dxs = e.clientX - g.start.x, dys = e.clientY - g.start.y;
     const moved = Math.hypot(dxs, dys) > (g.touch ? 7 : 4);
+    if (g.arm && moved) {
+      // The finger started on a table border and has now travelled: dragging ALONG the border resizes that
+      // column / row; any other direction falls back to the normal gesture (move the table / pan).
+      const { kind, border, id } = g.arm;
+      const along = kind === "col" ? Math.abs(dxs) > Math.abs(dys) * 0.8 : Math.abs(dys) > Math.abs(dxs) * 0.8;
+      g.arm = null;
+      if (along && R.current.tblSel?.el.id === id) {
+        clearTimeout(g.idle);
+        gesture.current = { type: "idle" };
+        setDraft(null); setGuides(null); setMarquee(null); setSwipe(null);
+        runTableResize(e.pointerId, g.start.x, g.start.y, kind, border);
+        return;
+      }
+    }
+    if (g.swipe) {
+      if (!g.axis) {
+        if (Math.hypot(dxs, dys) < 10) return;
+        g.axis = Math.abs(dxs) > Math.abs(dys) * 1.2 ? "x" : "y";
+        g.moved = true;
+        g.pending = null; g.tapId = null; // a swipe never changes the selection
+      }
+      if (g.axis === "x") {
+        const { canPrev: cp, canNext: cn, size: sz } = R.current;
+        const can = dxs < 0 ? cn : cp;
+        const off = (can ? dxs : dxs * 0.25);
+        setSwipe({ x: clamp(off, -sz.w * 0.9, sz.w * 0.9), anim: false });
+      }
+      return;
+    }
     if (g.type === "empty") {
       if (!moved && !g.moved) return;
       g.moved = true;
@@ -266,15 +366,34 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
       let dx = (dxs / sc) * EMU_PER_PX, dy = (dys / sc) * EMU_PER_PX;
       if (e.shiftKey) { if (Math.abs(dx) > Math.abs(dy)) dy = 0; else dx = 0; }
       const boxes = [...g.starts.values()].map((b) => rotatedBox({ ...b, x: b.x + dx, y: b.y + dy }));
-      const sn = e.altKey ? { dx: 0, dy: 0, guideX: null, guideY: null } : applySnap(unionBox(boxes), ids, (6 / sc) * EMU_PER_PX);
+      // Alignment (snap + red guides) only kicks in while the pointer is moving slowly, i.e. when the user is
+      // fine-positioning; fast drags stay free of it. Speed is smoothed so a single jittery event doesn't flip it.
+      const prev = g.lastMove;
+      if (prev) { const inst = Math.hypot(e.clientX - prev.x, e.clientY - prev.y) / Math.max(1, e.timeStamp - prev.t); g.speed = g.speed == null ? inst : g.speed * 0.5 + inst * 0.5; }
+      g.lastMove = { x: e.clientX, y: e.clientY, t: e.timeStamp };
+      const slow = prev && g.speed <= SNAP_MAX_SPEED;
+      const sn = e.altKey || !slow ? { dx: 0, dy: 0, guideX: null, guideY: null } : applySnap(unionBox(boxes), ids, (6 / sc) * EMU_PER_PX);
       dx += sn.dx; dy += sn.dy;
-      setGuides({ x: sn.guideX, y: sn.guideY });
-      setDraft(new Map([...g.starts].map(([id, b]) => [id, { ...b, x: b.x + dx, y: b.y + dy }])));
+      pushDraft(new Map([...g.starts].map(([id, b]) => [id, { ...b, x: b.x + dx, y: b.y + dy }])), { x: sn.guideX, y: sn.guideY });
+      // Holding still ends the "fast" state: re-run this step once the pointer has been idle so the guides appear.
+      clearTimeout(g.idle);
+      g.idle = setTimeout(() => {
+        if (gesture.current !== g) return;
+        g.speed = 0;
+        onPointerMove({ pointerId: e.pointerId, pointerType: e.pointerType, clientX: e.clientX, clientY: e.clientY, shiftKey: e.shiftKey, altKey: e.altKey, timeStamp: performance.now() });
+      }, 90);
       return;
     }
     if (g.type === "handle") {
       if (!moved && !g.moved) return;
       g.moved = true;
+      // Table re-fit measures the real DOM (clone + layout), so it runs at most once per animation frame with the
+      // latest pointer position instead of on every (possibly >60 Hz) touch event. finish() flushes the last one.
+      if (g.isTable && g.kind !== "rotate" && !e.__raf) {
+        g.lastEv = { pointerId: e.pointerId, pointerType: e.pointerType, clientX: e.clientX, clientY: e.clientY, shiftKey: e.shiftKey, altKey: e.altKey, timeStamp: e.timeStamp };
+        if (!g.raf) g.raf = requestAnimationFrame(() => { g.raf = 0; if (gesture.current === g && g.lastEv) onPointerMove({ ...g.lastEv, __raf: true }); });
+        return;
+      }
       const b0 = g.b0, th = (b0.rot * Math.PI) / 180, cos = Math.cos(th), sin = Math.sin(th);
       const ex = (dxs / sc) * EMU_PER_PX, ey = (dys / sc) * EMU_PER_PX;
       if (g.kind === "rotate") {
@@ -284,7 +403,7 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
         deg = ((deg % 360) + 360) % 360;
         const snapped = Math.round(deg / 15) * 15;
         if (e.shiftKey || Math.abs(deg - snapped) < 3) deg = snapped % 360;
-        setDraft(new Map([[g.id, { ...b0, rot: deg }]]));
+        pushDraft(new Map([[g.id, { ...b0, rot: deg }]]));
         return;
       }
       const lx = ex * cos + ey * sin, ly = -ex * sin + ey * cos;
@@ -301,11 +420,16 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
       // A height forced by text on a width-only handle grows downward (top edge stays put).
       const lcx = (sx * dw) / 2, lcy = ((sy || 1) * dh) / 2;
       const cx = b0.x + b0.w / 2 + lcx * cos - lcy * sin, cy = b0.y + b0.h / 2 + lcx * sin + lcy * cos;
-      setDraft(new Map([[g.id, { ...b0, x: cx - w / 2, y: cy - h / 2, w, h, ...(tableGrid ? { tableGrid } : {}) }]]));
+      pushDraft(new Map([[g.id, { ...b0, x: cx - w / 2, y: cy - h / 2, w, h, ...(tableGrid ? { tableGrid } : {}) }]]));
     }
   };
 
   const finish = (e, cancelled) => {
+    const g0 = gesture.current;
+    if (g0?.type === "handle" && g0.raf) {
+      cancelAnimationFrame(g0.raf); g0.raf = 0;
+      if (g0.lastEv && !cancelled) onPointerMove({ ...g0.lastEv, __raf: true });
+    }
     pointers.current.delete(e.pointerId);
     try { stageRef.current.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
     const g = gesture.current;
@@ -313,9 +437,29 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
     if (g?.type === "idle") { if (!pointers.current.size) gesture.current = null; return; }
     if (pointers.current.size) return;
     gesture.current = null;
-    const d = R.current.draft;
+    const d = draftRef.current;
+    clearTimeout(g?.idle);
     setGuides(null);
     if (!g || cancelled) { setDraft(null); setMarquee(null); return; }
+    if (g.swipe && g.axis) {
+      setDraft(null);
+      if (g.axis === "x" && !cancelled) {
+        const dx = e.clientX - g.start.x, dir = dx < 0 ? 1 : -1;
+        const speed = Math.abs(dx) / Math.max(1, e.timeStamp - g.t0);
+        const can = dir > 0 ? R.current.canNext : R.current.canPrev;
+        const far = Math.abs(dx) >= Math.max(48, R.current.size.w * 0.16);
+        const flick = Math.abs(dx) >= 24 && speed >= 0.4;
+        clearTimeout(swipeTimer.current);
+        if (can && (far || flick)) {
+          // The new slide slides in from the side the finger travelled towards.
+          setSwipe({ x: dir * Math.min(72, R.current.size.w * 0.2), anim: false });
+          R.current.onSwipe(dir);
+          requestAnimationFrame(() => requestAnimationFrame(() => setSwipe({ x: 0, anim: true })));
+        } else setSwipe({ x: 0, anim: true });
+        swipeTimer.current = setTimeout(() => setSwipe(null), 260);
+      } else { setSwipe(null); }
+      return;
+    }
     if ((g.type === "press" || g.type === "handle") && g.moved && d) {
       const changes = [...d].map(([id, b]) => ({ id, ...b }));
       R.current.onCommit(changes, g.type === "handle" ? (g.kind === "rotate" ? "Rotate" : "Resize") : "Move");
@@ -336,7 +480,7 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
       // Tapping a table cell puts the caret straight into that cell. A drag never gets here
       // (g.moved), so moving/resizing the table is unaffected.
       const tbl = R.current.model.elements.find((x) => x.id === tapped && x.kind === "table");
-      const cellEl = tbl ? document.elementFromPoint(e.clientX, e.clientY)?.closest?.("td[data-row]") : null;
+      const cellEl = tbl ? document.elementsFromPoint(e.clientX, e.clientY).find((n) => n.matches?.("td[data-row]")) : null;
       if (cellEl && !R.current.locked.has(tapped)) {
         const cell = { row: Number(cellEl.dataset.row), col: Number(cellEl.dataset.col) };
         const cur = R.current.editingText;
@@ -404,36 +548,57 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
   // Drag a column / row border: only that column (or row) changes size, like PowerPoint; the frame grows or
   // shrinks with it. Rows never get shorter than their wrapped text, and the drag previews live via the draft.
   const startTableResize = (e, kind, border) => {
-    const t = R.current.tblSel;
+    // Touch / pen never start a border drag from the strip itself: they go through the stage gesture, so a tap on
+    // a cell edge selects the cell and the border only moves once the finger drags along it.
+    if (e.pointerType && e.pointerType !== "mouse") return;
     e.stopPropagation();
-    if (!t || (e.button !== undefined && e.button > 0)) return;
-    const { el, cols, rows } = t, base = boundsOf(el), startX = e.clientX, startY = e.clientY, pointerId = e.pointerId;
+    if (e.button !== undefined && e.button > 0) return;
+    runTableResize(e.pointerId, e.clientX, e.clientY, kind, border);
+  };
+  function runTableResize(pointerId, startX, startY, kind, border) {
+    const t = R.current.tblSel;
+    if (!t) return;
+    const { el, cols, rows } = t, base = boundsOf(el);
     // Border b sits after column/row b-1; the first border (b = 0) belongs to the first one and moves the frame origin.
     const atStart = border === 0, index = atStart ? 0 : border - 1;
-    let last = null;
+    // Natural row heights at the starting columns, measured once. Row drags never change the columns and widening a
+    // column never needs taller rows, so only narrowing a column has to measure again (once per frame, see below).
+    const natStart = measureTableRowHeights(stageRef.current, el.id, cols) || undefined;
+    let last = null, queued = null, raf = 0;
     setTblDrag({ kind, border });
     R.current.onInteractionStart?.();
-    const move = (ev) => {
-      if (ev.pointerId !== pointerId) return;
+    const apply = () => {
+      raf = 0;
+      const pt = queued;
+      if (!pt) return;
+      queued = null;
       const sc = R.current.s;
       let c = cols.slice(), r = rows.slice();
-      const raw = (((kind === "col" ? ev.clientX - startX : ev.clientY - startY) / sc) * EMU_PER_PX);
+      const raw = (((kind === "col" ? pt.x - startX : pt.y - startY) / sc) * EMU_PER_PX);
       const delta = atStart ? -raw : raw;
       if (kind === "col") c[index] = Math.max(MIN_COL, Math.round(cols[index] + delta));
       else r[index] = Math.max(MIN_ROW, Math.round(rows[index] + delta));
-      const fit = fitTableGrid(stageRef.current, el, c, r);
+      const known = kind === "row" || c[index] >= cols[index] ? natStart : undefined;
+      const fit = fitTableGrid(stageRef.current, el, c, r, known);
       if (fit) { c = fit.tableGrid.cols; r = fit.tableGrid.rows; }
       // Dragging the top / left edge grows the first row / column outwards: the origin follows so the rest stays put.
       const x = atStart && kind === "col" ? base.x + (cols[0] - c[0]) : base.x;
       const y = atStart && kind === "row" ? base.y + (rows[0] - r[0]) : base.y;
       last = { ...base, x, y, w: c.reduce((a, b) => a + b, 0), h: r.reduce((a, b) => a + b, 0), tableGrid: { cols: c, rows: r } };
-      setDraft(new Map([[el.id, last]]));
+      pushDraft(new Map([[el.id, last]]));
+    };
+    const move = (ev) => {
+      if (ev.pointerId !== pointerId) return;
+      queued = { x: ev.clientX, y: ev.clientY };
+      if (!raf) raf = requestAnimationFrame(apply);
     };
     const end = (ev, cancelled) => {
       if (ev.pointerId !== pointerId) return;
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
       window.removeEventListener("pointercancel", cancel);
+      if (raf) { cancelAnimationFrame(raf); raf = 0; }
+      if (!cancelled && queued) apply(); // the very last finger position is always committed
       setTblDrag(null);
       setDraft(null);
       if (!cancelled && last) R.current.onCommit([{ id: el.id, ...last }], "Resize table cells");
@@ -443,7 +608,7 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
     window.addEventListener("pointercancel", cancel);
-  };
+  }
   const quickActionBox = single ? rotatedBox(single.b) : union;
   const quickActionsEnabled = frames.length > 0 && frames.every(({ el }) => !locked.has(el.id) && !el.readOnlyGeometry);
   const quickActionWidth = 110;
@@ -458,18 +623,18 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
   return (
     <div ref={stageRef} className="pptx-stage" tabIndex={0} role="application" aria-label={labels.canvas}
       onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={(e) => finish(e, false)} onPointerCancel={(e) => { cancelGesture(); finish(e, true); }} onContextMenu={(e) => e.preventDefault()}>
-      <div className="pptx-holder" style={{ transform: `translate(${ox}px,${oy}px) scale(${s})` }}>
+      <div className={`pptx-holder ${swipe?.anim ? "is-settling" : ""}`} style={{ transform: `translate(${ox + (swipe?.x || 0)}px,${oy}px) scale(${s})`, opacity: swipe ? Math.max(0.35, 1 - Math.abs(swipe.x) / (size.w || 1) * 0.8) : undefined }}>
         <SlideView model={model} urls={urls} overrides={overrides} geometryDrafts={draft} hints labels={labels} editingText={editingText} tableSelection={tableSelection}
           onTableCellSelect={onTableCellSelect} onAutoSizeText={onAutoSizeText} onEditText={onEditText} onTextCommit={onTextCommit} onTextCancel={onTextCancel} />
         {grid?.show && <div className="pptx-grid" style={{ backgroundSize: `${GRID / EMU_PER_PX}px ${GRID / EMU_PER_PX}px`, width: W, height: H }} />}
       </div>
-      <div className="pptx-overlay" data-testid="pptx-overlay">
+      <div className={`pptx-overlay ${swipe?.anim ? "is-settling" : ""}`} data-testid="pptx-overlay" style={swipe?.x ? { transform: `translateX(${swipe.x}px)` } : undefined}>
         {guides?.x != null && <div className="pptx-guide v" style={{ left: ox + (guides.x / EMU_PER_PX) * s }} />}
         {guides?.y != null && <div className="pptx-guide h" style={{ top: oy + (guides.y / EMU_PER_PX) * s }} />}
         {frames.map(({ el, b }) => {
           const f = toScreen(b), isLocked = locked.has(el.id) || el.readOnlyGeometry;
           return (
-            <div key={el.id} className={`pptx-frame ${single ? "single" : "multi"} ${isLocked ? "locked" : ""}`} data-testid="pptx-frame" data-id={el.id}
+            <div key={el.id} className={`pptx-frame ${single ? "single" : "multi"} ${isLocked ? "locked" : ""} ${el.kind === "table" ? "is-table" : ""}`} data-testid="pptx-frame" data-id={el.id}
               style={{ left: f.cx - f.w / 2, top: f.cy - f.h / 2, width: f.w, height: f.h, transform: `rotate(${b.rot || 0}deg)` }}>
               {single && !isLocked && (
                 <>
@@ -490,10 +655,10 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
           <button type="button" className="is-danger" title={labels.quickDelete} aria-label={labels.quickDelete} onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onDelete?.(); }}><Trash2 size={15} aria-hidden="true" /></button>
         </div>}
         {tblSel && <TableHandles x0={ox + (tblSel.b.x / EMU_PER_PX) * s} y0={oy + (tblSel.b.y / EMU_PER_PX) * s} s={s} cols={tblSel.cols} rows={tblSel.rows}
-          canAdd={!tblSel.el.table.hasMerge} drag={tblDrag} selected={tableSelection?.id === tblSel.el.id && tableSelection.picked && tableSelection.scope === "table"} labels={labels}
+          canAdd={!tblSel.el.table.hasMerge} compact={compact} drag={tblDrag} selected={tableSelection?.id === tblSel.el.id && tableSelection.picked && tableSelection.scope === "table"} labels={labels}
           onSelectAll={() => onTableSelectAll?.(tblSel.el.id)} onAdd={(kind, boundary) => onTableAdd?.(kind, boundary)} onResizeStart={startTableResize} />}
-        {/* Docked at the top of the workspace, under the editor ribbon; shown only while a cell / table is picked. */}
-        {cellToolbar && <div className="pptx-cell-toolbar" role="toolbar" aria-label={labels.cellToolbar}
+        {/* Docked at the top of the workspace, under the editor ribbon; shown while something is selected (cell formatting for a picked table cell, otherwise tools matching the selected object). */}
+        {cellToolbar && <div className="pptx-cell-toolbar" role="toolbar" aria-label={toolbarLabel || labels.cellToolbar}
           onPointerDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>{cellToolbar}</div>}
         {union && <div className="pptx-union" style={{ left: ox + (union.x / EMU_PER_PX) * s, top: oy + (union.y / EMU_PER_PX) * s, width: (union.w / EMU_PER_PX) * s, height: (union.h / EMU_PER_PX) * s }}><span>{frames.length}</span></div>}
         {marquee && <div className="pptx-marquee" style={{ left: Math.min(marquee.x0, marquee.x1), top: Math.min(marquee.y0, marquee.y1), width: Math.abs(marquee.x1 - marquee.x0), height: Math.abs(marquee.y1 - marquee.y0) }} />}

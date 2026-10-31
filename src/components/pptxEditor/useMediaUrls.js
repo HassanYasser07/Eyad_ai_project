@@ -4,7 +4,7 @@ const MIME = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "im
 
 /** Blob URLs for media parts, cached on the package so slide switches are instant. */
 export function useMediaUrls(pkg, paths) {
-  const [, bump] = React.useReducer((n) => n + 1, 0);
+  const [version, bump] = React.useReducer((n) => n + 1, 0);
   const key = paths.join("|");
   React.useEffect(() => {
     if (!pkg) return undefined;
@@ -27,9 +27,14 @@ export function useMediaUrls(pkg, paths) {
     return () => { live = false; };
      
   }, [pkg, key]);
-  const out = {};
-  if (pkg?.urlCache) for (const p of paths) { const u = pkg.urlCache.get(p); if (u) out[p] = u; }
-  return out;
+  // Same object between renders unless a url finished loading or the path set changed, so memoized slide
+  // elements are not invalidated on every render (e.g. on each frame of a drag).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  return React.useMemo(() => {
+    const out = {};
+    if (pkg?.urlCache) for (const p of paths) { const u = pkg.urlCache.get(p); if (u) out[p] = u; }
+    return out;
+  }, [pkg, key, version]);
 }
 export function disposeMediaUrls(pkg) {
   if (!pkg?.urlCache) return;

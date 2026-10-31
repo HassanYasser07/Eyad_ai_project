@@ -6,6 +6,7 @@
 import { NS, kid, kids, path, attr, num, create, insertOrdered, ORDER, descendants, textOf, parseXml, serializeXml, PptxError } from "./xml.js";
 import { REL } from "./package.js";
 import { rotatedBox, unionBox, distributeEmu } from "./geometry.js";
+import { NEW_TEXT_FONT_PT, NEW_SHAPE_FONT_PT, newCellFontPt } from "./defaults.js";
 
 const DRAWABLE = ["sp", "pic", "grpSp", "graphicFrame", "cxnSp", "AlternateContent", "contentPart"];
 const R = Math.round;
@@ -383,11 +384,17 @@ export function setText(pkg, slidePath, id, texts, cell = null, fittedHeight = n
       node.insertBefore(body, spPr ? spPr.nextSibling : null);
     }
     if (!body) throw new PptxError("NO_TEXT", "This object has no text.");
-    const wasEmpty = !!cell && kids(body, "p").every((para) => !segmentsOf(para).some((seg) => seg.text));
+    const bodyEmpty = () => kids(body, "p").every((para) => !segmentsOf(para).some((seg) => seg.text));
+    const wasEmpty = !!cell && bodyEmpty();
+    // A plain shape (not a layout placeholder, which inherits its size from the theme) that has never held text.
+    const nvPr = path(node, "nvSpPr", "nvPr");
+    const wasEmptyShape = !cell && node.localName === "sp" && !(nvPr && kid(nvPr, "ph")) && bodyEmpty();
     applyParagraphTexts(doc, body, texts);
-    // First text typed into an empty table cell: centred both ways at a medium size (the default
+    settleEmptyParagraphs(doc, body);
+    // First text typed into an empty table cell: centred both ways at a comfortable size (the default
     // cell text is small and top-left). Cells that already have content keep their own formatting.
-    if (wasEmpty && kids(body, "p").some((para) => segmentsOf(para).some((seg) => seg.text))) centerNewCellText(doc, body);
+    if (wasEmpty && !bodyEmpty()) centerNewCellText(doc, body, newCellFontSz(body));
+    else if (wasEmptyShape && !bodyEmpty()) defaultRunSize(doc, body, NEW_SHAPE_FONT_PT * 100);
     // Commit text and its auto-grown frame in the same undoable transaction.
     if (!cell && Number.isFinite(fittedHeight)) {
       const current = readBoundsFromNode(node) || fallbackBounds;
@@ -396,9 +403,48 @@ export function setText(pkg, slidePath, id, texts, cell = null, fittedHeight = n
   });
 }
 
-export const NEW_CELL_FONT_SZ = 2000; // 20 pt, hundredths of a point
+/**
+ * A paragraph whose text was deleted must remember how it was formatted: the next thing typed into it takes its
+ * look from the paragraph end mark. Without this the emptied run is dropped, the mark has no size, and typing
+ * again falls back to the tiny theme default. So copy the last run's formatting onto the end mark, drop the empty runs.
+ */
+function settleEmptyParagraphs(doc, body) {
+  for (const para of kids(body, "p")) {
+    if (segmentsOf(para).some((seg) => seg.text)) continue;
+    const runs = kids(para, "r", "fld");
+    const src = runs.length ? kid(runs[runs.length - 1], "rPr") : null;
+    if (src) {
+      const fresh = create(doc, "a", "endParaRPr");
+      for (const at of Array.from(src.attributes)) fresh.setAttribute(at.name, at.value);
+      for (const child of Array.from(src.childNodes)) fresh.appendChild(child.cloneNode(true));
+      const old = kid(para, "endParaRPr");
+      if (old) para.replaceChild(fresh, old); else para.appendChild(fresh);
+    }
+    for (const run of runs) para.removeChild(run);
+  }
+}
 
-function centerNewCellText(doc, body) {
+/** Font size (hundredths of a point) for the first text of the cell that owns `body`, based on how many columns the table has. */
+function newCellFontSz(body) {
+  const tbl = body.parentNode?.parentNode?.parentNode;
+  const grid = tbl && kid(tbl, "tblGrid");
+  return newCellFontPt(grid ? kids(grid, "gridCol").length : 0) * 100;
+}
+
+/** Give runs (and the paragraph end mark) that have no explicit size a starting size; explicit sizes are never touched. */
+function defaultRunSize(doc, body, sz) {
+  for (const para of kids(body, "p")) {
+    for (const run of kids(para, "r", "fld")) {
+      const rPr = ensureRPr(doc, run);
+      if (!rPr.hasAttribute("sz")) rPr.setAttribute("sz", String(sz));
+    }
+    let end = kid(para, "endParaRPr");
+    if (!end) { end = create(doc, "a", "endParaRPr"); para.appendChild(end); }
+    if (!end.hasAttribute("sz")) end.setAttribute("sz", String(sz));
+  }
+}
+
+function centerNewCellText(doc, body, sz) {
   const tc = body.parentNode;
   let tcPr = kid(tc, "tcPr");
   if (!tcPr) { tcPr = create(doc, "a", "tcPr"); tc.insertBefore(tcPr, body.nextSibling); }
@@ -407,11 +453,11 @@ function centerNewCellText(doc, body) {
     ensurePPr(doc, para).setAttribute("algn", "ctr");
     for (const run of kids(para, "r", "fld")) {
       const rPr = ensureRPr(doc, run);
-      if (!rPr.hasAttribute("sz")) rPr.setAttribute("sz", String(NEW_CELL_FONT_SZ));
+      if (!rPr.hasAttribute("sz")) rPr.setAttribute("sz", String(sz));
     }
     let end = kid(para, "endParaRPr");
     if (!end) { end = create(doc, "a", "endParaRPr"); para.appendChild(end); }
-    if (!end.hasAttribute("sz")) end.setAttribute("sz", String(NEW_CELL_FONT_SZ));
+    if (!end.hasAttribute("sz")) end.setAttribute("sz", String(sz));
   }
 }
 
@@ -930,11 +976,11 @@ function importFragment(doc, xml) {
 const NSDECL = `xmlns:p="${NS.p}" xmlns:a="${NS.a}" xmlns:r="${NS.r}"`;
 const esc = (s) => String(s).replace(/[<>&"']/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;", "'": "&apos;" })[c]);
 
-export function addTextBox(pkg, slidePath, { x, y, w, h, text = "Text", size = 24 }) {
+export function addTextBox(pkg, slidePath, { x, y, w, h, text = "Text", size = NEW_TEXT_FONT_PT }) {
   text = String(text ?? "").replace(/[\u200B\uFEFF]/g, "");
   return mutateSlide(pkg, slidePath, "Add text", (doc, tree) => {
     const id = nextId(tree);
-    const node = importFragment(doc, `<p:sp ${NSDECL}><p:nvSpPr><p:cNvPr id="${id}" name="TextBox ${id - 1}"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="${R(x)}" y="${R(y)}"/><a:ext cx="${R(w)}" cy="${R(h)}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/></p:spPr><p:txBody><a:bodyPr wrap="square" rtlCol="0"><a:noAutofit/></a:bodyPr><a:lstStyle/><a:p><a:r><a:rPr lang="en-US" sz="${R(size * 100)}" dirty="0"/><a:t>${esc(text)}</a:t></a:r></a:p></p:txBody></p:sp>`);
+    const node = importFragment(doc, `<p:sp ${NSDECL}><p:nvSpPr><p:cNvPr id="${id}" name="TextBox ${id - 1}"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="${R(x)}" y="${R(y)}"/><a:ext cx="${R(w)}" cy="${R(h)}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/></p:spPr><p:txBody><a:bodyPr wrap="square" rtlCol="0"><a:noAutofit/></a:bodyPr><a:lstStyle/><a:p>${text ? `<a:r><a:rPr lang="en-US" sz="${R(size * 100)}" dirty="0"/><a:t>${esc(text)}</a:t></a:r>` : ""}<a:endParaRPr lang="en-US" sz="${R(size * 100)}" dirty="0"/></a:p></p:txBody></p:sp>`);
     tree.insertBefore(node, endAnchor(tree));
     return String(id);
   });

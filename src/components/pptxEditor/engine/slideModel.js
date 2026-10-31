@@ -235,7 +235,7 @@ function readGeometry(spPr, wPx, hPx, ctx, id) {
   if (cust) {
     const g = customGeometry(cust, wPx, hPx);
     if (g.approximated) ctx.warnings.push({ code: "geometry-approximated", id, message: "Part of a custom shape outline is approximated." });
-    return { kind: "custom", paths: g.paths };
+    return { kind: "custom", paths: g.paths, baseW: wPx, baseH: hPx };
   }
   const pg = spPr && kid(spPr, "prstGeom");
   const prst = attr(pg, "prst", "rect");
@@ -243,7 +243,8 @@ function readGeometry(spPr, wPx, hPx, ctx, id) {
   for (const gd of kids(kid(pg, "avLst"), "gd")) { const m = /val\s+(-?\d+)/.exec(attr(gd, "fmla", "")); if (m) adj[attr(gd, "name")] = Number(m[1]); }
   const g = presetGeometry(prst, wPx, hPx, adj);
   if (g.approximated) ctx.warnings.push({ code: "geometry-approximated", id, message: `Shape "${prst}" is drawn as a rectangle in the editor (it is preserved in the file).` });
-  return { prst, ...g };
+  // baseW/baseH: the size the outline coordinates were computed for, so a live resize preview can scale them.
+  return { prst, ...g, baseW: wPx, baseH: hPx };
 }
 
 // ---------- element readers ----------
