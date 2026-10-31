@@ -16,7 +16,7 @@ const HANDLES = [["nw", 0, 0], ["n", 0.5, 0], ["ne", 1, 0], ["e", 1, 0.5], ["se"
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const boundsOf = (e) => ({ x: e.x, y: e.y, w: e.w, h: e.h, rot: e.rot, flipH: e.flipH, flipV: e.flipV });
 
-const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelect, onSelectionComplete, onInteractionStart, onCommit, onEditText, onTextCommit, onTextCancel, onTableCellSelect, onAutoSizeText, textAutoSizeHeights, editingText, tableSelection, cellToolbar, onTableAdd, onTableSelectAll, onCopy, onDelete, onRotate, multi, grid, locked, labels, onZoom, compact }, ref) {
+const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelect, onSelectionComplete, onInteractionStart, onCommit, onEditText, onTextCommit, onTextCancel, onTableCellSelect, onAutoSizeText, textAutoSizeHeights, editingText, tableSelection, cellToolbar, onTableAdd, onTableSelectAll, onCopy, onDelete, onRotate, multi, grid, locked, labels, onZoom, compact, onSwipe, canPrev, canNext }, ref) {
   const stageRef = React.useRef(null);
   const [size, setSize] = React.useState({ w: 800, h: 600 });
   const [view, setView] = React.useState({ zoom: 1, pan: { x: 0, y: 0 } });
@@ -42,6 +42,11 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
   React.useEffect(() => dropPending, []);
   const [marquee, setMarquee] = React.useState(null);
   const [cellFit, setCellFit] = React.useState(null); // live row/frame growth while typing in a table cell
+  // One-finger slide swipe (touch only). `swipe.x` is the live horizontal offset of the slide while the finger is
+  // down; `anim` switches on a short CSS transition for the settle / enter animation.
+  const [swipe, setSwipe] = React.useState(null);
+  const swipeTimer = React.useRef(0);
+  React.useEffect(() => () => clearTimeout(swipeTimer.current), []);
   const [tblDrag, setTblDrag] = React.useState(null); // { kind: "col"|"row", index } while a table border is dragged
   const urls = useMediaUrls(pkg, collectImagePaths(model));
 
@@ -53,7 +58,7 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
 
   // Everything the pointer handlers need, kept fresh without re-binding listeners.
   const R = React.useRef({});
-  R.current = { s, ox, oy, fit, size, W, H, model, selection, multi, grid, locked, view, onSelect, onSelectionComplete, onInteractionStart, onCommit, onEditText, draft, editingText, tableSelection };
+  R.current = { onSwipe, canPrev, canNext, s, ox, oy, fit, size, W, H, model, selection, multi, grid, locked, view, onSelect, onSelectionComplete, onInteractionStart, onCommit, onEditText, draft, editingText, tableSelection };
   const pointers = React.useRef(new Map());
   const gesture = React.useRef(null);
   const lastTap = React.useRef({ t: 0, id: null, x: 0, y: 0 });
@@ -103,6 +108,15 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
     const maxX = Math.max(0, (R.current.W * sc) / 2 + sz.w / 2 - 60), maxY = Math.max(0, (R.current.H * sc) / 2 + sz.h / 2 - 60);
     return { x: clamp(pan.x, -maxX, maxX), y: clamp(pan.y, -maxY, maxY) };
   }, []);
+  // A sheet opening / closing resizes the stage. On touch layouts the slide must stay in view, so at fit zoom it is
+  // re-centred (pan reset) and when zoomed in the pan is re-clamped to the new stage size.
+  React.useEffect(() => {
+    if (!compact) return;
+    setView((v) => {
+      const pan = v.zoom <= 1.02 ? { x: 0, y: 0 } : clampPan(v.zoom, v.pan, R.current.size);
+      return pan.x === v.pan.x && pan.y === v.pan.y ? v : { ...v, pan };
+    });
+  }, [compact, size.w, size.h, clampPan]);
   const zoomAt = React.useCallback((factor, cx, cy) => {
     setView((v) => {
       const { fit: f, size: sz, W: w, H: h } = R.current;
@@ -179,7 +193,7 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
     return () => { el.removeEventListener("wheel", wheel); for (const t of ["gesturestart", "gesturechange", "gestureend"]) el.removeEventListener(t, stop); };
   }, [zoomAt, clampPan]);
 
-  const cancelGesture = () => { gesture.current = null; setDraft(null); setGuides(null); setMarquee(null); };
+  const cancelGesture = () => { gesture.current = null; setDraft(null); setGuides(null); setMarquee(null); setSwipe(null); };
 
   const snapCandidates = (ids) => {
     const { model: m, grid: g } = R.current;
@@ -199,7 +213,7 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
     const pts = [...pointers.current.values()].slice(0, 2);
     const r = stageRef.current.getBoundingClientRect();
     const d = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) || 1;
-    setDraft(null); setGuides(null); setMarquee(null);
+    setDraft(null); setGuides(null); setMarquee(null); setSwipe(null);
     gesture.current = { type: "pinch", d0: d, zoom0: R.current.view.zoom, pan0: R.current.view.pan, o0: { x: R.current.ox, y: R.current.oy }, s0: R.current.s, c0: { x: (pts[0].x + pts[1].x) / 2 - r.left, y: (pts[0].y + pts[1].y) / 2 - r.top } };
   };
 
@@ -233,7 +247,11 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
       if (additive) { if (sel.includes(target)) toggleOff = true; else pending = [...sel, target]; }
       else if (!sel.includes(target)) pending = [target];
     }
-    gesture.current = { type: target ? "press" : "empty", id: target, tapId, pending, start: { x: e.clientX, y: e.clientY }, touch, moved: false, toggleOff, additive, pan0: R.current.view.pan, wasSelected: !!target && sel.includes(target) };
+    // A one-finger horizontal swipe changes slide when it starts on empty canvas or on an object that is not
+    // selected yet (select first, then drag, like other mobile slide editors). Dragging an already selected
+    // object, handles, multi-select mode, text editing and zoomed-in panning keep their normal behaviour.
+    const swipe = touch && !additive && !e.altKey && typeof R.current.onSwipe === "function" && R.current.view.zoom <= 1.02 && !R.current.editingText && (!target || !sel.includes(target));
+    gesture.current = { type: target ? "press" : "empty", id: target, tapId, pending, start: { x: e.clientX, y: e.clientY }, touch, moved: false, toggleOff, additive, pan0: R.current.view.pan, wasSelected: !!target && sel.includes(target), swipe, axis: null, t0: e.timeStamp };
   };
 
   const startHandle = (e, kind, id) => {
@@ -267,6 +285,21 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
     if (g.type === "pan") { setView((v) => ({ ...v, pan: clampPan(v.zoom, { x: g.pan0.x + e.clientX - g.start.x, y: g.pan0.y + e.clientY - g.start.y }) })); return; }
     const dxs = e.clientX - g.start.x, dys = e.clientY - g.start.y;
     const moved = Math.hypot(dxs, dys) > (g.touch ? 7 : 4);
+    if (g.swipe) {
+      if (!g.axis) {
+        if (Math.hypot(dxs, dys) < 10) return;
+        g.axis = Math.abs(dxs) > Math.abs(dys) * 1.2 ? "x" : "y";
+        g.moved = true;
+        g.pending = null; g.tapId = null; // a swipe never changes the selection
+      }
+      if (g.axis === "x") {
+        const { canPrev: cp, canNext: cn, size: sz } = R.current;
+        const can = dxs < 0 ? cn : cp;
+        const off = (can ? dxs : dxs * 0.25);
+        setSwipe({ x: clamp(off, -sz.w * 0.9, sz.w * 0.9), anim: false });
+      }
+      return;
+    }
     if (g.type === "empty") {
       if (!moved && !g.moved) return;
       g.moved = true;
@@ -348,6 +381,25 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
     clearTimeout(g?.idle);
     setGuides(null);
     if (!g || cancelled) { setDraft(null); setMarquee(null); return; }
+    if (g.swipe && g.axis) {
+      setDraft(null);
+      if (g.axis === "x" && !cancelled) {
+        const dx = e.clientX - g.start.x, dir = dx < 0 ? 1 : -1;
+        const speed = Math.abs(dx) / Math.max(1, e.timeStamp - g.t0);
+        const can = dir > 0 ? R.current.canNext : R.current.canPrev;
+        const far = Math.abs(dx) >= Math.max(48, R.current.size.w * 0.16);
+        const flick = Math.abs(dx) >= 24 && speed >= 0.4;
+        clearTimeout(swipeTimer.current);
+        if (can && (far || flick)) {
+          // The new slide slides in from the side the finger travelled towards.
+          setSwipe({ x: dir * Math.min(72, R.current.size.w * 0.2), anim: false });
+          R.current.onSwipe(dir);
+          requestAnimationFrame(() => requestAnimationFrame(() => setSwipe({ x: 0, anim: true })));
+        } else setSwipe({ x: 0, anim: true });
+        swipeTimer.current = setTimeout(() => setSwipe(null), 260);
+      } else { setSwipe(null); }
+      return;
+    }
     if ((g.type === "press" || g.type === "handle") && g.moved && d) {
       const changes = [...d].map(([id, b]) => ({ id, ...b }));
       R.current.onCommit(changes, g.type === "handle" ? (g.kind === "rotate" ? "Rotate" : "Resize") : "Move");
@@ -490,12 +542,12 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
   return (
     <div ref={stageRef} className="pptx-stage" tabIndex={0} role="application" aria-label={labels.canvas}
       onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={(e) => finish(e, false)} onPointerCancel={(e) => { cancelGesture(); finish(e, true); }} onContextMenu={(e) => e.preventDefault()}>
-      <div className="pptx-holder" style={{ transform: `translate(${ox}px,${oy}px) scale(${s})` }}>
+      <div className={`pptx-holder ${swipe?.anim ? "is-settling" : ""}`} style={{ transform: `translate(${ox + (swipe?.x || 0)}px,${oy}px) scale(${s})`, opacity: swipe ? Math.max(0.35, 1 - Math.abs(swipe.x) / (size.w || 1) * 0.8) : undefined }}>
         <SlideView model={model} urls={urls} overrides={overrides} geometryDrafts={draft} hints labels={labels} editingText={editingText} tableSelection={tableSelection}
           onTableCellSelect={onTableCellSelect} onAutoSizeText={onAutoSizeText} onEditText={onEditText} onTextCommit={onTextCommit} onTextCancel={onTextCancel} />
         {grid?.show && <div className="pptx-grid" style={{ backgroundSize: `${GRID / EMU_PER_PX}px ${GRID / EMU_PER_PX}px`, width: W, height: H }} />}
       </div>
-      <div className="pptx-overlay" data-testid="pptx-overlay">
+      <div className={`pptx-overlay ${swipe?.anim ? "is-settling" : ""}`} data-testid="pptx-overlay" style={swipe?.x ? { transform: `translateX(${swipe.x}px)` } : undefined}>
         {guides?.x != null && <div className="pptx-guide v" style={{ left: ox + (guides.x / EMU_PER_PX) * s }} />}
         {guides?.y != null && <div className="pptx-guide h" style={{ top: oy + (guides.y / EMU_PER_PX) * s }} />}
         {frames.map(({ el, b }) => {

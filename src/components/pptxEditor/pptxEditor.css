@@ -451,3 +451,32 @@
 .pe-palette-circle { display: grid; place-content: center; grid-template-columns: repeat(3, 9px); grid-template-rows: repeat(2, 9px); gap: 2px; width: 32px; height: 32px; padding: 3px; border: 1px solid hsl(var(--border)); border-radius: 50%; overflow: hidden; }
 .pe-palette-circle i { width: 9px; height: 9px; border-radius: 50%; }
 .pe-palette-hint { margin: 0 0 10px; }
+
+
+/* ===== Touch layout: swipe between slides + slide always visible beside open sheets ===== */
+.pptx-holder.is-settling { transition: transform .2s ease-out, opacity .2s ease-out; }
+.pptx-overlay.is-settling { transition: transform .2s ease-out; }
+.pe-present-stage { touch-action: pan-y pinch-zoom; }
+.pe-present-sized.is-settling { transition: transform .2s ease-out, opacity .2s ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .pptx-holder.is-settling, .pptx-overlay.is-settling, .pe-present-sized.is-settling { transition: none; }
+}
+
+.pe-root.is-compact .pe-top { flex-shrink: 0; }
+/* A footer sheet may only take what is left after the slide area has its minimum (--pe-stage-min, set from JS so the
+   whole slide fits at the current width). The sheet shrinks and scrolls internally instead of squeezing the slide away. */
+.pe-root.is-compact.has-sheet .pe-body { min-height: var(--pe-stage-min, 0px); }
+.pe-root.is-compact.has-sheet .pe-sheet { min-height: 0; }
+.pe-root.is-compact .pe-sheet-body { overscroll-behavior: contain; }
+/* The slides drawer is an overlay: give the slide area the space above it and keep the slide un-dimmed. */
+.pe-root.is-compact.has-drawer .pe-body { margin-bottom: var(--pe-drawer-lift, 0px); }
+.pe-root.is-compact.has-drawer .pe-drawer { height: var(--pe-drawer-h, auto); max-height: var(--pe-drawer-h, 80%); display: flex; flex-direction: column; }
+.pe-root.is-compact.has-drawer .pe-drawer-body { flex: 1; min-height: 0; }
+.pe-root.is-compact.has-drawer [data-vaul-overlay] { background: rgba(0,0,0,.08); }
+/* The prev / next pill would sit on the small slide area: while a panel is open it shrinks to a counter only. */
+.pe-root.is-compact.has-sheet .pe-slidenav,
+.pe-root.is-compact.has-drawer .pe-slidenav { bottom: 2px; left: 2px; padding: 0; pointer-events: none; opacity: .9; }
+.pe-root.is-compact.has-sheet .pe-slidenav .pe-btn,
+.pe-root.is-compact.has-drawer .pe-slidenav .pe-btn { display: none; }
+.pe-root.is-compact.has-sheet .pe-slidenav > button:not(.pe-btn),
+.pe-root.is-compact.has-drawer .pe-slidenav > button:not(.pe-btn) { min-width: 0; min-height: 22px; padding: 0 9px; font-size: 11px; }

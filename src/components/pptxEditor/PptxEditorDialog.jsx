@@ -55,11 +55,77 @@ function useCompact() {
   return v;
 }
 
+/** Live pixel size of an element (used to size the slide area around open sheets on touch layouts). */
+function useElementSize(ref) {
+  const read = () => {
+    const r = ref.current?.getBoundingClientRect();
+    return r ? { w: Math.round(r.width), h: Math.round(r.height) } : { w: typeof window !== "undefined" ? window.innerWidth : 0, h: typeof window !== "undefined" ? window.innerHeight : 0 };
+  };
+  const [size, setSize] = React.useState(read);
+  React.useEffect(() => {
+    const el = ref.current;
+    if (!el) return undefined;
+    const update = () => { const n = read(); setSize((c) => (c.w === n.w && c.h === n.h ? c : n)); };
+    update();
+    if (typeof ResizeObserver === "undefined") { window.addEventListener("resize", update); return () => window.removeEventListener("resize", update); }
+    const ro = new ResizeObserver(update); ro.observe(el);
+    return () => ro.disconnect();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return size;
+}
+
+/**
+ * One-finger horizontal swipe for the present view. Returns pointer handlers for the stage plus the live
+ * finger offset so the slide can follow it. Mouse input is ignored (desktop keeps its keyboard / click paths).
+ */
+function useSwipeNav({ onPrev, onNext, canPrev, canNext }) {
+  const st = React.useRef(null);
+  const swiped = React.useRef(false);
+  const [dx, setDx] = React.useState(0);
+  const [settling, setSettling] = React.useState(false);
+  const reset = () => { st.current = null; setDx(0); setSettling(true); };
+  const handlers = {
+    onPointerDown: (e) => {
+      if (e.pointerType === "mouse") return;
+      if (st.current) { reset(); return; } // second finger: not a swipe
+      st.current = { id: e.pointerId, x: e.clientX, y: e.clientY, t: e.timeStamp, axis: null };
+      swiped.current = false; setSettling(false);
+    },
+    onPointerMove: (e) => {
+      const g = st.current;
+      if (!g || g.id !== e.pointerId) return;
+      const ddx = e.clientX - g.x, ddy = e.clientY - g.y;
+      if (!g.axis) {
+        if (Math.hypot(ddx, ddy) < 10) return;
+        g.axis = Math.abs(ddx) > Math.abs(ddy) * 1.2 ? "x" : "y";
+      }
+      if (g.axis === "x") { swiped.current = true; setDx((ddx < 0 ? canNext : canPrev) ? ddx : ddx * 0.25); }
+    },
+    onPointerUp: (e) => {
+      const g = st.current;
+      if (!g || g.id !== e.pointerId) return;
+      st.current = null;
+      if (g.axis !== "x") return;
+      const ddx = e.clientX - g.x, speed = Math.abs(ddx) / Math.max(1, e.timeStamp - g.t);
+      const far = Math.abs(ddx) >= Math.max(48, window.innerWidth * 0.16), flick = Math.abs(ddx) >= 24 && speed >= 0.4;
+      setSettling(true); setDx(0);
+      if (far || flick) { if (ddx < 0 && canNext) onNext(); else if (ddx > 0 && canPrev) onPrev(); }
+    },
+    onPointerCancel: () => { if (st.current) reset(); },
+  };
+  // A swipe must not also fire the stage's tap-to-advance click.
+  const consumeClick = () => { const was = swiped.current; swiped.current = false; return was; };
+  return { handlers, dx, settling, consumeClick };
+}
+
 export default function PptxEditorDialog({ onClose }) {
   const { t, direction } = useI18n();
   const compact = useCompact();
   const vp = useVisualViewport(compact);
   const rootRef = React.useRef(null);
+  const rootSize = useElementSize(rootRef);
+  const [chrome, setChrome] = React.useState({ top: 56, bottom: 64 });
   const canvasRef = React.useRef(null);
   const fitBounds = (changes) => canvasRef.current?.fitChanges?.(changes) ?? changes;
   const original = React.useRef(null);
@@ -115,6 +181,33 @@ export default function PptxEditorDialog({ onClose }) {
     try { return readSlide(pkg, pres.slides[safeIdx].path, pres); } catch (err) { return { error: err }; }
   }, [pkg, pres, safeIdx, pkg?.version]);  
   const okModel = model && !model.error ? model : null;
+  // ----- touch layout: keep the current slide visible next to any open sheet / drawer -----
+  // Every footer control opens a sheet (or the slides drawer) that takes space from the slide area. Instead of letting
+  // the slide area collapse to nothing, it keeps a minimum height that fits the whole slide at the current width;
+  // the sheet gives up the rest and scrolls internally.
+  const sheetShown = !!sheet && (sheet !== "report" || !!report) && (compact || sheet !== "panel");
+  const hasSheet = compact && !!pkg && sheetShown;
+  const hasDrawer = compact && !!pkg && slidesOpen;
+  const stageMin = React.useMemo(() => {
+    if (!(hasSheet || hasDrawer) || !rootSize.w || !rootSize.h) return 0;
+    const PAD = 10; // same inset the canvas uses on touch layouts
+    const ratio = okModel ? okModel.size.h / okModel.size.w : 9 / 16;
+    const wholeSlide = (rootSize.w - PAD * 2) * ratio + PAD * 2;
+    const share = rootSize.h < 560 ? 0.38 : 0.46; // phones in landscape / with the keyboard open need a smaller share
+    const room = rootSize.h - chrome.top - chrome.bottom - 160; // always leave the sheet a usable height
+    return Math.round(Math.max(96, Math.min(wholeSlide, rootSize.h * share, room)));
+  }, [hasSheet, hasDrawer, rootSize.w, rootSize.h, chrome.top, chrome.bottom, okModel?.size?.w, okModel?.size?.h]);  
+  const drawerH = hasDrawer ? Math.max(160, rootSize.h - chrome.top - stageMin) : 0;
+  const layoutVars = compact && (hasSheet || hasDrawer)
+    ? { "--pe-stage-min": `${stageMin}px`, ...(hasDrawer ? { "--pe-drawer-h": `${drawerH}px`, "--pe-drawer-lift": `${Math.max(0, drawerH - chrome.bottom)}px` } : null) }
+    : null;
+  React.useLayoutEffect(() => {
+    if (!compact || !pkg) return;
+    const root = rootRef.current;
+    if (!root) return;
+    const top = root.querySelector(".pe-top")?.offsetHeight, bottom = root.querySelector(".pe-bottom")?.offsetHeight;
+    setChrome((c) => { const n = { top: top || c.top, bottom: bottom ?? c.bottom }; return n.top === c.top && n.bottom === c.bottom ? c : n; });
+  }, [compact, pkg, textEdit, rootSize.w, rootSize.h]);
   const sel = okModel ? okModel.elements.filter((e) => selection.includes(e.id)) : [];
   React.useEffect(() => { setPreviewHiddenIds(new Set()); }, [safeIdx]);
   const canvasModel = React.useMemo(() => {
@@ -470,11 +563,15 @@ export default function PptxEditorDialog({ onClose }) {
   };
   const slideOps = {
     select: (i) => { setIdx(i); setSelection([]); setSlidesOpen(false); },
-    add: () => setSheet("layouts"),
+    add: () => { setSlidesOpen(false); setSheet("layouts"); },
     addWith: (layout) => run(() => { addSlide(pkg, safeIdx, layout); setIdx(safeIdx + 1); setSelection([]); setSheet(null); }),
     del: (i) => run(() => { deleteSlide(pkg, i); setIdx(Math.max(0, i - 1)); setSelection([]); }),
     move: (from, to) => run(() => { moveSlide(pkg, from, to); setIdx(to); }),
   };
+  // Swipe left = next slide, swipe right = previous. Sheets stay open; the selection belongs to the old slide, so it is cleared.
+  const swipeSlide = (dir) => { if (!pres) return; const next = Math.max(0, Math.min(pres.slides.length - 1, safeIdx + dir)); if (next !== safeIdx) { setIdx(next); setSelection([]); } };
+  // The slides drawer replaces any open footer sheet so only one panel ever competes with the slide for room.
+  const openSlides = () => { clearContextSheetTimer(); setSheet(null); setSlidesOpen(true); };
   const dupSlide = async (i) => { try { await duplicateSlide(pkg, i); setIdx(i + 1); setSelection([]); } catch (err) { setFeedback({ kind: "error", text: errText(err) }); } };
   const copyNow = () => {
     if (!ids.length) return;
@@ -800,7 +897,7 @@ export default function PptxEditorDialog({ onClose }) {
 
   // ============ render ============
   return createPortal(
-    <div ref={rootRef} className={`pe-root ${compact ? "is-compact" : "is-desktop"}`} dir={direction} style={style} role="dialog" aria-modal="true" aria-label={t("pptxEditor.title")} data-testid="pptx-editor"
+    <div ref={rootRef} className={`pe-root ${compact ? "is-compact" : "is-desktop"}${hasSheet ? " has-sheet" : ""}${hasDrawer ? " has-drawer" : ""}`} dir={direction} style={layoutVars ? { ...style, ...layoutVars } : style} role="dialog" aria-modal="true" aria-label={t("pptxEditor.title")} data-testid="pptx-editor"
       onDragOver={(e) => { e.preventDefault(); if (!pkg) setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={onDrop}>
       {!pkg ? (
         <Start t={t} onClose={onClose} onPick={() => pickFile({ accept: PPTX_ACCEPT, onPick: (f) => f && openFile(f) })} dragOver={dragOver} busy={busy} draft={draft}
@@ -839,12 +936,12 @@ export default function PptxEditorDialog({ onClose }) {
             {!compact && <aside className="pe-left"><SlidesPanel pkg={pkg} pres={pres} idx={safeIdx} onSelect={slideOps.select} onAdd={slideOps.add} onDuplicate={dupSlide} onDelete={slideOps.del} onMove={slideOps.move} t={t} labels={labels} /></aside>}
             <main className="pe-main" dir="ltr">
               {okModel ? (
-                <Canvas ref={canvasRef} pkg={pkg} model={canvasModel} selection={selection} onSelect={setSelection} onSelectionComplete={activateContextForSelection} onInteractionStart={clearContextSheetTimer} onCommit={commitBounds} onEditText={openText} editingText={textEdit} tableSelection={tableFocus} cellToolbar={cellToolbarNode} onTableAdd={addTableLine} onTableSelectAll={selectWholeTable} textAutoSizeHeights={textAutoSizeDrafts} onTableCellSelect={selectTableCell} onAutoSizeText={autoSizeTextHeight} onTextCommit={commitInlineText} onTextCancel={cancelInlineText} onCopy={copyNow} onDelete={a.remove} onRotate={() => a.rotate(90)} multi={multi} grid={grid} locked={lockedIds} labels={labels} onZoom={setZoom} compact={compact} />
+                <Canvas ref={canvasRef} pkg={pkg} model={canvasModel} selection={selection} onSelect={setSelection} onSelectionComplete={activateContextForSelection} onInteractionStart={clearContextSheetTimer} onCommit={commitBounds} onEditText={openText} editingText={textEdit} tableSelection={tableFocus} cellToolbar={cellToolbarNode} onTableAdd={addTableLine} onTableSelectAll={selectWholeTable} textAutoSizeHeights={textAutoSizeDrafts} onTableCellSelect={selectTableCell} onAutoSizeText={autoSizeTextHeight} onTextCommit={commitInlineText} onTextCancel={cancelInlineText} onCopy={copyNow} onDelete={a.remove} onRotate={() => a.rotate(90)} multi={multi} grid={grid} locked={lockedIds} labels={labels} onZoom={setZoom} compact={compact} onSwipe={compact ? swipeSlide : undefined} canPrev={safeIdx > 0} canNext={!!pres && safeIdx < pres.slides.length - 1} />
               ) : <div className="pe-error"><AlertTriangle aria-hidden="true" />{t("pptxEditor.slideUnreadable")}</div>}
               {compact && pres && (
                 <div className="pe-slidenav">
                   <IconButton icon={ChevronLeft} label={t("pptxEditor.prevSlide")} onClick={() => slideOps.select(Math.max(0, safeIdx - 1))} disabled={safeIdx === 0} testId="pptx-prev" />
-                  <button type="button" onClick={() => setSlidesOpen(true)} data-testid="pptx-slides-open" aria-label={t("pptxEditor.slides")}>{safeIdx + 1} / {pres.slides.length}</button>
+                  <button type="button" onClick={openSlides} data-testid="pptx-slides-open" aria-label={t("pptxEditor.slides")}>{safeIdx + 1} / {pres.slides.length}</button>
                   <IconButton icon={ChevronRight} label={t("pptxEditor.nextSlide")} onClick={() => slideOps.select(Math.min(pres.slides.length - 1, safeIdx + 1))} disabled={safeIdx >= pres.slides.length - 1} testId="pptx-next" />
                 </div>
               )}
@@ -871,7 +968,7 @@ export default function PptxEditorDialog({ onClose }) {
               <TB icon={Table2} label={t("pptxEditor.ribbon.table")} active={activeRibbon === "table"} onClick={() => openRibbon("table")} />
               <TB icon={Move3d} label={t("pptxEditor.tab.arrange")} active={sheet === "panel" && panel === "arrange"} onClick={() => openRibbon("arrange")} />
               <TB icon={Layers} label={t("pptxEditor.tab.layers")} active={sheet === "panel" && panel === "layers"} onClick={() => openRibbon("layers")} />
-              <TB icon={LayoutGrid} label={t("pptxEditor.slides")} onClick={() => setSlidesOpen(true)} />
+              <TB icon={LayoutGrid} label={t("pptxEditor.slides")} active={slidesOpen} onClick={openSlides} />
               <TB icon={Grid3x3} label={t("pptxEditor.ribbon.view")} active={activeRibbon === "view"} onClick={() => openRibbon("view")} />
             </nav>
           )}
@@ -1026,6 +1123,8 @@ function PresentationPreview({ pkg, pres, idx, onClose, onSelect, previewHiddenI
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
   }, [idx, pres.slides.length, onClose, onSelect]);
+  const last = pres.slides.length - 1;
+  const swipe = useSwipeNav({ onPrev: () => onSelect(Math.max(0, idx - 1)), onNext: () => onSelect(Math.min(last, idx + 1)), canPrev: idx > 0, canNext: idx < last });
   const W = displayModel ? displayModel.size.w / 9525 : 1;
   const H = displayModel ? displayModel.size.h / 9525 : 1;
   const scale = displayModel ? Math.max(0.01, Math.min((viewport.w - 48) / W, (viewport.h - 104) / H)) : 1;
@@ -1038,8 +1137,8 @@ function PresentationPreview({ pkg, pres, idx, onClose, onSelect, previewHiddenI
         <IconButton icon={X} label={t("pptxEditor.closePreview")} onClick={onClose} testId="pptx-present-close" />
       </div>
     </header>
-    <main ref={root} className="pe-present-stage" onClick={(event) => { if (event.target === event.currentTarget) onSelect(Math.min(pres.slides.length - 1, idx + 1)); }}>
-      {displayModel ? <div className="pe-present-sized" style={{ width: W * scale, height: H * scale }}><div className="pe-present-scaled" style={{ width: W, height: H, transform: `scale(${scale})` }}><SlideView model={displayModel} urls={urls} hints={false} labels={labels} /></div></div> : <p>{t("pptxEditor.slideUnreadable")}</p>}
+    <main ref={root} className="pe-present-stage" {...swipe.handlers} onClick={(event) => { if (swipe.consumeClick()) return; if (event.target === event.currentTarget) onSelect(Math.min(pres.slides.length - 1, idx + 1)); }}>
+      {displayModel ? <div className={`pe-present-sized ${swipe.settling ? "is-settling" : ""}`} style={{ width: W * scale, height: H * scale, transform: swipe.dx ? `translateX(${swipe.dx}px)` : undefined, opacity: swipe.dx ? Math.max(0.35, 1 - Math.abs(swipe.dx) / (viewport.w || 1) * 0.8) : undefined }}><div className="pe-present-scaled" style={{ width: W, height: H, transform: `scale(${scale})` }}><SlideView model={displayModel} urls={urls} hints={false} labels={labels} /></div></div> : <p>{t("pptxEditor.slideUnreadable")}</p>}
     </main>
     <footer className="pe-present-foot"><span>{t("pptxEditor.presentHint")}</span><button type="button" onClick={onClose}>{t("pptxEditor.closePreview")}</button></footer>
   </div>;
