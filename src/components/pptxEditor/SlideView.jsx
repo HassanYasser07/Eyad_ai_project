@@ -80,12 +80,16 @@ function bulletText(b) {
   return "";
 }
 
-export function TextBody({ text, hint, cellMode = false, newCell = false, emptyPt = null, editing = false, elementId, frameW, frameH, onAutoSize, onEditStart, onCommit, onCancel }) {
+export function TextBody({ text, hint, cellMode = false, newCell = false, emptyPt = null, ghost = null, editing = false, elementId, frameW, frameH, onAutoSize, onEditStart, onCommit, onCancel }) {
   const containerRef = React.useRef(null);
   const contentRef = React.useRef(null);
   const autoSizeFrameRef = React.useRef(0);
   const body = text?.body || {};
   const renderScale = 1;
+  // `ghost` is a grey "type here" hint drawn over an empty text box. It is never part of the editable content,
+  // and it disappears with the first typed character (and returns if the box is emptied again).
+  const [typed, setTyped] = React.useState(false);
+  React.useEffect(() => { setTyped(false); }, [editing]);
 
   // While typing, measure the wrapped content and grow only this text element's
   // frame. The callback updates a temporary geometry draft; no neighboring
@@ -137,14 +141,32 @@ export function TextBody({ text, hint, cellMode = false, newCell = false, emptyP
   const justify = body.anchor === "ctr" ? "center" : body.anchor === "b" ? "flex-end" : "flex-start";
   const nowrap = body.wrap === "none";
   const empty = text.isEmpty;
+  const ptOf = (p) => (newCell ? Math.max(emptyPt || 20, ...p.runs.map((r) => r.style.size)) : emptyPt && empty ? Math.max(emptyPt, ...p.runs.map((r) => r.style.size)) : Math.max(p.end.size, ...p.runs.map((r) => r.style.size)));
+  // While editing, the first paragraph's look is also set on the editable root. Select-all + delete makes the browser
+  // remove the paragraph/span elements that carry the font size, and the next typed character then lands directly in
+  // the root: without these inherited values it would be drawn at the tiny default size.
+  const p0 = paragraphs[0];
+  const s0 = p0 ? (p0.runs[0]?.style || p0.end) : null;
+  const rootStyle = editing && p0 && s0 ? {
+    fontSize: ptToPx(ptOf(p0)) * renderScale, fontFamily: font(s0.font), color: rgba(s0.color), lineHeight: 1.2,
+    fontWeight: s0.bold ? 700 : 400, fontStyle: s0.italic ? "italic" : "normal",
+    textAlign: newCell || p0.algn === "ctr" ? "center" : p0.algn === "r" ? "right" : p0.algn === "just" ? "justify" : "left",
+  } : undefined;
   return (
     <div ref={containerRef} className={`pptx-text ${editing ? "is-inline-editing" : ""}`} style={{ padding: `${px(ins.t)}px ${px(ins.r)}px ${px(ins.b)}px ${px(ins.l)}px`, justifyContent: cellMode ? "flex-start" : justify, whiteSpace: nowrap ? "pre" : "pre-wrap" }}
       onDoubleClick={(event) => { if (!editing && onEditStart) { event.preventDefault(); event.stopPropagation(); onEditStart(); } }}>
+      {ghost && empty && !typed && (() => {
+        const p0 = paragraphs[0];
+        const pt = p0 ? Math.max(p0.end.size, ...p0.runs.map((r) => r.style.size)) : 18;
+        return <div className="pptx-ghost" aria-hidden="true" dir={p0?.rtl ? "rtl" : undefined} style={{ top: px(ins.t), left: px(ins.l), right: px(ins.r), fontSize: ptToPx(pt) * renderScale, textAlign: p0?.algn === "ctr" ? "center" : p0?.algn === "r" ? "right" : "left", fontFamily: font(p0?.end.font) }}>{ghost}</div>;
+      })()}
       <div key={editing ? "editing-content" : "view-content"} ref={contentRef} className="pptx-text-content" data-auto-fit="none" data-auto-scale="1.000"
+        style={rootStyle}
         contentEditable={editing} suppressContentEditableWarning={editing}
         onPointerDown={(event) => { if (editing) event.stopPropagation(); }}
-        onInput={() => {
+        onInput={(event) => {
           if (!editing) return;
+          if (ghost) setTyped(!!String(event.currentTarget.innerText ?? "").replace(/[\u200B\uFEFF\s]/g, ""));
           requestContentFit();
           // contenteditable may scroll the slide/canvas viewport to keep the
           // caret visible. Preserve ancestor scroll positions so typing past
@@ -185,7 +207,7 @@ export function TextBody({ text, hint, cellMode = false, newCell = false, emptyP
         }}>
       {empty && hint ? <div className="pptx-hint">{hint}</div> : paragraphs.map((p, i) => {
         // An empty table cell previews the style its first text will be saved with: centred, medium size.
-        const maxPt = newCell ? Math.max(emptyPt || 20, ...p.runs.map((r) => r.style.size)) : emptyPt && empty ? Math.max(emptyPt, ...p.runs.map((r) => r.style.size)) : Math.max(p.end.size, ...p.runs.map((r) => r.style.size));
+        const maxPt = ptOf(p);
         const fs = ptToPx(maxPt) * renderScale;
         const lh = p.lnSpc ? (p.lnSpc.pct ? p.lnSpc.pct * 1.2 : ptToPx(p.lnSpc.pts) / Math.max(1, fs / renderScale)) : 1.2;
         const sp = (s) => (s ? (s.pts !== undefined ? ptToPx(s.pts) * renderScale : s.pct * fs * 1.2) : 0);
@@ -338,7 +360,7 @@ function ElementNode({ el, urls, hints, idPrefix, labels, editingText, tableSele
       inner = (
         <>
           <Geometry el={el} w={w} h={h} idPrefix={idPrefix} urls={urls} />
-          {el.text && <TextBody text={el.text} hint={hints && el.ph ? labels.placeholderHint : null} emptyPt={el.kind === "shape" && !el.ph ? NEW_SHAPE_FONT_PT : null}
+          {el.text && <TextBody text={el.text} hint={hints && el.ph ? labels.placeholderHint : null} emptyPt={el.kind === "shape" && !el.ph ? NEW_SHAPE_FONT_PT : null} ghost={hints && el.kind === "text" && !el.ph ? labels.newTextHint : null}
             elementId={el.id} frameW={el.w} frameH={el.h} onAutoSize={onAutoSizeText}
             editing={editingText?.id === el.id && editingText?.row === undefined}
             onEditStart={() => onEditText?.(el.id)}

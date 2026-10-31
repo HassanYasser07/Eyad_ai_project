@@ -507,3 +507,4 @@
 .pptx-tb-slider em { font-style: normal; font-size: 12px; min-width: 34px; text-align: end; font-variant-numeric: tabular-nums; color: hsl(var(--foreground)); }
 .pptx-cell-toolbar > *, .pptx-cell-toolbar .pptx-cell-size > * { flex: 0 0 auto; }
 @media (max-width: 640px) { .pptx-cell-toolbar { min-height: 56px; } .pptx-cell-btn { width: 40px; height: 40px; } .pptx-cell-font { height: 40px; } .pptx-tb-slider { width: 130px; } }
+.pptx-ghost { position: absolute; z-index: 1; color: #94a3b8; line-height: 1.2; pointer-events: none; user-select: none; white-space: pre-wrap; overflow: hidden; }

@@ -390,6 +390,7 @@ export function setText(pkg, slidePath, id, texts, cell = null, fittedHeight = n
     const nvPr = path(node, "nvSpPr", "nvPr");
     const wasEmptyShape = !cell && node.localName === "sp" && !(nvPr && kid(nvPr, "ph")) && bodyEmpty();
     applyParagraphTexts(doc, body, texts);
+    settleEmptyParagraphs(doc, body);
     // First text typed into an empty table cell: centred both ways at a comfortable size (the default
     // cell text is small and top-left). Cells that already have content keep their own formatting.
     if (wasEmpty && !bodyEmpty()) centerNewCellText(doc, body, newCellFontSz(body));
@@ -400,6 +401,27 @@ export function setText(pkg, slidePath, id, texts, cell = null, fittedHeight = n
       if (current && fittedHeight > current.h) writeBounds(doc, node, { ...current, h: Math.round(fittedHeight) });
     }
   });
+}
+
+/**
+ * A paragraph whose text was deleted must remember how it was formatted: the next thing typed into it takes its
+ * look from the paragraph end mark. Without this the emptied run is dropped, the mark has no size, and typing
+ * again falls back to the tiny theme default. So copy the last run's formatting onto the end mark, drop the empty runs.
+ */
+function settleEmptyParagraphs(doc, body) {
+  for (const para of kids(body, "p")) {
+    if (segmentsOf(para).some((seg) => seg.text)) continue;
+    const runs = kids(para, "r", "fld");
+    const src = runs.length ? kid(runs[runs.length - 1], "rPr") : null;
+    if (src) {
+      const fresh = create(doc, "a", "endParaRPr");
+      for (const at of Array.from(src.attributes)) fresh.setAttribute(at.name, at.value);
+      for (const child of Array.from(src.childNodes)) fresh.appendChild(child.cloneNode(true));
+      const old = kid(para, "endParaRPr");
+      if (old) para.replaceChild(fresh, old); else para.appendChild(fresh);
+    }
+    for (const run of runs) para.removeChild(run);
+  }
 }
 
 /** Font size (hundredths of a point) for the first text of the cell that owns `body`, based on how many columns the table has. */
@@ -958,7 +980,7 @@ export function addTextBox(pkg, slidePath, { x, y, w, h, text = "Text", size = N
   text = String(text ?? "").replace(/[\u200B\uFEFF]/g, "");
   return mutateSlide(pkg, slidePath, "Add text", (doc, tree) => {
     const id = nextId(tree);
-    const node = importFragment(doc, `<p:sp ${NSDECL}><p:nvSpPr><p:cNvPr id="${id}" name="TextBox ${id - 1}"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="${R(x)}" y="${R(y)}"/><a:ext cx="${R(w)}" cy="${R(h)}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/></p:spPr><p:txBody><a:bodyPr wrap="square" rtlCol="0"><a:noAutofit/></a:bodyPr><a:lstStyle/><a:p><a:r><a:rPr lang="en-US" sz="${R(size * 100)}" dirty="0"/><a:t>${esc(text)}</a:t></a:r></a:p></p:txBody></p:sp>`);
+    const node = importFragment(doc, `<p:sp ${NSDECL}><p:nvSpPr><p:cNvPr id="${id}" name="TextBox ${id - 1}"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="${R(x)}" y="${R(y)}"/><a:ext cx="${R(w)}" cy="${R(h)}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/></p:spPr><p:txBody><a:bodyPr wrap="square" rtlCol="0"><a:noAutofit/></a:bodyPr><a:lstStyle/><a:p>${text ? `<a:r><a:rPr lang="en-US" sz="${R(size * 100)}" dirty="0"/><a:t>${esc(text)}</a:t></a:r>` : ""}<a:endParaRPr lang="en-US" sz="${R(size * 100)}" dirty="0"/></a:p></p:txBody></p:sp>`);
     tree.insertBefore(node, endAnchor(tree));
     return String(id);
   });
