@@ -119,17 +119,21 @@ export default function LogoStudio() {
   const [activity, setActivity] = React.useState("");
   const [selections, setSelections] = React.useState({});
   const [images, setImages] = React.useState([]);
-  const [selectedImage, setSelectedImage] = React.useState(null);
+  // Selection is tracked by position, never by asset id: both concepts can come back
+  // with the same/missing ids, which used to make both cards look selected and unclickable.
+  const [selectedIndex, setSelectedIndex] = React.useState(null);
   const [project, setProject] = React.useState(null);
   const [jobId, setJobId] = React.useState(null);
   const [error, setError] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [polling, setPolling] = React.useState(false);
   const [approved, setApproved] = React.useState(false);
-  const handleSelectImage = React.useCallback((id) => {
-    setSelectedImage(id);
-    if (id !== selectedImage) setApproved(false);
-  }, [selectedImage]);
+  const selectedAsset = selectedIndex !== null ? (images.slice(0, 2)[selectedIndex] || null) : null;
+  const selectedImage = selectedAsset ? (selectedAsset.asset_id || selectedAsset.id || `variant-${selectedIndex + 1}`) : null;
+  const handleSelectImage = React.useCallback((index) => {
+    setSelectedIndex(index);
+    setApproved(false);
+  }, []);
   const [previewImage, setPreviewImage] = React.useState(null);
   const [svgEditorOpen, setSvgEditorOpen] = React.useState(false);
   const [mobileTab, setMobileTab] = React.useState("style");
@@ -166,7 +170,6 @@ export default function LogoStudio() {
       if (persistedBrief?.name) setName(persistedBrief.name);
       if (persistedBrief?.activity) setActivity(persistedBrief.activity);
       if (saved) setSelections(saved);
-      if (data.project_data?.approved_asset_id) setSelectedImage(data.project_data.approved_asset_id);
     }).catch(() => {});
     return () => { active = false; };
   }, [projectId]);
@@ -208,7 +211,7 @@ export default function LogoStudio() {
     setLoading(true);
     setPolling(false);
     setImages([]);
-    setSelectedImage(null);
+    setSelectedIndex(null);
 
     const briefMessage = `صمم لوجو جديد. اسم العلامة: ${name.trim()}. النشاط: ${activity.trim()}.`;
     try {
@@ -257,6 +260,8 @@ export default function LogoStudio() {
       if (data?.status === "generated") {
         const nextImages = normalizeImages(data);
         setImages(nextImages);
+        setSelectedIndex(null);
+        setApproved(false);
         setProject({ id: durableProjectId, title: name.trim() });
         setStep("results");
         setLoading(false);
@@ -291,6 +296,8 @@ export default function LogoStudio() {
         if (data?.status === "generated") {
           const nextImages = normalizeImages(data);
           setImages(nextImages);
+        setSelectedIndex(null);
+        setApproved(false);
           setStep("results");
           setLoading(false);
           setPolling(false);
@@ -323,7 +330,6 @@ export default function LogoStudio() {
     setLoading(true);
     try {
       const current = await projectService.get(currentProjectId);
-      const selectedAsset = images.find((image) => (image.asset_id || image.id) === selectedImage) || null;
       const existingBrand = current?.project_data?.brand_identity || {};
       const brandIdentity = {
         ...existingBrand,
@@ -395,6 +401,7 @@ export default function LogoStudio() {
   const back = () => {
     if (step === "results" || step === "generating") {
       setImages([]);
+      setSelectedIndex(null);
       setStep("choices");
       setPolling(false);
       setJobId(null);
@@ -425,6 +432,7 @@ export default function LogoStudio() {
         isAnonymous={isAnonymous}
         images={images}
         selectedImage={selectedImage}
+        selectedIndex={selectedIndex}
         setSelectedImage={handleSelectImage}
         approve={approve}
         approved={approved}
@@ -519,17 +527,17 @@ export default function LogoStudio() {
             </div>
             <div className="grid grid-cols-2 gap-3 sm:gap-4">
               {images.slice(0, 2).map((image, index) => {
-                const id = image.asset_id || image.id || `variant-${index + 1}`;
-                const selected = selectedImage === id;
+                const id = `concept-${index}`;
+                const selected = selectedIndex === index;
                 return (
                   <div key={id} className={`relative overflow-hidden rounded-3xl border-2 bg-white/80 p-2 sm:p-3 text-start transition-all ${selected ? "border-primary shadow-lg" : "border-white/90 hover:border-primary/30"}`}>
-                    <button type="button" onClick={() => setPreviewImage(image)} className="block w-full cursor-zoom-in" aria-label={ar ? `عرض الفكرة ${index + 1} بالحجم الكامل` : `Preview concept ${index + 1} fullscreen`}>
+                    <button type="button" onClick={() => handleSelectImage(index)} aria-pressed={selected} className="block w-full cursor-pointer" aria-label={ar ? `تحديد الفكرة ${index + 1}` : `Select concept ${index + 1}`}>
                       <img src={image.data_url || image.url} alt={`Logo concept ${index + 1}`} className="w-full aspect-square object-contain rounded-2xl logo-transparency-grid" />
                     </button>
-                    <button type="button" onClick={() => handleSelectImage(id)} aria-label={ar ? `تحديد الفكرة ${index + 1}` : `Select concept ${index + 1}`} className={`absolute top-4 ${ar ? "left-4" : "right-4"} z-10 w-9 h-9 rounded-full border-2 flex items-center justify-center transition-all ${selected ? "bg-primary border-primary text-white shadow-md" : "bg-white/95 border-slate-200 text-transparent"}`}>
+                    <button type="button" onClick={() => handleSelectImage(index)} aria-label={ar ? `تحديد الفكرة ${index + 1}` : `Select concept ${index + 1}`} className={`absolute top-4 ${ar ? "left-4" : "right-4"} z-10 w-9 h-9 rounded-full border-2 flex items-center justify-center transition-all ${selected ? "bg-primary border-primary text-white shadow-md" : "bg-white/95 border-slate-200 text-transparent"}`}>
                       <Check className="w-4 h-4" />
                     </button>
-                    <span className="block mt-2 px-1 text-xs font-bold text-slate-500">{ar ? `الفكرة ${index + 1}` : `Concept ${index + 1}`}</span>
+                    <span className="mt-2 px-1 flex items-center justify-between text-xs font-bold text-slate-500">{ar ? `الفكرة ${index + 1}` : `Concept ${index + 1}`}<button type="button" onClick={() => setPreviewImage(image)} className="underline text-primary" aria-label={ar ? `عرض الفكرة ${index + 1} بالحجم الكامل` : `Preview concept ${index + 1} fullscreen`}>{ar ? "عرض" : "Preview"}</button></span>
                   </div>
                 );
               })}
@@ -559,7 +567,7 @@ export default function LogoStudio() {
                 <img src={previewImage.data_url || previewImage.url} alt={ar ? "معاينة الشعار بالحجم الكامل" : "Full screen logo preview"} className="max-w-full max-h-full object-contain rounded-2xl logo-transparency-grid" onClick={(event) => event.stopPropagation()} />
               </div>
             )}
-            {approved && <StudioNextActions projectId={project?.id || projectId} fromStudio="logo" asset={{ id: selectedImage, url: images.find((image) => (image.asset_id || image.id) === selectedImage)?.url || images.find((image) => (image.asset_id || image.id) === selectedImage)?.data_url || null }} title={loc({ ar: "تم اعتماد الشعار. ماذا تريد أن تفعل الآن؟", en: "Logo approved. What would you like to do next?" })} description={loc({ ar: "حوّل الشعار إلى هوية بصرية أو عرض تقديمي، أو نزّل الشعار.", en: "Turn the logo into a visual identity or presentation, or download the logo." })} />}
+            {approved && <StudioNextActions projectId={project?.id || projectId} fromStudio="logo" asset={{ id: selectedImage, url: selectedAsset?.url || selectedAsset?.data_url || null }} title={loc({ ar: "تم اعتماد الشعار. ماذا تريد أن تفعل الآن؟", en: "Logo approved. What would you like to do next?" })} description={loc({ ar: "حوّل الشعار إلى هوية بصرية أو عرض تقديمي، أو نزّل الشعار.", en: "Turn the logo into a visual identity or presentation, or download the logo." })} />}
           </div>
         )}
 

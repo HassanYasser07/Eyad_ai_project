@@ -6,7 +6,7 @@ import {
   Copy, Trash2, Group, Ungroup, FileCode2,
   MousePointer2, Type, CircleAlert, CheckCircle2, FileUp,
   SlidersHorizontal, Maximize2, Layers, Palette, Eye, EyeOff,
-  Blend, RotateCw, Paintbrush, Image, Sparkles, ChevronLeft, Check, Bold,
+  Blend, RotateCw, Paintbrush, Image, Sparkles, ChevronLeft, Check, Bold, Loader2,
 } from "lucide-react";
 import SvgLayersPanel from "@/components/svgEditor/SvgLayersPanel";
 import SvgPropertiesPanel from "@/components/svgEditor/SvgPropertiesPanel";
@@ -127,6 +127,7 @@ function localizeSvgError(message, t) {
     [/does not contain valid SVG XML/i, "svgEditor.errors.invalidXml"],
     [/must have an SVG root element/i, "svgEditor.errors.svgRoot"],
     [/SVG files must be 10 MB or smaller/i, "svgEditor.fileTooLarge"],
+    [/SVG_FETCH_FAILED/i, "svgEditor.errors.loadFailed"],
     [/select at least one element to duplicate/i, "svgEditor.errors.selectToDuplicate"],
     [/unlock selected elements before duplicating/i, "svgEditor.errors.unlockDuplicate"],
     [/select two or more sibling elements to group/i, "svgEditor.errors.selectToGroup"],
@@ -276,7 +277,10 @@ function rootPointInParent(svg, parent, x, y) {
   }
 }
 
-export default function SvgEditorDialog({ onClose, direction = "ltr" }) {
+// `initialSvgUrl` (optional) opens the editor with an existing SVG already loaded
+// (for example a Recraft-vectorized logo). Without it the editor behaves exactly
+// as before and starts with the upload screen.
+export default function SvgEditorDialog({ onClose, direction = "ltr", initialSvgUrl = null, initialName = "" }) {
   const { t } = useI18n();
   const [svgMarkup, setSvgMarkup] = React.useState("");
   const [originalMarkup, setOriginalMarkup] = React.useState("");
@@ -300,6 +304,7 @@ export default function SvgEditorDialog({ onClose, direction = "ltr" }) {
   const [palettePickerOpen, setPalettePickerOpen] = React.useState(false);
   const [selectedPaletteId, setSelectedPaletteId] = React.useState("ocean-mist");
   const [previewHiddenIds, setPreviewHiddenIds] = React.useState(() => new Set());
+  const [initialLoading, setInitialLoading] = React.useState(Boolean(initialSvgUrl));
   const fileInputRef = React.useRef(null);
   const stageRef = React.useRef(null);
   const markupRef = React.useRef("");
@@ -395,6 +400,43 @@ export default function SvgEditorDialog({ onClose, direction = "ltr" }) {
     }
   }, [commitMarkup, t]);
 
+  // Shared by the file picker and the optional `initialSvgUrl` loader so both
+  // go through exactly the same parsing/sanitising and editor reset.
+  const applySvgSource = (source, name) => {
+    const parsed = parseSvgDocument(source);
+    replaceMarkup(parsed.markup);
+    setOriginalMarkup(parsed.markup);
+    setFileName(String(name || "").replace(/\.svg$/i, "") || "untitled");
+    setSelectedIds([]);
+    setPreviewHiddenIds(new Set());
+    setSelectedPaletteId("ocean-mist");
+    setPalettePickerOpen(false);
+    setHistory({ past: [], future: [] });
+    updateView({ zoom: 1, pan: { x: 0, y: 0 } });
+    setNotice(t("svgEditor.imported"));
+  };
+
+  React.useEffect(() => {
+    if (!initialSvgUrl) return undefined;
+    let cancelled = false;
+    setInitialLoading(true);
+    (async () => {
+      try {
+        const response = await fetch(initialSvgUrl, { mode: "cors" });
+        if (!response.ok) throw new Error("SVG_FETCH_FAILED");
+        const source = await response.text();
+        if (cancelled) return;
+        if (source.length > 10 * 1024 * 1024) throw new Error("SVG files must be 10 MB or smaller.");
+        applySvgSource(source, initialName || "logo");
+      } catch (loadError) {
+        if (!cancelled) setError(localizeSvgError(loadError?.message, t));
+      } finally {
+        if (!cancelled) setInitialLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [initialSvgUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const loadFile = async (file) => {
     if (!file) return;
     setError("");
@@ -409,17 +451,7 @@ export default function SvgEditorDialog({ onClose, direction = "ltr" }) {
     }
     try {
       const source = await file.text();
-      const parsed = parseSvgDocument(source);
-      replaceMarkup(parsed.markup);
-      setOriginalMarkup(parsed.markup);
-      setFileName(file.name.replace(/\.svg$/i, "") || "untitled");
-      setSelectedIds([]);
-      setPreviewHiddenIds(new Set());
-      setSelectedPaletteId("ocean-mist");
-      setPalettePickerOpen(false);
-      setHistory({ past: [], future: [] });
-      updateView({ zoom: 1, pan: { x: 0, y: 0 } });
-      setNotice(t("svgEditor.imported"));
+      applySvgSource(source, file.name);
     } catch (parseError) {
       setError(localizeSvgError(parseError?.message, t));
     } finally {
@@ -929,6 +961,16 @@ export default function SvgEditorDialog({ onClose, direction = "ltr" }) {
   }, [onClose, selectedIds.length]);
 
   const renderCanvas = () => {
+    if (!svgMarkup && initialLoading) {
+      return (
+        <div className="svg-editor-empty-state">
+          <div className="svg-editor-upload-card">
+            <span className="svg-editor-upload-icon"><Loader2 size={28} className="animate-spin" /></span>
+            <h2>{t("svgEditor.loadingLogo")}</h2>
+          </div>
+        </div>
+      );
+    }
     if (!svgMarkup) {
       return (
         <div className="svg-editor-empty-state" onDragOver={(event) => { event.preventDefault(); setIsDraggingFile(true); }} onDragLeave={() => setIsDraggingFile(false)} onDrop={(event) => { event.preventDefault(); setIsDraggingFile(false); loadFile(event.dataTransfer.files?.[0]); }}>

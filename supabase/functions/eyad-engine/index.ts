@@ -499,9 +499,14 @@ Deno.serve(async (req: Request) => {
     const approvedAssetId = selectedAssetId || String((vectorProject.metadata?.project_data || {})?.approved_asset_id || "");
     if (!approvedAssetId) return json({ error: "APPROVED_ASSET_REQUIRED" }, 400);
 
-    const existingSvgUrl = (vectorProject.metadata?.project_data || {})?.brand_identity?.logo?.svg_url
-      || (vectorProject.metadata?.project_data || {})?.brand_identity?.logo?.svgUrl || null;
-    if (existingSvgUrl && String((vectorProject.metadata?.project_data || {})?.approved_asset_id || "") === approvedAssetId) {
+    const existingLogo = (vectorProject.metadata?.project_data || {})?.brand_identity?.logo || {};
+    const existingSvgUrl = existingLogo.svg_url || existingLogo.svgUrl || null;
+    // Reuse a stored SVG only when it was produced from this exact logo asset.
+    // Checking approved_asset_id alone is not enough: it is updated at approval
+    // time, before vectorization, while an older logo's svg_url may still be stored.
+    if (existingSvgUrl
+      && String(existingLogo.asset_id || "") === approvedAssetId
+      && String((vectorProject.metadata?.project_data || {})?.approved_asset_id || "") === approvedAssetId) {
       return json({ ok: true, status: "vectorized", asset_id: approvedAssetId, svg_url: existingSvgUrl, reused: true });
     }
 
