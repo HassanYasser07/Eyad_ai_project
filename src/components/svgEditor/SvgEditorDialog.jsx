@@ -337,14 +337,7 @@ export default function SvgEditorDialog({ onClose, direction = "ltr", initialSvg
   }, [svgMarkup]);
   const artboardSize = React.useMemo(() => {
     if (!canvasSize.width) return { width: 1, height: 1 };
-    // Fit the complete artboard inside the measured canvas without a mutable
-    // zoom factor. Mobile has a dedicated, tighter fit so the artwork uses the
-    // available width while still respecting the visible canvas height.
     const isMobile = canvasSize.width <= 660;
-    // On mobile, use the full canvas width whenever the document's aspect ratio
-    // allows it. Height is derived from the original SVG aspect ratio and the
-    // available canvas height, never from the currently opened control tab.
-    // Control panels are overlays, so opening one must not resize the artboard.
     const horizontalMargin = isMobile ? 0 : 48;
     const verticalMargin = isMobile ? 16 : 48;
     const maxWidth = Math.max(1, canvasSize.width - horizontalMargin * 2);
@@ -376,6 +369,9 @@ export default function SvgEditorDialog({ onClose, direction = "ltr", initialSvg
   }, []);
 
   const commitMarkup = React.useCallback((nextMarkup, previousMarkup = markupRef.current, previousView = viewRef.current) => {
+    liveRef.current = null; // any real commit ends a stale live-preview session
+    if (liveFrameRef.current) { cancelAnimationFrame(liveFrameRef.current); liveFrameRef.current = 0; }
+    livePendingRef.current = null;
     if (!nextMarkup || nextMarkup === previousMarkup) return;
     setHistory((current) => ({
       past: [...current.past, { markup: previousMarkup, zoom: previousView.zoom, pan: { ...previousView.pan } }].slice(-MAX_HISTORY),
@@ -399,6 +395,73 @@ export default function SvgEditorDialog({ onClose, direction = "ltr", initialSvg
       return false;
     }
   }, [commitMarkup, t]);
+
+  // ── Live editing ──────────────────────────────────────────────────────
+  // While a control is being dragged/typed, `livePreview` re-renders the canvas
+  // from the markup captured at the start of the gesture (no history entries).
+  // `liveCommit` then records the whole gesture as ONE undo step.
+  const liveRef = React.useRef(null);
+  const liveFrameRef = React.useRef(0);
+  const livePendingRef = React.useRef(null);
+
+  const flushLive = React.useCallback(() => {
+    liveFrameRef.current = 0;
+    const job = livePendingRef.current;
+    livePendingRef.current = null;
+    const session = liveRef.current;
+    if (!job || !session) return;
+    try {
+      const next = editSvgMarkup(session.markup, (root) => job(root, session.bounds));
+      session.out = next;
+      replaceMarkup(next);
+    } catch { /* ignore transient invalid values while dragging */ }
+  }, [replaceMarkup]);
+
+  const livePreview = React.useCallback((job, bounds) => {
+    if (!markupRef.current) return;
+    let session = liveRef.current;
+    if (!session || markupRef.current !== session.out) {
+      session = { markup: markupRef.current, out: markupRef.current, view: { zoom: viewRef.current.zoom, pan: { ...viewRef.current.pan } }, bounds };
+      liveRef.current = session;
+    }
+    livePendingRef.current = job;
+    if (!liveFrameRef.current) liveFrameRef.current = requestAnimationFrame(flushLive);
+  }, [flushLive]);
+
+  const stopLiveFrame = () => {
+    if (liveFrameRef.current) { cancelAnimationFrame(liveFrameRef.current); liveFrameRef.current = 0; }
+    livePendingRef.current = null;
+  };
+
+  const liveCancel = React.useCallback(() => {
+    stopLiveFrame();
+    const session = liveRef.current;
+    liveRef.current = null;
+    if (session && markupRef.current === session.out) replaceMarkup(session.markup);
+  }, [replaceMarkup]);
+
+  const liveCommit = React.useCallback((label, job, bounds) => {
+    stopLiveFrame();
+    const session = liveRef.current;
+    liveRef.current = null;
+    if (!session || markupRef.current !== session.out) {
+      return performEdit(label, (root) => job(root, bounds));
+    }
+    try {
+      const next = editSvgMarkup(session.markup, (root) => job(root, session.bounds));
+      if (next !== session.markup) commitMarkup(next, session.markup, session.view);
+      else replaceMarkup(session.markup);
+      setNotice(label);
+      setError("");
+      return true;
+    } catch (editError) {
+      replaceMarkup(session.markup);
+      setError(localizeSvgError(editError?.message, t));
+      return false;
+    }
+  }, [performEdit, commitMarkup, replaceMarkup, t]);
+
+  React.useEffect(() => () => { if (liveFrameRef.current) cancelAnimationFrame(liveFrameRef.current); }, []);
 
   // Shared by the file picker and the optional `initialSvgUrl` loader so both
   // go through exactly the same parsing/sanitising and editor reset.
@@ -647,8 +710,6 @@ export default function SvgEditorDialog({ onClose, direction = "ltr", initialSvg
     const svg = stageRef.current?.querySelector("svg");
     const liveElement = Array.from(svg?.querySelectorAll("[data-editor-id]") || [])
       .find((item) => item.getAttribute("data-editor-id") === selectedId);
-    // flipElement needs bounds in the selected element's parent coordinate space,
-    // not the root artboard coordinates used by the blue selection frame.
     const boundsInParent = getBounds(liveElement) || selectedBounds;
     performEdit(t("svgEditor.flipped"), (root) => flipElement(root, selectedId, axis, boundsInParent));
   };
@@ -690,29 +751,20 @@ export default function SvgEditorDialog({ onClose, direction = "ltr", initialSvg
     performEdit(t("svgEditor.reordered"), (root) => reorderElementRelative(root, sourceId, targetId, after));
   };
 
-  const handleSetSolidBackground = React.useCallback((color) => {
-    performEdit(t("svgEditor.backgroundUpdated"), (root) => {
-      setSolidBackground(root, color);
-    });
-  }, [performEdit, t]);
+  const solidJob = (color) => (root) => { setSolidBackground(root, color); };
+  const gradientJob = (color1, color2, angle = 90) => (root) => { setGradientBackground(root, color1, color2, angle); };
+  const imageJob = (dataUrl, opacity = 1) => (root) => { setImageBackground(root, dataUrl, opacity); };
+  const rotateBgJob = (angle) => (root) => { rotateBackground(root, angle); };
+  const bgLabel = t("svgEditor.backgroundUpdated");
 
-  const handleSetGradientBackground = React.useCallback((color1, color2, angle = 90) => {
-    performEdit(t("svgEditor.backgroundUpdated"), (root) => {
-      setGradientBackground(root, color1, color2, angle);
-    });
-  }, [performEdit, t]);
-
-  const handleSetImageBackground = React.useCallback((dataUrl, opacity = 1) => {
-    performEdit(t("svgEditor.backgroundUpdated"), (root) => {
-      setImageBackground(root, dataUrl, opacity);
-    });
-  }, [performEdit, t]);
-
-  const handleRotateBackground = React.useCallback((angle) => {
-    performEdit(t("svgEditor.backgroundUpdated"), (root) => {
-      rotateBackground(root, angle);
-    });
-  }, [performEdit, t]);
+  const handleSetSolidBackground = React.useCallback((color) => liveCommit(bgLabel, solidJob(color)), [liveCommit, bgLabel]);
+  const handleSetGradientBackground = React.useCallback((c1, c2, angle = 90) => liveCommit(bgLabel, gradientJob(c1, c2, angle)), [liveCommit, bgLabel]);
+  const handleSetImageBackground = React.useCallback((dataUrl, opacity = 1) => liveCommit(bgLabel, imageJob(dataUrl, opacity)), [liveCommit, bgLabel]);
+  const handleRotateBackground = React.useCallback((angle) => liveCommit(bgLabel, rotateBgJob(angle)), [liveCommit, bgLabel]);
+  const handleSetSolidBackgroundLive = React.useCallback((color) => livePreview(solidJob(color)), [livePreview]);
+  const handleSetGradientBackgroundLive = React.useCallback((c1, c2, angle = 90) => livePreview(gradientJob(c1, c2, angle)), [livePreview]);
+  const handleSetImageBackgroundLive = React.useCallback((dataUrl, opacity = 1) => livePreview(imageJob(dataUrl, opacity)), [livePreview]);
+  const handleRotateBackgroundLive = React.useCallback((angle) => livePreview(rotateBgJob(angle)), [livePreview]);
 
   const handleRemoveBackground = React.useCallback(() => {
     performEdit(t("svgEditor.backgroundRemoved"), (root) => {
@@ -1111,11 +1163,16 @@ export default function SvgEditorDialog({ onClose, direction = "ltr", initialSvg
             locked={locked}
             error={error}
             onRename={(label) => performEdit(t("svgEditor.labelUpdated"), (root) => renameElement(root, selectedId, label))}
-            onText={(value) => performEdit(t("svgEditor.textUpdated"), (root) => updateElementText(root, selectedId, value))}
-            onSize={(dimension, value, bounds) => performEdit(t("svgEditor.dimensionsUpdated"), (root) => updateElementSize(root, selectedId, dimension, value, bounds))}
-            onRotate={(value, bounds) => performEdit(t("svgEditor.rotationUpdated"), (root) => rotateElement(root, selectedId, value, bounds))}
+            onText={(value) => liveCommit(t("svgEditor.textUpdated"), (root) => updateElementText(root, selectedId, value))}
+            onTextLive={(value) => livePreview((root) => updateElementText(root, selectedId, value))}
+            onSize={(dimension, value, bounds) => liveCommit(t("svgEditor.dimensionsUpdated"), (root, b) => updateElementSize(root, selectedId, dimension, value, b), bounds)}
+            onSizeLive={(dimension, value, bounds) => livePreview((root, b) => updateElementSize(root, selectedId, dimension, value, b), bounds)}
+            onRotate={(value, bounds) => liveCommit(t("svgEditor.rotationUpdated"), (root, b) => rotateElement(root, selectedId, value, b), bounds)}
+            onRotateLive={(value, bounds) => livePreview((root, b) => rotateElement(root, selectedId, value, b), bounds)}
             onFlip={(axis) => flipSelectedElement(axis)}
-            onAttribute={(name, value) => performEdit(t("svgEditor.appearanceUpdated"), (root) => updateElementAttribute(root, selectedId, name, value))}
+            onAttribute={(name, value) => liveCommit(t("svgEditor.appearanceUpdated"), (root) => updateElementAttribute(root, selectedId, name, value))}
+            onAttributeLive={(name, value) => livePreview((root) => updateElementAttribute(root, selectedId, name, value))}
+            onLiveCancel={liveCancel}
             onNudge={nudgeSelection}
             collapsed={propertiesCollapsed}
             onToggleCollapsed={() => setPropertiesCollapsed((value) => !value)}
@@ -1126,6 +1183,10 @@ export default function SvgEditorDialog({ onClose, direction = "ltr", initialSvg
             onEditText={requestEditText}
             activeMobileTab={mobileEditorTab}
             onSetSolidBackground={handleSetSolidBackground}
+            onSetSolidBackgroundLive={handleSetSolidBackgroundLive}
+            onSetGradientBackgroundLive={handleSetGradientBackgroundLive}
+            onSetImageBackgroundLive={handleSetImageBackgroundLive}
+            onRotateBackgroundLive={handleRotateBackgroundLive}
             onSetGradientBackground={handleSetGradientBackground}
             onSetImageBackground={handleSetImageBackground}
             onRotateBackground={handleRotateBackground}

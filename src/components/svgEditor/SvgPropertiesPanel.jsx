@@ -47,15 +47,35 @@ function numericValue(value, fallback = 0) {
   return value !== undefined && value !== "" && Number.isFinite(parsed) ? parsed : fallback;
 }
 
-function NumberField({ label, value, onCommit, min, max, step = 1, disabled = false, suffix }) {
+function NumberField({ label, value, onCommit, onLive, onLiveCancel, min, max, step = 1, disabled = false, suffix }) {
   const [draft, setDraft] = React.useState(String(value ?? 0));
+  const liveDirty = React.useRef(false);
   React.useEffect(() => setDraft(String(value ?? 0)), [value]);
-  const commit = () => {
-    if (draft.trim() === "") return;
-    const parsed = Number(draft);
+  const parse = (text) => {
+    if (String(text).trim() === "") return null;
+    const parsed = Number(text);
     const withinBounds = Number.isFinite(parsed) && (min === undefined || parsed >= min) && (max === undefined || parsed <= max);
-    if (withinBounds && parsed !== Number(value)) onCommit(parsed);
-    else setDraft(String(value ?? 0));
+    return withinBounds ? parsed : null;
+  };
+  const commit = () => {
+    const parsed = parse(draft);
+    const wasLive = liveDirty.current;
+    liveDirty.current = false;
+    if (draft.trim() === "") { if (wasLive) onLiveCancel?.(); setDraft(String(value ?? 0)); return; }
+    if (parsed !== null && (wasLive || parsed !== Number(value))) onCommit(parsed);
+    else {
+      if (wasLive) onLiveCancel?.();
+      setDraft(String(value ?? 0));
+    }
+  };
+  const handleChange = (event) => {
+    const text = event.target.value;
+    setDraft(text);
+    const parsed = parse(text);
+    if (onLive && parsed !== null && parsed !== Number(value)) {
+      liveDirty.current = true;
+      onLive(parsed);
+    }
   };
 
   return (
@@ -69,7 +89,7 @@ function NumberField({ label, value, onCommit, min, max, step = 1, disabled = fa
           min={min}
           max={max}
           step={step}
-          onChange={(event) => setDraft(event.target.value)}
+          onChange={handleChange}
           onBlur={commit}
           onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }}
         />
@@ -79,12 +99,45 @@ function NumberField({ label, value, onCommit, min, max, step = 1, disabled = fa
   );
 }
 
-function RangeControl({ label, value, min, max, step = 1, suffix = "", onCommit, disabled = false, icon: Icon }) {
+function TextContentField({ id, value, disabled, onLive, onCommit }) {
+  const [draft, setDraft] = React.useState(value ?? "");
+  const focused = React.useRef(false);
+  const dirty = React.useRef(false);
+  React.useEffect(() => { if (!focused.current) setDraft(value ?? ""); }, [value, id]);
+  return (
+    <textarea
+      value={draft}
+      rows={3}
+      maxLength={1000}
+      disabled={disabled}
+      onFocus={() => { focused.current = true; }}
+      onChange={(event) => {
+        const next = event.target.value;
+        setDraft(next);
+        if (onLive) { dirty.current = true; onLive(next); }
+      }}
+      onBlur={(event) => {
+        focused.current = false;
+        const next = event.target.value;
+        const wasDirty = dirty.current;
+        dirty.current = false;
+        if (wasDirty || next !== value) onCommit(next);
+      }}
+    />
+  );
+}
+
+function RangeControl({ label, value, min, max, step = 1, suffix = "", onCommit, onLive, snapBack = false, disabled = false, icon: Icon }) {
   const numeric = numericValue(value, min);
   const safeMax = Math.max(min + step, max, numeric);
   const initial = Math.max(min, Math.min(safeMax, numeric));
   const [draft, setDraft] = React.useState(initial);
-  React.useEffect(() => setDraft(Math.max(min, Math.min(safeMax, numericValue(value, min)))), [value, min, safeMax]);
+  const interacting = React.useRef(false);
+  const liveUsed = React.useRef(false);
+  React.useEffect(() => {
+    if (interacting.current) return;
+    setDraft(Math.max(min, Math.min(safeMax, numericValue(value, min))));
+  }, [value, min, safeMax]);
   const shown = Math.abs(draft) < 0.0001 ? 0 : Number(draft.toFixed(step < 1 ? 2 : 0));
 
   return (
@@ -94,17 +147,26 @@ function RangeControl({ label, value, min, max, step = 1, suffix = "", onCommit,
         <output className="svg-editor-range-output">{shown}{suffix}</output>
       </div>
       <Slider
+        variant="wave"
         aria-label={label}
         value={[draft]}
         min={min}
         max={safeMax}
         step={step}
         disabled={disabled}
-        onValueChange={(values) => setDraft(values[0] ?? min)}
+        onValueChange={(values) => {
+          const next = values[0] ?? min;
+          interacting.current = true;
+          setDraft(next);
+          if (onLive && next !== numeric) { liveUsed.current = true; onLive(next); }
+        }}
         onValueCommit={(values) => {
           const next = values[0] ?? min;
-          setDraft(next);
-          if (next !== numeric) onCommit(next);
+          interacting.current = false;
+          setDraft(snapBack ? initial : next);
+          const hadLive = liveUsed.current;
+          liveUsed.current = false;
+          if (hadLive || next !== numeric) onCommit(next);
         }}
         className="svg-editor-range-slider"
       />
@@ -118,11 +180,11 @@ function normalizeAngle(value) {
   return ((angle + 180) % 360 + 360) % 360 - 180;
 }
 
-function RotationWheel({ value, onCommit, disabled, label, hint }) {
+function RotationWheel({ value, onCommit, onLive, disabled, label, hint }) {
   const currentValue = normalizeAngle(value);
   const [draft, setDraft] = React.useState(currentValue);
   const dragging = React.useRef(false);
-  React.useEffect(() => setDraft(currentValue), [currentValue]);
+  React.useEffect(() => { if (!dragging.current) setDraft(currentValue); }, [currentValue]);
 
   const valueFromPointer = (event) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -135,17 +197,22 @@ function RotationWheel({ value, onCommit, disabled, label, hint }) {
     event.preventDefault();
     dragging.current = true;
     event.currentTarget.setPointerCapture?.(event.pointerId);
-    setDraft(valueFromPointer(event));
+    const first = valueFromPointer(event);
+    setDraft(first);
+    if (first !== currentValue) onLive?.(first);
   };
   const moveDrag = (event) => {
-    if (dragging.current) setDraft(valueFromPointer(event));
+    if (!dragging.current) return;
+    const next = valueFromPointer(event);
+    setDraft(next);
+    onLive?.(next);
   };
   const endDrag = (event) => {
     if (!dragging.current) return;
     dragging.current = false;
     const next = valueFromPointer(event);
     setDraft(next);
-    if (next !== currentValue) onCommit(next);
+    onCommit(next);
   };
   const handleKeys = (event) => {
     let next = draft;
@@ -215,31 +282,50 @@ function normalizeColor(value) {
   return "#000000";
 }
 
-function ColorPickerCard({ label, value, onChange, disabled = false, t }) {
+function ColorPickerCard({ label, value, onChange, onLive, disabled = false, t }) {
   const normalized = normalizeColor(value);
   const rawValue = String(value || "").trim();
   const hasSolidHexValue = /^#[0-9a-f]{3}(?:[0-9a-f]{3})?$/i.test(rawValue);
   const [draft, setDraft] = React.useState(normalized.toUpperCase());
   const pickerRef = React.useRef(null);
+  const liveDirty = React.useRef(null);
+  const onChangeRef = React.useRef(onChange);
+  onChangeRef.current = onChange;
   React.useEffect(() => setDraft(normalizeColor(value).toUpperCase()), [value]);
+  const finishLive = React.useCallback(() => {
+    const pending = liveDirty.current;
+    liveDirty.current = null;
+    if (pending) onChangeRef.current(pending);
+  }, []);
+  React.useEffect(() => {
+    const input = pickerRef.current;
+    if (!input) return undefined;
+    input.addEventListener("change", finishLive);
+    return () => input.removeEventListener("change", finishLive);
+  }, [finishLive]);
+  const preview = (next) => {
+    if (onLive) { liveDirty.current = next; onLive(next); } else onChange(next);
+  };
   const commitHex = () => {
     const candidate = draft.trim().replace(/^#/, "");
     if (/^[0-9a-f]{6}$/i.test(candidate)) {
       const next = `#${candidate.toUpperCase()}`;
       setDraft(next);
-      if (!hasSolidHexValue || next.toLowerCase() !== normalized.toLowerCase()) onChange(next);
+      if (liveDirty.current) { liveDirty.current = null; onChange(next); }
+      else if (!hasSolidHexValue || next.toLowerCase() !== normalized.toLowerCase()) onChange(next);
     } else {
+      if (liveDirty.current) { liveDirty.current = null; onChange(normalized.toUpperCase()); }
       setDraft(normalized.toUpperCase());
     }
   };
   return (
     <div className="svg-editor-color-picker-card">
       <span className="svg-editor-large-color-swatch" style={{ background: normalized }}>
-        <input ref={pickerRef} className="svg-editor-native-color-picker" aria-label={label} type="color" value={normalized} onChange={(event) => { setDraft(event.target.value.toUpperCase()); onChange(event.target.value); }} disabled={disabled} />
+        <input ref={pickerRef} className="svg-editor-native-color-picker" aria-label={label} type="color" value={normalized} onChange={(event) => { setDraft(event.target.value.toUpperCase()); preview(event.target.value); }} onBlur={finishLive} disabled={disabled} />
       </span>
       <span className="svg-editor-color-value-copy">
         <strong>{label}</strong>
-        <input className="svg-editor-color-hex-field" aria-label={`${label} HEX`} value={draft} maxLength={7} spellCheck={false} disabled={disabled} onChange={(event) => setDraft(event.target.value.toUpperCase())} onBlur={commitHex} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); commitHex(); event.currentTarget.blur(); } }} />
+        <input className="svg-editor-color-hex-field" aria-label={`${label} HEX`} value={draft} maxLength={7} spellCheck={false} disabled={disabled} onChange={(event) => { const text = event.target.value.toUpperCase(); setDraft(text); const candidate = text.trim().replace(/^#/, ""); if (onLive && /^[0-9A-F]{6}$/.test(candidate)) { const next = `#${candidate}`; liveDirty.current = next; onLive(next); } }} onBlur={commitHex} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); commitHex(); event.currentTarget.blur(); } }} />
       </span>
       <button type="button" className="svg-editor-color-picker-edit" onClick={() => pickerRef.current?.click()} disabled={disabled} aria-label={t?.("svgEditor.chooseColor") || "Choose any color"} title={t?.("svgEditor.chooseColor") || "Choose any color"}>
         <Pipette size={13} aria-hidden="true" />
@@ -291,10 +377,15 @@ export default function SvgPropertiesPanel({
   bounds,
   onRename,
   onText,
+  onTextLive,
   onSize,
+  onSizeLive,
   onRotate,
+  onRotateLive,
   onFlip,
   onAttribute,
+  onAttributeLive,
+  onLiveCancel,
   onNudge,
   onDuplicate,
   onDelete,
@@ -303,6 +394,10 @@ export default function SvgPropertiesPanel({
   onEditText,
   activeMobileTab,
   onSetSolidBackground,
+  onSetSolidBackgroundLive,
+  onSetGradientBackgroundLive,
+  onSetImageBackgroundLive,
+  onRotateBackgroundLive,
   onSetGradientBackground,
   onSetImageBackground,
   onRotateBackground,
@@ -375,6 +470,16 @@ export default function SvgPropertiesPanel({
       onRotateBackground?.(newAngle);
     }
   }, [isRotationEnabled, backgroundSubTab, customColor1, customColor2, onSetGradientBackground, onRotateBackground]);
+
+  const handleBgRotationLive = React.useCallback((newAngle) => {
+    if (!isRotationEnabled) return;
+    if (backgroundSubTab === "gradient") {
+      setCustomAngle(newAngle);
+      onSetGradientBackgroundLive?.(customColor1, customColor2, newAngle);
+    } else if (backgroundSubTab === "image") {
+      onRotateBackgroundLive?.(newAngle);
+    }
+  }, [isRotationEnabled, backgroundSubTab, customColor1, customColor2, onSetGradientBackgroundLive, onRotateBackgroundLive]);
 
   return (
     <section className={`svg-editor-panel svg-editor-properties-panel ${collapsed ? "is-collapsed" : ""}`} aria-label={t("svgEditor.propertiesTitle")}>
@@ -453,7 +558,7 @@ export default function SvgPropertiesPanel({
               {backgroundSubTab === "solid" && (
                 <div>
                   <h3><Palette size={14} /> {t("svgEditor.solidColor") || "Solid Color"}</h3>
-                  <ColorPickerCard label={t("svgEditor.solidColor") || "Solid Color"} value={backgroundInfo?.color || "#ffffff"} onChange={(color) => onSetSolidBackground?.(color)} t={t} />
+                  <ColorPickerCard label={t("svgEditor.solidColor") || "Solid Color"} value={backgroundInfo?.color || "#ffffff"} onChange={(color) => onSetSolidBackground?.(color)} onLive={(color) => onSetSolidBackgroundLive?.(color)} t={t} />
                   <div className="svg-editor-swatches-label" style={{ marginTop: 12 }}>{t("svgEditor.colorSwatches")}</div>
                   <div className="svg-editor-color-swatches">
                     {SOLID_BG_PRESETS.map((color) => (
@@ -501,12 +606,12 @@ export default function SvgPropertiesPanel({
                       style={{ background: `linear-gradient(${customAngle}deg, ${customColor1}, ${customColor2})` }}
                     />
                     <div className="svg-editor-gradient-color-pickers">
-                      <ColorPickerCard label={t("svgEditor.color1") || "Color 1"} value={customColor1} onChange={(color) => { setCustomColor1(color); onSetGradientBackground?.(color, customColor2, customAngle); }} t={t} />
-                      <ColorPickerCard label={t("svgEditor.color2") || "Color 2"} value={customColor2} onChange={(color) => { setCustomColor2(color); onSetGradientBackground?.(customColor1, color, customAngle); }} t={t} />
+                      <ColorPickerCard label={t("svgEditor.color1") || "Color 1"} value={customColor1} onChange={(color) => { setCustomColor1(color); onSetGradientBackground?.(color, customColor2, customAngle); }} onLive={(color) => { setCustomColor1(color); onSetGradientBackgroundLive?.(color, customColor2, customAngle); }} t={t} />
+                      <ColorPickerCard label={t("svgEditor.color2") || "Color 2"} value={customColor2} onChange={(color) => { setCustomColor2(color); onSetGradientBackground?.(customColor1, color, customAngle); }} onLive={(color) => { setCustomColor2(color); onSetGradientBackgroundLive?.(customColor1, color, customAngle); }} t={t} />
                     </div>
 
                     <div style={{ marginTop: 6 }}>
-                      <span className="text-xs font-semibold">{t("svgEditor.angle") || "Direction"}:</span>
+                      <span className="svg-editor-swatches-label" style={{ margin: 0 }}>{t("svgEditor.angle") || "Direction"}</span>
                       <div className="svg-editor-quick-pills" style={{ marginTop: 6 }}>
                         {[
                           { label: "0° (H)", angle: 0 },
@@ -569,6 +674,9 @@ export default function SvgPropertiesPanel({
                         max={100}
                         step={1}
                         suffix="%"
+                        onLive={(value) => {
+                          if (backgroundInfo.imageHref) onSetImageBackgroundLive?.(backgroundInfo.imageHref, value / 100);
+                        }}
                         onCommit={(value) => {
                           setCustomBgOpacity(value);
                           if (backgroundInfo.imageHref) {
@@ -615,7 +723,7 @@ export default function SvgPropertiesPanel({
                 </div>
               )}
 
-              {/* Background Rotation Section: enabled for non-solid backgrounds, disabled/appearance-only for solid color */}
+              {/* Background Rotation Section */}
               <div className={`svg-editor-bg-rotation-box ${isRotationEnabled ? "is-enabled" : "is-disabled"}`}>
                 <div className="svg-editor-bg-rotation-header">
                   <h3><RotateCw size={13} /> {t("svgEditor.backgroundRotation") || "Background Rotation"}</h3>
@@ -646,6 +754,7 @@ export default function SvgPropertiesPanel({
                     suffix="°"
                     disabled={!isRotationEnabled}
                     onCommit={(value) => handleBgRotationCommit(value)}
+                    onLive={(value) => handleBgRotationLive(value)}
                   />
                 </div>
                 {!isRotationEnabled && (
@@ -665,7 +774,7 @@ export default function SvgPropertiesPanel({
                 {details?.textEditable || isTextElement ? (
                   <label className="svg-editor-field svg-editor-text-field" style={{ marginTop: 12 }}>
                     <span>{t("svgEditor.textContent")}</span>
-                    <textarea key={`${details.id}-${details.textContent}`} defaultValue={details.textContent} rows={3} maxLength={1000} disabled={locked} onBlur={(event) => { if (event.target.value !== details.textContent) onText(event.target.value); }} />
+                    <TextContentField id={details.id} value={details.textContent} disabled={locked} onLive={onTextLive} onCommit={onText} />
                   </label>
                 ) : <p className="svg-editor-help" style={{ marginTop: 10 }}>{t("svgEditor.addTextHelp")}</p>}
               </div>
@@ -683,12 +792,12 @@ export default function SvgPropertiesPanel({
             ) : activeMobileTab === "letterSpacing" ? (
               <div className="svg-editor-property-section" data-section="letter-spacing">
                 <h3>{t("svgEditor.letterSpacing") || "Letter spacing"}</h3>
-                <RangeControl label={t("svgEditor.letterSpacing")} value={letterSpacing} min={-40} max={Math.max(40, Math.min(400, Math.ceil(Math.abs(letterSpacing) * 2)))} step={0.5} suffix=" px" onCommit={(value) => onAttribute("letter-spacing", value)} disabled={locked} />
+                <RangeControl label={t("svgEditor.letterSpacing")} value={letterSpacing} min={-40} max={Math.max(40, Math.min(400, Math.ceil(Math.abs(letterSpacing) * 2)))} step={0.5} suffix=" px" onCommit={(value) => onAttribute("letter-spacing", value)} onLive={(value) => onAttributeLive?.("letter-spacing", value)} disabled={locked} />
               </div>
             ) : (
               <div className="svg-editor-property-section" data-section="text-style">
                 <h3>{t("svgEditor.typography") || "Text style"}</h3>
-                <RangeControl label={t("svgEditor.fontWeight")} value={fontWeight} min={100} max={900} step={100} onCommit={(value) => onAttribute("font-weight", String(value))} disabled={locked} />
+                <RangeControl label={t("svgEditor.fontWeight")} value={fontWeight} min={100} max={900} step={100} onCommit={(value) => onAttribute("font-weight", String(value))} onLive={(value) => onAttributeLive?.("font-weight", String(value))} disabled={locked} />
                 <div className="svg-editor-text-style-icon-row">
                   <button type="button" className={`svg-editor-style-icon-button ${bold ? "is-active" : ""}`} onClick={() => onAttribute("font-weight", bold ? "400" : "700")} disabled={locked} aria-pressed={bold} title={t("svgEditor.bold")} aria-label={t("svgEditor.bold")}><Bold size={17} /></button>
                   <button type="button" className={`svg-editor-style-icon-button ${italic ? "is-active" : ""}`} onClick={() => onAttribute("font-style", italic ? "normal" : "italic")} disabled={locked} aria-pressed={italic} title={t("svgEditor.italic")} aria-label={t("svgEditor.italic")}><Italic size={17} /></button>
@@ -764,26 +873,26 @@ export default function SvgPropertiesPanel({
             {supportsPosition && supportsSize && (
               <div className="svg-editor-property-section" data-section="size">
                 <h3><Maximize2 size={13} />{t("svgEditor.size") || "Size"}</h3>
-                {activeMobileTab === "size" && isTextElement && <RangeControl label={t("svgEditor.fontSize")} value={fontSize} min={1} max={Math.max(200, Math.min(2000, Math.ceil(fontSize * 2)))} step={1} suffix=" px" onCommit={(value) => onAttribute("font-size", value)} disabled={locked} icon={Type} />}
+                {activeMobileTab === "size" && isTextElement && <RangeControl label={t("svgEditor.fontSize")} value={fontSize} min={1} max={Math.max(200, Math.min(2000, Math.ceil(fontSize * 2)))} step={1} suffix=" px" onCommit={(value) => onAttribute("font-size", value)} onLive={(value) => onAttributeLive?.("font-size", value)} disabled={locked} icon={Type} />}
                 <div className="svg-editor-dimensions-card">
                   <RangeControl
-                    key={`uniform-scale-${details.id}-${Math.round(width * 100) / 100}-${Math.round(height * 100) / 100}`}
+                    key={`uniform-scale-${details.id}`}
                     label={t("svgEditor.scale")}
                     value={100}
                     min={10}
                     max={300}
                     step={1}
                     suffix="%"
-                    onCommit={(value) => onSize("scale", value / 100, bounds)}
+                    onCommit={(value) => onSize("scale", value / 100, bounds)} onLive={(value) => onSizeLive?.("scale", value / 100, bounds)} snapBack
                     disabled={locked}
                   />
                   <div className="svg-editor-fields-2 svg-editor-size-number-fields">
-                    <NumberField label={t("svgEditor.width")} value={width} min={0} onCommit={(value) => onSize("width", value, bounds)} disabled={locked} />
-                    <NumberField label={t("svgEditor.height")} value={height} min={0} onCommit={(value) => onSize("height", value, bounds)} disabled={locked} />
+                    <NumberField label={t("svgEditor.width")} value={width} min={0} onCommit={(value) => onSize("width", value, bounds)} onLive={(value) => onSizeLive?.("width", value, bounds)} onLiveCancel={onLiveCancel} disabled={locked} />
+                    <NumberField label={t("svgEditor.height")} value={height} min={0} onCommit={(value) => onSize("height", value, bounds)} onLive={(value) => onSizeLive?.("height", value, bounds)} onLiveCancel={onLiveCancel} disabled={locked} />
                   </div>
                   <div className="svg-editor-size-sliders">
-                    <RangeControl label={t("svgEditor.width")} value={width} min={0} max={Math.max(200, Math.min(10000, Math.ceil(Math.max(1, width) * 2)))} step={1} onCommit={(value) => onSize("width", value, bounds)} disabled={locked} />
-                    <RangeControl label={t("svgEditor.height")} value={height} min={0} max={Math.max(200, Math.min(10000, Math.ceil(Math.max(1, height) * 2)))} step={1} onCommit={(value) => onSize("height", value, bounds)} disabled={locked} />
+                    <RangeControl label={t("svgEditor.width")} value={width} min={0} max={Math.max(200, Math.min(10000, Math.ceil(Math.max(1, width) * 2)))} step={1} onCommit={(value) => onSize("width", value, bounds)} onLive={(value) => onSizeLive?.("width", value, bounds)} onLiveCancel={onLiveCancel} disabled={locked} />
+                    <RangeControl label={t("svgEditor.height")} value={height} min={0} max={Math.max(200, Math.min(10000, Math.ceil(Math.max(1, height) * 2)))} step={1} onCommit={(value) => onSize("height", value, bounds)} onLive={(value) => onSizeLive?.("height", value, bounds)} onLiveCancel={onLiveCancel} disabled={locked} />
                   </div>
                 </div>
               </div>
@@ -796,7 +905,7 @@ export default function SvgPropertiesPanel({
                 <button type="button" className={activeColorTarget === "fill" ? "is-active" : ""} onClick={() => setActiveColorTarget("fill")}><span className="svg-editor-color-target-dot is-fill" />{t("svgEditor.fill")}</button>
                 <button type="button" className={activeColorTarget === "stroke" ? "is-active" : ""} onClick={() => setActiveColorTarget("stroke")}><span className="svg-editor-color-target-dot is-stroke" />{t("svgEditor.stroke")}</button>
               </div>
-              <ColorPickerCard label={t(activeColorTarget === "fill" ? "svgEditor.fill" : "svgEditor.stroke")} value={colorValue} onChange={(color) => onAttribute(activeColorTarget, color)} disabled={locked} t={t} />
+              <ColorPickerCard label={t(activeColorTarget === "fill" ? "svgEditor.fill" : "svgEditor.stroke")} value={colorValue} onChange={(color) => onAttribute(activeColorTarget, color)} onLive={(color) => onAttributeLive?.(activeColorTarget, color)} disabled={locked} t={t} />
               <div className="svg-editor-swatches-label">{t("svgEditor.colorSwatches")}</div>
               <div className="svg-editor-color-swatches">
                 {COLOR_PRESETS.map((color) => <button key={color} type="button" className={`svg-editor-color-swatch ${normalizeColor(colorValue).toLowerCase() === color.toLowerCase() ? "is-selected" : ""}`} style={{ "--swatch-color": color }} aria-label={`${t(activeColorTarget === "fill" ? "svgEditor.fill" : "svgEditor.stroke")} ${color}`} title={color} onClick={() => onAttribute(activeColorTarget, color)} disabled={locked}><span /></button>)}
@@ -807,7 +916,7 @@ export default function SvgPropertiesPanel({
             {/* 4. OPACITY */}
             <div className="svg-editor-property-section" data-section="opacity">
               <h3><Blend size={13} />{t("svgEditor.opacity") || t("svgEditor.opacityPercent")}</h3>
-              <RangeControl label={t("svgEditor.opacityPercent")} value={opacity} min={0} max={100} step={1} suffix="%" onCommit={(value) => onAttribute("opacity", Math.max(0, Math.min(100, value)) / 100)} disabled={locked} />
+              <RangeControl label={t("svgEditor.opacityPercent")} value={opacity} min={0} max={100} step={1} suffix="%" onCommit={(value) => onAttribute("opacity", Math.max(0, Math.min(100, value)) / 100)} onLive={(value) => onAttributeLive?.("opacity", Math.max(0, Math.min(100, value)) / 100)} disabled={locked} />
               <div className="svg-editor-quick-pills">
                 {[25, 50, 75, 100].map((pct) => (
                   <button key={pct} type="button" className={`svg-editor-preset-pill ${Math.round(opacity) === pct ? "is-active" : ""}`} onClick={() => onAttribute("opacity", pct / 100)} disabled={locked}>
@@ -821,8 +930,8 @@ export default function SvgPropertiesPanel({
             {supportsPosition && (
               <div className="svg-editor-property-section" data-section="rotation">
                 <h3><RotateCw size={13} />{t("svgEditor.rotation")}</h3>
-                <RotationWheel value={rotation} onCommit={(value) => onRotate(value, bounds)} disabled={locked} label={t("svgEditor.rotation")} hint={t("svgEditor.rotationWheelHint")} />
-                <NumberField label={t("svgEditor.rotation")} value={rotation} min={-180} max={180} step={1} suffix="°" onCommit={(value) => onRotate(value, bounds)} disabled={locked} />
+                <RotationWheel value={rotation} onCommit={(value) => onRotate(value, bounds)} onLive={(value) => onRotateLive?.(value, bounds)} disabled={locked} label={t("svgEditor.rotation")} hint={t("svgEditor.rotationWheelHint")} />
+                <NumberField label={t("svgEditor.rotation")} value={rotation} min={-180} max={180} step={1} suffix="°" onCommit={(value) => onRotate(value, bounds)} onLive={(value) => onRotateLive?.(value, bounds)} onLiveCancel={onLiveCancel} disabled={locked} />
                 <div className="svg-editor-inline-actions" style={{ marginTop: 8 }}>
                   <QuickAction icon={RotateCcw} label={t("svgEditor.resetRotation")} onClick={() => onRotate(0, bounds)} disabled={locked || Number(rotation) === 0} />
                   <QuickAction icon={RotateCw} label="+90°" onClick={() => onRotate(((Number(rotation) || 0) + 90 + 180) % 360 - 180, bounds)} disabled={locked} />
@@ -834,9 +943,9 @@ export default function SvgPropertiesPanel({
             {/* 6. STROKE */}
             <div className="svg-editor-property-section" data-section="stroke">
               <h3><Paintbrush size={13} />{t("svgEditor.stroke")}</h3>
-              <RangeControl label={t("svgEditor.strokeWidth")} value={strokeWidth} min={0} max={Math.max(20, Math.min(1000, Math.ceil(strokeWidth * 2)))} step={0.5} suffix=" px" onCommit={(value) => onAttribute("stroke-width", value)} disabled={locked} />
+              <RangeControl label={t("svgEditor.strokeWidth")} value={strokeWidth} min={0} max={Math.max(20, Math.min(1000, Math.ceil(strokeWidth * 2)))} step={0.5} suffix=" px" onCommit={(value) => onAttribute("stroke-width", value)} onLive={(value) => onAttributeLive?.("stroke-width", value)} disabled={locked} />
               <div className="svg-editor-stroke-color-wrap" style={{ marginTop: 10 }}>
-                <ColorPickerCard label={t("svgEditor.stroke")} value={attrs.stroke || "#000000"} onChange={(color) => onAttribute("stroke", color)} disabled={locked} t={t} />
+                <ColorPickerCard label={t("svgEditor.stroke")} value={attrs.stroke || "#000000"} onChange={(color) => onAttribute("stroke", color)} onLive={(color) => onAttributeLive?.("stroke", color)} disabled={locked} t={t} />
                 <div className="svg-editor-swatches-label">{t("svgEditor.colorSwatches")}</div>
                 <div className="svg-editor-color-swatches">
                   {COLOR_PRESETS.map((color) => <button key={color} type="button" className={`svg-editor-color-swatch ${normalizeColor(attrs.stroke || "").toLowerCase() === color.toLowerCase() ? "is-selected" : ""}`} style={{ "--swatch-color": color }} aria-label={`${t("svgEditor.stroke")} ${color}`} title={color} onClick={() => onAttribute("stroke", color)} disabled={locked}><span /></button>)}
@@ -849,7 +958,7 @@ export default function SvgPropertiesPanel({
               <h3>{t("svgEditor.textContent")}</h3>
               <label className="svg-editor-field svg-editor-text-field">
                 <span>{t("svgEditor.textContent")}</span>
-                <textarea key={`${details.id}-${details.textContent}`} defaultValue={details.textContent} rows={3} maxLength={1000} disabled={locked} onBlur={(event) => { if (event.target.value !== details.textContent) onText(event.target.value); }} />
+                <TextContentField id={details.id} value={details.textContent} disabled={locked} onLive={onTextLive} onCommit={onText} />
               </label>
             </div>}
 
@@ -862,9 +971,9 @@ export default function SvgPropertiesPanel({
                   {FONT_PRESETS.map(([font, label]) => <option key={font} value={font}>{label}</option>)}
                 </select>
               </label>
-              <RangeControl label={t("svgEditor.fontSize")} value={fontSize} min={1} max={Math.max(200, Math.min(2000, Math.ceil(fontSize * 2)))} step={1} suffix=" px" onCommit={(value) => onAttribute("font-size", value)} disabled={locked} icon={Type} />
-              <RangeControl label={t("svgEditor.fontWeight")} value={fontWeight} min={100} max={900} step={100} onCommit={(value) => onAttribute("font-weight", String(value))} disabled={locked} />
-              <RangeControl label={t("svgEditor.letterSpacing")} value={letterSpacing} min={-40} max={Math.max(40, Math.min(400, Math.ceil(Math.abs(letterSpacing) * 2)))} step={0.5} suffix=" px" onCommit={(value) => onAttribute("letter-spacing", value)} disabled={locked} />
+              <RangeControl label={t("svgEditor.fontSize")} value={fontSize} min={1} max={Math.max(200, Math.min(2000, Math.ceil(fontSize * 2)))} step={1} suffix=" px" onCommit={(value) => onAttribute("font-size", value)} onLive={(value) => onAttributeLive?.("font-size", value)} disabled={locked} icon={Type} />
+              <RangeControl label={t("svgEditor.fontWeight")} value={fontWeight} min={100} max={900} step={100} onCommit={(value) => onAttribute("font-weight", String(value))} onLive={(value) => onAttributeLive?.("font-weight", String(value))} disabled={locked} />
+              <RangeControl label={t("svgEditor.letterSpacing")} value={letterSpacing} min={-40} max={Math.max(40, Math.min(400, Math.ceil(Math.abs(letterSpacing) * 2)))} step={0.5} suffix=" px" onCommit={(value) => onAttribute("letter-spacing", value)} onLive={(value) => onAttributeLive?.("letter-spacing", value)} disabled={locked} />
               <div className="svg-editor-text-style-actions">
                 <button type="button" className={`svg-editor-style-toggle ${bold ? "is-active" : ""}`} onClick={() => onAttribute("font-weight", bold ? "400" : "700")} disabled={locked} aria-pressed={bold} title={t("svgEditor.bold")}><Bold size={15} /><span>{t("svgEditor.bold")}</span></button>
                 <button type="button" className={`svg-editor-style-toggle ${italic ? "is-active" : ""}`} onClick={() => onAttribute("font-style", italic ? "normal" : "italic")} disabled={locked} aria-pressed={italic} title={t("svgEditor.italic")}><Italic size={15} /><span>{t("svgEditor.italic")}</span></button>
