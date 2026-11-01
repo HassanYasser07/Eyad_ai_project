@@ -803,6 +803,94 @@ export function applySvgPalette(root, palette) {
   return root;
 }
 
+/* ─── Logo palettes ───────────────────────────────────────────────────────────
+   applyLogoPalette(root, { colors: [background, primary, secondary, accent] })
+   Unlike applySvgPalette (which cycles five colors through the shapes), this re-colors a logo
+   by DOMINANCE: the logo's own colors are ranked by how often they are used, then the most used one
+   becomes the primary color, the next the secondary, the next the accent (any further color cycles
+   through the three). Near-white paint becomes the palette's background color, so knock-out shapes
+   stay knock-outs on dark palettes too. Gradients / patterns (url(...)) and "none" are left alone. */
+const NAMED_PAINTS = { white: "#ffffff", black: "#000000" };
+
+function parsePaintToHex(value) {
+  const raw = String(value ?? "").trim().toLowerCase();
+  if (!raw || raw === "none" || raw === "transparent" || raw === "currentcolor" || raw === "inherit" || raw.startsWith("url(")) return null;
+  if (NAMED_PAINTS[raw]) return NAMED_PAINTS[raw];
+  let match = raw.match(/^#([0-9a-f]{3})$/);
+  if (match) return `#${match[1].split("").map((ch) => ch + ch).join("")}`;
+  match = raw.match(/^#([0-9a-f]{6})$/);
+  if (match) return `#${match[1]}`;
+  match = raw.match(/^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})/);
+  if (match) return `#${[match[1], match[2], match[3]].map((n) => Math.max(0, Math.min(255, Number(n))).toString(16).padStart(2, "0")).join("")}`;
+  return null;
+}
+
+function hexLuminance(hex) {
+  const channels = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
+    .map((v) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+  return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+}
+
+/* The paint an element really renders with: its own style / attribute, else the nearest ancestor's, else the default. */
+function effectivePaint(element, root, name) {
+  for (let current = element; current; current = current.parentElement) {
+    const style = current.getAttribute("style") || "";
+    const match = style.match(new RegExp(`(?:^|;)\\s*${name}\\s*:\\s*([^;]+)`, "i"));
+    const own = match ? match[1] : current.getAttribute(name);
+    if (own != null && String(own).trim() !== "") return String(own).trim();
+    if (current === root) break;
+  }
+  return name === "fill" ? "#000000" : "none";
+}
+
+export function applyLogoPalette(root, palette) {
+  const colors = Array.isArray(palette?.colors) ? palette.colors.map((color) => String(color || "").toUpperCase()) : [];
+  if (colors.length !== 4 || colors.some((color) => !/^#[0-9A-F]{6}$/.test(color))) {
+    throw new Error("A logo palette must contain four six-digit hexadecimal colors.");
+  }
+  const [background, primary, secondary, accent] = colors;
+  const targets = [primary, secondary, accent];
+  setSolidBackground(root, background);
+
+  const nodes = collectElements(root).filter((element) => {
+    if (element === root || element.hasAttribute("data-editor-background")) return false;
+    if (isInsideDefinitions(element, root)) return false;
+    return EDITABLE_ELEMENTS.has(element.localName) && element.localName !== "g" && element.localName !== "symbol" && element.localName !== "image";
+  });
+
+  // 1. read every element's paints and rank the non-white colors by use (fills count fully, strokes half)
+  const uses = [];
+  const weight = new Map();
+  const order = [];
+  for (const element of nodes) {
+    for (const prop of ["fill", "stroke"]) {
+      if (element.localName === "line" || element.localName === "polyline") { if (prop === "fill") continue; }
+      const hex = parsePaintToHex(effectivePaint(element, root, prop));
+      if (!hex) continue;
+      uses.push({ element, prop, hex });
+      if (hexLuminance(hex) > 0.9) continue; // paper
+      if (!weight.has(hex)) { weight.set(hex, 0); order.push(hex); }
+      weight.set(hex, weight.get(hex) + (prop === "fill" ? 1 : 0.5));
+    }
+  }
+  const ranked = [...order].sort((a, b) => (weight.get(b) - weight.get(a)) || (order.indexOf(a) - order.indexOf(b)));
+  const mapped = new Map(ranked.map((hex, index) => [hex, targets[index % targets.length]]));
+
+  // 2. write the new paints
+  const cssSet = (element, name, value) => {
+    const style = element.getAttribute("style") || "";
+    const re = new RegExp(`(^|;)\\s*${name}\\s*:[^;]*`, "i");
+    const next = re.test(style)
+      ? style.replace(re, (_match, prefix) => `${prefix}${name}:${value}`)
+      : `${style}${style.trim() ? ";" : ""}${name}:${value}`;
+    element.setAttribute("style", next);
+  };
+  for (const { element, prop, hex } of uses) {
+    cssSet(element, prop, hexLuminance(hex) > 0.9 ? background : mapped.get(hex));
+  }
+  return root;
+}
+
 export function getBackgroundInfo(root) {
   if (!root) return null;
   const bg = root.querySelector('[data-editor-background="true"]');

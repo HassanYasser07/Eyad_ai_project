@@ -12,17 +12,165 @@ export const COLOR_PRESETS = [
   "#6366f1", "#8b5cf6", "#d946ef", "#ec4899",
 ];
 
-export const FONT_PRESETS = [
-  ["Arial, Helvetica, sans-serif", "Arial"],
-  ["Helvetica, Arial, sans-serif", "Helvetica"],
-  ["Georgia, serif", "Georgia"],
-  ["'Times New Roman', serif", "Times New Roman"],
-  ["'Trebuchet MS', sans-serif", "Trebuchet MS"],
-  ["Verdana, sans-serif", "Verdana"],
-  ["Tahoma, sans-serif", "Tahoma"],
-  ["'Courier New', monospace", "Courier New"],
-  ["system-ui, sans-serif", "System UI"],
+/* Fonts, grouped for the font picker. The first group holds the original presets (their values are
+   unchanged, so existing artwork keeps its font). Everything else is a Google font that
+   `ensureEditorFonts()` loads on demand; every value ends with a generic fallback family. */
+export const FONT_GROUPS = [
+  {
+    id: "system",
+    fonts: [
+      ["Arial, Helvetica, sans-serif", "Arial"],
+      ["Helvetica, Arial, sans-serif", "Helvetica"],
+      ["Georgia, serif", "Georgia"],
+      ["'Times New Roman', serif", "Times New Roman"],
+      ["'Trebuchet MS', sans-serif", "Trebuchet MS"],
+      ["Verdana, sans-serif", "Verdana"],
+      ["Tahoma, sans-serif", "Tahoma"],
+      ["'Courier New', monospace", "Courier New"],
+      ["system-ui, sans-serif", "System UI"],
+    ],
+  },
+  {
+    id: "sans",
+    fonts: [
+      ["Inter, sans-serif", "Inter"],
+      ["Roboto, sans-serif", "Roboto"],
+      ["'Open Sans', sans-serif", "Open Sans"],
+      ["Lato, sans-serif", "Lato"],
+      ["Montserrat, sans-serif", "Montserrat"],
+      ["Poppins, sans-serif", "Poppins"],
+      ["Raleway, sans-serif", "Raleway"],
+      ["Nunito, sans-serif", "Nunito"],
+      ["'Work Sans', sans-serif", "Work Sans"],
+      ["'DM Sans', sans-serif", "DM Sans"],
+      ["Manrope, sans-serif", "Manrope"],
+      ["'Plus Jakarta Sans', sans-serif", "Plus Jakarta Sans"],
+      ["Outfit, sans-serif", "Outfit"],
+      ["Urbanist, sans-serif", "Urbanist"],
+      ["Sora, sans-serif", "Sora"],
+      ["Rubik, sans-serif", "Rubik"],
+      ["Barlow, sans-serif", "Barlow"],
+      ["'Josefin Sans', sans-serif", "Josefin Sans"],
+      ["Quicksand, sans-serif", "Quicksand"],
+      ["'Space Grotesk', sans-serif", "Space Grotesk"],
+    ],
+  },
+  {
+    id: "serif",
+    fonts: [
+      ["'Playfair Display', serif", "Playfair Display"],
+      ["Merriweather, serif", "Merriweather"],
+      ["Lora, serif", "Lora"],
+      ["'Cormorant Garamond', serif", "Cormorant Garamond"],
+      ["'Libre Baskerville', serif", "Libre Baskerville"],
+      ["Bitter, serif", "Bitter"],
+      ["'DM Serif Display', serif", "DM Serif Display"],
+      ["'Abril Fatface', serif", "Abril Fatface"],
+    ],
+  },
+  {
+    id: "display",
+    fonts: [
+      ["Oswald, sans-serif", "Oswald"],
+      ["'Bebas Neue', sans-serif", "Bebas Neue"],
+      ["Anton, sans-serif", "Anton"],
+      ["Righteous, sans-serif", "Righteous"],
+      ["Bungee, sans-serif", "Bungee"],
+      ["Fredoka, sans-serif", "Fredoka"],
+      ["'Permanent Marker', cursive", "Permanent Marker"],
+    ],
+  },
+  {
+    id: "script",
+    fonts: [
+      ["Pacifico, cursive", "Pacifico"],
+      ["Lobster, cursive", "Lobster"],
+      ["'Dancing Script', cursive", "Dancing Script"],
+      ["'Great Vibes', cursive", "Great Vibes"],
+      ["Satisfy, cursive", "Satisfy"],
+    ],
+  },
+  {
+    id: "mono",
+    fonts: [
+      ["'Space Mono', monospace", "Space Mono"],
+      ["'JetBrains Mono', monospace", "JetBrains Mono"],
+    ],
+  },
+  {
+    id: "arabic",
+    fonts: [
+      ["Cairo, sans-serif", "Cairo"],
+      ["Tajawal, sans-serif", "Tajawal"],
+      ["Almarai, sans-serif", "Almarai"],
+      ["Alexandria, sans-serif", "Alexandria"],
+      ["'IBM Plex Sans Arabic', sans-serif", "IBM Plex Sans Arabic"],
+      ["'Readex Pro', sans-serif", "Readex Pro"],
+      ["Mada, sans-serif", "Mada"],
+      ["'Baloo Bhaijaan 2', sans-serif", "Baloo Bhaijaan 2"],
+      ["Changa, sans-serif", "Changa"],
+      ["Marhey, sans-serif", "Marhey"],
+      ["'Noto Kufi Arabic', sans-serif", "Noto Kufi Arabic"],
+      ["'Reem Kufi', sans-serif", "Reem Kufi"],
+      ["'El Messiri', sans-serif", "El Messiri"],
+      ["Amiri, serif", "Amiri"],
+      ["'Noto Naskh Arabic', serif", "Noto Naskh Arabic"],
+      ["'Markazi Text', serif", "Markazi Text"],
+      ["'Aref Ruqaa', serif", "Aref Ruqaa"],
+      ["Lalezar, sans-serif", "Lalezar"],
+    ],
+  },
 ];
+
+export const FONT_PRESETS = FONT_GROUPS.flatMap((group) => group.fonts);
+
+/* Google families the editor needs on top of what index.css already loads (Alexandria, Almarai, Cairo,
+   Changa, DM Sans, El Messiri, IBM Plex Sans Arabic, Inter, Lato, Manrope, Marhey, Merriweather,
+   Montserrat, Noto Kufi Arabic, Plus Jakarta Sans, Poppins, Playfair Display, Raleway, Readex Pro,
+   Reem Kufi, Roboto, Space Grotesk, Tajawal). Each family gets its own <link>, so one failing request
+   can never stop the others from loading. `null` = single-weight family. */
+const EXTRA_GOOGLE_FONTS = [
+  ["Open Sans", "400;700"], ["Nunito", "400;700"], ["Work Sans", "400;700"], ["Outfit", "400;700"],
+  ["Urbanist", "400;700"], ["Sora", "400;700"], ["Rubik", "400;700"], ["Barlow", "400;700"],
+  ["Josefin Sans", "400;700"], ["Quicksand", "400;700"], ["Lora", "400;700"], ["Cormorant Garamond", "400;700"],
+  ["Libre Baskerville", "400;700"], ["Bitter", "400;700"], ["DM Serif Display", null], ["Abril Fatface", null],
+  ["Oswald", "400;700"], ["Bebas Neue", null], ["Anton", null], ["Righteous", null], ["Bungee", null],
+  ["Fredoka", "400;700"], ["Permanent Marker", null], ["Pacifico", null], ["Lobster", null],
+  ["Dancing Script", "400;700"], ["Great Vibes", null], ["Satisfy", null], ["Space Mono", "400;700"],
+  ["JetBrains Mono", "400;700"], ["Mada", "400;700"], ["Baloo Bhaijaan 2", "400;700"], ["Amiri", "400;700"],
+  ["Noto Naskh Arabic", "400;700"], ["Markazi Text", "400;700"], ["Aref Ruqaa", "400;700"], ["Lalezar", null],
+];
+
+let editorFontsRequested = false;
+export function ensureEditorFonts() {
+  if (editorFontsRequested || typeof document === "undefined") return;
+  editorFontsRequested = true;
+  EXTRA_GOOGLE_FONTS.forEach(([family, weights]) => {
+    const name = family.replace(/ /g, "+");
+    const href = `https://fonts.googleapis.com/css2?family=${name}${weights ? `:wght@${weights}` : ""}&display=swap`;
+    if (document.querySelector(`link[data-svg-editor-font="${name}"]`)) return;
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = href;
+    link.setAttribute("data-svg-editor-font", name);
+    document.head.appendChild(link);
+  });
+}
+
+/* <option> list for a font <select>: grouped, and the element's own font is kept if it is not a preset. */
+export function FontOptions({ value, t }) {
+  const known = FONT_PRESETS.some(([font]) => font === value);
+  return (
+    <>
+      {!known && value ? <option value={value}>{value}</option> : null}
+      {FONT_GROUPS.map((group) => (
+        <optgroup key={group.id} label={t?.(`svgEditor.fontGroup.${group.id}`) || group.id}>
+          {group.fonts.map(([font, label]) => <option key={font} value={font}>{label}</option>)}
+        </optgroup>
+      ))}
+    </>
+  );
+}
 
 export const FONT_WEIGHT_OPTIONS = [100, 200, 300, 400, 500, 600, 700, 800, 900];
 

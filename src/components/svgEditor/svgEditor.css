@@ -3553,3 +3553,366 @@
   border-color: transparent;
   box-shadow: none;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   REVISION 3: pro bottom bars · sheet animations · compact mobile cards · title art ·
+   action buttons · logo palette gallery
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ─── Title cards in the top bar: the artwork replaces the icon, the label sits underneath ─── */
+.svg-editor-context-title-art {
+  display: block;
+  width: 34px;
+  height: 34px;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+  filter: drop-shadow(0 1px 2px rgba(15, 23, 42, .18));
+}
+
+/* ─── Logo palette gallery ─── */
+.svg-editor-logo-palettes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  min-height: 0;
+  padding: 4px 4px 10px;
+  overflow-y: auto;
+}
+.svg-editor-palette-dialog > .svg-editor-logo-palettes { flex: 1; }
+@media (min-width: 700px) { .svg-editor-logo-palettes { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; } }
+.svg-editor-logo-palette-card {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
+  padding: 7px;
+  color: inherit;
+  text-align: start;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border) / .7);
+  border-radius: 14px;
+  cursor: pointer;
+  transition: transform .2s cubic-bezier(.34, 1.56, .64, 1), box-shadow .2s ease, border-color .2s ease;
+}
+.svg-editor-logo-palette-card:hover { transform: translateY(-2px); border-color: hsl(var(--primary) / .6); box-shadow: 0 8px 20px hsl(var(--foreground) / .1); }
+.svg-editor-logo-palette-card:active { transform: scale(.97); }
+.svg-editor-logo-palette-card.is-selected { border-color: hsl(var(--primary)); box-shadow: 0 0 0 2px hsl(var(--primary) / .2); }
+.svg-editor-logo-palette-preview {
+  position: relative;
+  display: grid;
+  height: 86px;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid hsl(var(--border) / .5);
+  border-radius: 10px;
+}
+.svg-editor-logo-palette-preview svg { display: block; width: 76%; height: auto; }
+.svg-editor-logo-palette-check {
+  position: absolute;
+  top: 6px;
+  inset-inline-end: 6px;
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  color: hsl(var(--primary-foreground));
+  background: hsl(var(--primary));
+  border-radius: 50%;
+  box-shadow: 0 2px 6px hsl(var(--primary) / .4);
+}
+.svg-editor-logo-palette-copy { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding-inline: 2px; }
+.svg-editor-logo-palette-copy strong { overflow: hidden; font-size: 12px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.svg-editor-logo-palette-copy small { display: flex; flex: 0 0 auto; gap: 3px; }
+.svg-editor-logo-palette-copy small i { width: 10px; height: 10px; border: 1px solid hsl(var(--border) / .8); border-radius: 50%; }
+
+/* ─── Duotone icons ─── */
+.svg-editor-duo-icon { display: block; flex: 0 0 auto; overflow: visible; }
+
+@keyframes sve-icon-pop {
+  0% { transform: translateY(3px) scale(.78); }
+  55% { transform: translateY(-3px) scale(1.2); }
+  100% { transform: translateY(-1px) scale(1.1); }
+}
+@keyframes sve-card-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes sve-sheet-up-1 { from { opacity: 0; transform: translateY(28px) scale(.985); } to { opacity: 1; transform: none; } }
+@keyframes sve-sheet-up-2 { from { opacity: 0; transform: translateY(28px) scale(.985); } to { opacity: 1; transform: none; } }
+@keyframes sve-sheet-up-3 { from { opacity: 0; transform: translateY(28px) scale(.985); } to { opacity: 1; transform: none; } }
+@keyframes sve-sheet-up-4 { from { opacity: 0; transform: translateY(28px) scale(.985); } to { opacity: 1; transform: none; } }
+@keyframes sve-sheet-up-5 { from { opacity: 0; transform: translateY(28px) scale(.985); } to { opacity: 1; transform: none; } }
+@keyframes sve-sheet-up-6 { from { opacity: 0; transform: translateY(28px) scale(.985); } to { opacity: 1; transform: none; } }
+
+@media (max-width: 660px) {
+  /* ══ ONE bottom-bar design for BOTH bars (editor tabs + background options) ══ */
+  .svg-editor-dialog .svg-editor-mobile-tabbar,
+  .svg-editor-dialog .svg-editor-background-tabbar {
+    position: relative;
+    z-index: 3;
+    display: flex;
+    flex: 0 0 auto;
+    align-items: stretch;
+    justify-content: flex-start;
+    gap: 4px;
+    padding: 8px 10px;
+    padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+    overflow-x: auto;
+    background: linear-gradient(180deg, hsl(var(--card)), var(--sve-surface-1));
+    border-top: 1px solid hsl(var(--border) / .55);
+    box-shadow: 0 -10px 30px rgba(15, 23, 42, .09), inset 0 1px 0 rgba(255, 255, 255, .7);
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .svg-editor-dialog .svg-editor-mobile-tabbar::-webkit-scrollbar,
+  .svg-editor-dialog .svg-editor-background-tabbar::-webkit-scrollbar { display: none; }
+
+  .svg-editor-dialog .svg-editor-mobile-tabbar .svg-editor-mobile-tab,
+  .svg-editor-dialog .svg-editor-background-tabbar .svg-editor-bg-tab {
+    position: relative;
+    isolation: isolate;
+    display: flex;
+    flex: 1 0 auto;
+    min-width: 58px;
+    height: 56px;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 6px 9px 5px;
+    overflow: hidden;
+    color: hsl(var(--muted-foreground));
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: .01em;
+    line-height: 1.1;
+    white-space: nowrap;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 14px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: color .22s ease, background-color .22s ease, border-color .22s ease, box-shadow .22s ease, transform .2s cubic-bezier(.34, 1.56, .64, 1);
+  }
+  /* press ripple */
+  .svg-editor-dialog .svg-editor-mobile-tabbar .svg-editor-mobile-tab::after,
+  .svg-editor-dialog .svg-editor-background-tabbar .svg-editor-bg-tab::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: radial-gradient(circle at 50% 45%, hsl(var(--primary) / .26), transparent 68%);
+    border-radius: inherit;
+    opacity: 0;
+    transform: scale(.4);
+    transition: opacity .45s ease, transform .45s cubic-bezier(.16, 1, .3, 1);
+  }
+  .svg-editor-dialog .svg-editor-mobile-tabbar .svg-editor-mobile-tab:active:not(:disabled)::after,
+  .svg-editor-dialog .svg-editor-background-tabbar .svg-editor-bg-tab:active:not(:disabled)::after {
+    opacity: 1;
+    transform: scale(1.25);
+    transition-duration: 0s, 0s;
+  }
+  .svg-editor-dialog .svg-editor-mobile-tabbar .svg-editor-mobile-tab:active:not(:disabled),
+  .svg-editor-dialog .svg-editor-background-tabbar .svg-editor-bg-tab:active:not(:disabled) { transform: scale(.92); }
+
+  .svg-editor-dialog .svg-editor-mobile-tabbar .svg-editor-mobile-tab svg,
+  .svg-editor-dialog .svg-editor-background-tabbar .svg-editor-bg-tab svg {
+    width: 22px;
+    height: 22px;
+    stroke-width: 1.7;
+    filter: none;
+    transition: transform .3s cubic-bezier(.34, 1.56, .64, 1), filter .25s ease;
+  }
+  .svg-editor-dialog .svg-editor-mobile-tabbar .svg-editor-mobile-tab > span:not(.svg-editor-spacing-tab-icon),
+  .svg-editor-dialog .svg-editor-background-tabbar .svg-editor-bg-tab > span { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+
+  /* selected: tinted pill, lifted icon, bolder label, soft glow */
+  .svg-editor-dialog .svg-editor-mobile-tabbar .svg-editor-mobile-tab.is-active,
+  .svg-editor-dialog .svg-editor-background-tabbar .svg-editor-bg-tab.is-active {
+    color: hsl(var(--primary));
+    font-weight: 700;
+    background: linear-gradient(180deg, hsl(var(--primary) / .14), hsl(var(--primary) / .06));
+    border-color: hsl(var(--primary) / .24);
+    box-shadow: 0 6px 16px hsl(var(--primary) / .16), inset 0 1px 0 rgba(255, 255, 255, .6);
+  }
+  .svg-editor-dialog .svg-editor-mobile-tabbar .svg-editor-mobile-tab.is-active svg,
+  .svg-editor-dialog .svg-editor-background-tabbar .svg-editor-bg-tab.is-active svg {
+    transform: translateY(-1px) scale(1.1);
+    filter: drop-shadow(0 2px 4px hsl(var(--primary) / .3));
+    animation: sve-icon-pop .45s cubic-bezier(.34, 1.56, .64, 1);
+  }
+  .svg-editor-dialog .svg-editor-mobile-tabbar .svg-editor-mobile-tab:disabled { opacity: .36; }
+
+  /* group dividers (same in both bars) */
+  .svg-editor-dialog .svg-editor-mobile-tabbar .svg-editor-mobile-tab-divider,
+  .svg-editor-dialog .svg-editor-background-tabbar .svg-editor-mobile-tab-divider {
+    flex: 0 0 1px;
+    align-self: stretch;
+    margin: 12px 2px;
+    background: linear-gradient(180deg, transparent, hsl(var(--border)), transparent);
+  }
+  .svg-editor-dialog .svg-editor-background-tabbar .svg-editor-bg-back-btn {
+    flex: 0 0 auto;
+    margin: 0;
+    padding: 6px 9px 5px;
+    color: hsl(var(--primary));
+    border-inline-end-color: transparent;
+  }
+  /* Reset: neutral (not a destructive red); its arrow spins back while pressed */
+  .svg-editor-dialog .svg-editor-background-tabbar .svg-editor-bg-reset-btn { color: hsl(var(--muted-foreground)); }
+  .svg-editor-dialog .svg-editor-background-tabbar .svg-editor-bg-reset-btn:hover { background: transparent; }
+  .svg-editor-dialog .svg-editor-background-tabbar .svg-editor-bg-reset-btn:active:not(:disabled) svg { transform: rotate(-200deg); transition-duration: .5s; }
+  .svg-editor-dialog .svg-editor-background-tabbar .svg-editor-bg-reset-btn:disabled { opacity: .36; cursor: not-allowed; }
+
+  /* ══ Bottom sheets: slide up when opened (a different animation name per tab, so switching tabs replays it) ══ */
+  .svg-editor-workspace .svg-editor-properties-panel {
+    animation-duration: .4s;
+    animation-timing-function: cubic-bezier(.16, 1, .3, 1);
+    animation-fill-mode: both;
+    box-shadow: 0 -12px 32px rgba(15, 23, 42, .1);
+  }
+  .svg-editor-workspace[data-mobile-tab="controls"] .svg-editor-properties-panel { animation-name: sve-sheet-up-1; }
+  .svg-editor-workspace[data-mobile-tab="size"] .svg-editor-properties-panel { animation-name: sve-sheet-up-2; }
+  .svg-editor-workspace[data-mobile-tab="colors"] .svg-editor-properties-panel { animation-name: sve-sheet-up-3; }
+  .svg-editor-workspace[data-mobile-tab="typography"] .svg-editor-properties-panel { animation-name: sve-sheet-up-4; }
+  .svg-editor-workspace[data-mobile-tab="text"] .svg-editor-properties-panel { animation-name: sve-sheet-up-5; }
+  .svg-editor-workspace[data-mobile-tab="background"] .svg-editor-properties-panel { animation-name: sve-sheet-up-6; }
+  .svg-editor-workspace .svg-editor-properties-scroll .svg-editor-subcard,
+  .svg-editor-workspace .svg-editor-properties-scroll .svg-editor-arrange-stack,
+  .svg-editor-workspace .svg-editor-properties-scroll .svg-editor-custom-gradient-box,
+  .svg-editor-workspace .svg-editor-properties-scroll .svg-editor-bg-rotation-box,
+  .svg-editor-workspace .svg-editor-properties-scroll .svg-editor-context-group { animation: sve-card-in .36s cubic-bezier(.16, 1, .3, 1) both; }
+
+  /* ══ Arrange: the left column (precise move + actions) fills the same height as the rotation card ══ */
+  .svg-editor-workspace .svg-editor-properties-scroll .svg-editor-arrange-stack { display: flex; flex-direction: column; }
+  .svg-editor-workspace .svg-editor-arrange-stack > .svg-editor-nudge-wrap { display: flex; flex: 1 1 auto; flex-direction: column; justify-content: space-between; }
+  .svg-editor-workspace .svg-editor-arrange-stack > .svg-editor-nudge-wrap .svg-editor-nudge-grid { margin-block: auto; }
+  .svg-editor-workspace .svg-editor-arrange-stack > .svg-editor-actions-card { flex: 0 0 auto; }
+  /* smaller wheel (dial + preset pills) so the rotation card is no taller than the left column */
+  .svg-editor-workspace .svg-editor-properties-scroll .svg-editor-subcard.svg-editor-rotation-card { grid-template-columns: 168px 196px; padding-block: 8px; row-gap: 2px; }
+  .svg-editor-rotation-card .svg-editor-hw-dial { max-width: 168px; }
+  .svg-editor-workspace .svg-editor-rotation-card .svg-editor-hw { gap: 4px; }
+  .svg-editor-workspace .svg-editor-rotation-card .svg-editor-angle-presets button { min-height: 24px; padding-block: 2px; }
+
+  /* every sheet: the single cards of a sheet share one height and keep their content centred */
+  .svg-editor-workspace .svg-editor-properties-scroll .svg-editor-scale-card,
+  .svg-editor-workspace .svg-editor-properties-scroll .svg-editor-size-card { justify-content: center; }
+
+  /* ══ Colors sheet: smaller opacity pills (25 / 50 / 75 / 100 %) ══ */
+  .svg-editor-workspace .svg-editor-opacity-card .svg-editor-quick-pills { gap: 4px; }
+  .svg-editor-workspace .svg-editor-opacity-card .svg-editor-preset-pill {
+    flex: 0 1 auto;
+    min-width: 38px;
+    padding: 2px 6px;
+    font-size: 9.5px;
+    line-height: 1.5;
+    border-radius: 7px;
+  }
+
+  /* ══ Gradient sheet: Color 1 and Color 2 sit side by side → the custom card is no longer the tall one ══ */
+  .svg-editor-workspace .svg-editor-properties-scroll .svg-editor-custom-gradient-box { width: 344px; }
+  .svg-editor-workspace .svg-editor-gradient-color-pickers { flex-direction: row; gap: 8px; }
+  .svg-editor-workspace .svg-editor-gradient-color-pickers .svg-editor-color-picker-card {
+    flex: 1 1 0;
+    width: auto;
+    min-width: 0;
+    padding: 6px 8px;
+    gap: 7px;
+    grid-template-columns: 30px minmax(0, 1fr);
+  }
+  .svg-editor-workspace .svg-editor-gradient-color-pickers .svg-editor-color-picker-edit { display: none; }
+  .svg-editor-workspace .svg-editor-gradient-color-pickers .svg-editor-large-color-swatch { width: 30px; height: 30px; }
+
+  /* ══ Edit text + Upload photo: icon over label, no blue card ══ */
+  .svg-editor-workspace .svg-editor-properties-scroll .svg-editor-pro-action,
+  .svg-editor-workspace .svg-editor-properties-scroll .svg-editor-primary-btn.svg-editor-pro-action {
+    display: flex;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    margin: 0;
+    padding: 8px 10px;
+    color: hsl(var(--primary));
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .01em;
+    line-height: 1.2;
+    text-align: center;
+    background: transparent;
+    border: 0;
+    border-radius: var(--sve-radius-md);
+    box-shadow: none;
+    filter: none;
+    transform: none;
+    transition: transform .2s cubic-bezier(.34, 1.56, .64, 1), color .2s ease;
+  }
+  .svg-editor-workspace .svg-editor-properties-scroll .svg-editor-pro-action:hover:not(:disabled) { filter: none; transform: none; box-shadow: none; }
+  .svg-editor-workspace .svg-editor-properties-scroll .svg-editor-pro-action:active:not(:disabled) { transform: scale(.94); }
+  .svg-editor-workspace .svg-editor-properties-scroll .svg-editor-pro-action:disabled { opacity: .4; }
+  .svg-editor-workspace .svg-editor-properties-scroll .svg-editor-pro-action svg { width: 30px; height: 30px; stroke-width: 1.6; filter: drop-shadow(0 2px 4px hsl(var(--primary) / .25)); }
+  .svg-editor-workspace .svg-editor-properties-scroll .svg-editor-pro-action span { display: block; max-width: 150px; text-wrap: balance; }
+  .svg-editor-workspace .svg-editor-properties-scroll .svg-editor-edit-text-card { display: flex; min-width: 120px; padding: 6px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .svg-editor-dialog .svg-editor-mobile-tab svg,
+  .svg-editor-dialog .svg-editor-bg-tab svg,
+  .svg-editor-workspace .svg-editor-properties-panel,
+  .svg-editor-workspace .svg-editor-properties-scroll .svg-editor-subcard,
+  .svg-editor-workspace .svg-editor-properties-scroll .svg-editor-arrange-stack,
+  .svg-editor-workspace .svg-editor-properties-scroll .svg-editor-custom-gradient-box,
+  .svg-editor-workspace .svg-editor-properties-scroll .svg-editor-bg-rotation-box,
+  .svg-editor-workspace .svg-editor-properties-scroll .svg-editor-context-group,
+  .svg-editor-logo-palette-card { animation: none !important; transition: none !important; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   REVISION 4: gradient card title · Solid swatches (desktop) · Typography card (mobile)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Card title: same weight and color as "Custom gradient" so every card reads alike */
+.svg-editor-card-title {
+  display: block;
+  color: hsl(var(--foreground));
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: .01em;
+  line-height: 1.3;
+}
+.svg-editor-gradient-presets-card > .svg-editor-card-title + .svg-editor-gradient-presets { margin-top: 10px; }
+
+/* Desktop: the Solid pane's quick colors match the gradient presets (5 columns, 36 px tall) */
+@media (min-width: 661px) {
+  .svg-editor-bg-pane .svg-editor-color-swatches { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+  .svg-editor-bg-pane .svg-editor-color-swatch {
+    width: 100%;
+    height: 36px;
+    aspect-ratio: auto;
+    padding: 0;
+    border: 0;
+    border-radius: var(--sve-radius-sm);
+    background: transparent;
+  }
+  .svg-editor-bg-pane .svg-editor-color-swatch > span { border-radius: var(--sve-radius-sm); }
+  .svg-editor-bg-pane .svg-editor-color-swatch:hover:not(:disabled) > span { transform: scale(1.04); }
+  .svg-editor-bg-pane .svg-editor-color-swatch.is-selected {
+    background: transparent;
+    outline: 2px solid hsl(var(--primary));
+    outline-offset: 2px;
+  }
+}
+
+/* Mobile: the gray Typography card grows to hold all of its controls (the sheet scrolls sideways) */
+@media (max-width: 660px) {
+  .svg-editor-workspace .svg-editor-properties-scroll > .svg-editor-context-group.svg-editor-sheet-typography {
+    width: max-content;
+    max-width: none;
+    min-width: 0;
+    padding-inline-end: 14px;
+  }
+  .svg-editor-workspace .svg-editor-properties-scroll .svg-editor-gradient-presets-card { justify-content: flex-start; }
+}

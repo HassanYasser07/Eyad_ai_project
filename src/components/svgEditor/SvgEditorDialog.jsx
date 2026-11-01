@@ -5,13 +5,18 @@ import {
   X, Upload, Download, Undo2, Redo2, RotateCcw,
   Copy, Trash2, Group, Ungroup, FileCode2,
   MousePointer2, Type, CircleAlert, CheckCircle2, FileUp,
-  Maximize2, Layers, Palette, Eye, EyeOff,
-  Image, Sparkles, ChevronLeft, Check, Loader2, Move,
+  Palette, Eye, EyeOff,
+  Image, ChevronLeft, Check, Loader2,
 } from "lucide-react";
 import SvgLayersPanel from "@/components/svgEditor/SvgLayersPanel";
 import SvgPropertiesPanel from "@/components/svgEditor/SvgPropertiesPanel";
 import SvgContextBar from "@/components/svgEditor/SvgContextBar";
-import ColorPalettePicker from "@/components/shared/ColorPalettePicker";
+import LogoPalettePicker from "@/components/svgEditor/LogoPalettePicker";
+import { ensureEditorFonts } from "@/components/svgEditor/svgEditorControls";
+import {
+  LayersIcon, ArrangeIcon, SizeIcon, ColorsIcon, TextIcon, TypographyIcon, BackgroundIcon,
+  SolidIcon, GradientIcon, ImageIcon, ResetIcon, BackIcon,
+} from "@/components/svgEditor/svgEditorIcons";
 import {
   addTextElement,
   cloneSelectedElements,
@@ -38,7 +43,7 @@ import {
   setSolidBackground,
   setGradientBackground,
   setImageBackground,
-  applySvgPalette,
+  applyLogoPalette,
   rotateBackground,
   removeBackground,
 } from "@/components/svgEditor/svgDocument";
@@ -330,8 +335,25 @@ export default function SvgEditorDialog({ onClose, direction = "ltr", initialSvg
   const [mobileTextDraft, setMobileTextDraft] = React.useState("");
   const [mobileTextComposerMode, setMobileTextComposerMode] = React.useState("add");
   const [backgroundSubTab, setBackgroundSubTab] = React.useState("solid");
+
+  // Mobile bottom bars scroll sideways: keep the active tab centred in view whenever it changes.
+  React.useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      document.querySelectorAll(".svg-editor-mobile-tabbar, .svg-editor-background-tabbar").forEach((bar) => {
+        const active = bar.querySelector(".is-active");
+        if (!active || bar.scrollWidth <= bar.clientWidth) return;
+        const left = active.offsetLeft - (bar.clientWidth - active.offsetWidth) / 2;
+        bar.scrollTo({ left: Math.max(0, left), behavior: "smooth" });
+      });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [mobileEditorTab, backgroundSubTab]);
   const [palettePickerOpen, setPalettePickerOpen] = React.useState(false);
-  const [selectedPaletteId, setSelectedPaletteId] = React.useState("ocean-mist");
+  // Extra Google fonts for the font picker (loaded once, one <link> per family).
+  React.useEffect(() => { ensureEditorFonts(); }, []);
+
+
+  const [selectedPaletteId, setSelectedPaletteId] = React.useState("");
   const [previewHiddenIds, setPreviewHiddenIds] = React.useState(() => new Set());
   const [initialLoading, setInitialLoading] = React.useState(Boolean(initialSvgUrl));
   const fileInputRef = React.useRef(null);
@@ -504,7 +526,7 @@ export default function SvgEditorDialog({ onClose, direction = "ltr", initialSvg
     setSelectedIds([]);
     paintSnapshotsRef.current = new Map();
     setPreviewHiddenIds(new Set());
-    setSelectedPaletteId("ocean-mist");
+    setSelectedPaletteId("");
     setPalettePickerOpen(false);
     setHistory({ past: [], future: [] });
     updateView({ zoom: 1, pan: { x: 0, y: 0 } });
@@ -787,7 +809,7 @@ export default function SvgEditorDialog({ onClose, direction = "ltr", initialSvg
   };
 
   const choosePalette = (palette) => {
-    const changed = performEdit(t("palette.applied"), (root) => applySvgPalette(root, palette));
+    const changed = performEdit(t("svgEditor.logoPaletteApplied"), (root) => applyLogoPalette(root, palette));
     if (changed) {
       setSelectedPaletteId(palette.id);
       setPalettePickerOpen(false);
@@ -853,6 +875,9 @@ export default function SvgEditorDialog({ onClose, direction = "ltr", initialSvg
       return null;
     }
   }, [svgMarkup]);
+
+  // Reset is only meaningful while the artwork actually has a background layer.
+  const hasBackground = React.useMemo(() => /data-editor-background=["']true["']/.test(svgMarkup || ""), [svgMarkup]);
 
   const resetEditor = () => {
     if (!originalMarkup) return;
@@ -1199,9 +1224,9 @@ export default function SvgEditorDialog({ onClose, direction = "ltr", initialSvg
 
         {palettePickerOpen && (
           <div className="svg-editor-palette-overlay" role="presentation" onPointerDown={(event) => { if (event.target === event.currentTarget) setPalettePickerOpen(false); }}>
-            <section className="svg-editor-palette-dialog" role="dialog" aria-modal="true" aria-label={t("palette.galleryTitle")}>
-              <header><div><Palette size={18} /><div><strong>{t("palette.galleryTitle")}</strong><small>{t("palette.galleryHint")}</small></div></div><button type="button" onClick={() => setPalettePickerOpen(false)} aria-label={t("svgEditor.close")}><X size={18} /></button></header>
-              <ColorPalettePicker onSelect={choosePalette} selectedPaletteId={selectedPaletteId} t={t} />
+            <section className="svg-editor-palette-dialog" role="dialog" aria-modal="true" aria-label={t("svgEditor.logoPalettesTitle")}>
+              <header><div><Palette size={18} /><div><strong>{t("svgEditor.logoPalettesTitle")}</strong><small>{t("svgEditor.logoPalettesHint")}</small></div></div><button type="button" onClick={() => setPalettePickerOpen(false)} aria-label={t("svgEditor.close")}><X size={18} /></button></header>
+              <LogoPalettePicker onSelect={choosePalette} selectedPaletteId={selectedPaletteId} t={t} />
             </section>
           </div>
         )}
@@ -1290,6 +1315,7 @@ export default function SvgEditorDialog({ onClose, direction = "ltr", initialSvg
             onRotateBackground={handleRotateBackground}
             onRemoveBackground={handleRemoveBackground}
             backgroundInfo={backgroundInfo}
+            hasBackground={hasBackground}
             backgroundSubTab={backgroundSubTab}
             onSelectBackgroundSubTab={setBackgroundSubTab}
             t={t}
@@ -1303,15 +1329,16 @@ export default function SvgEditorDialog({ onClose, direction = "ltr", initialSvg
               onClick={() => setMobileEditorTab(null)}
               title={t("svgEditor.backToTabs") || "Back"}
             >
-              <ChevronLeft size={20} />
+              <BackIcon />
               <span>{t("svgEditor.backToTabs") || "Back"}</span>
             </button>
+            <span className="svg-editor-mobile-tab-divider" aria-hidden="true" />
             <button
               type="button"
               className={`svg-editor-bg-tab ${backgroundSubTab === "solid" ? "is-active" : ""}`}
               onClick={() => setBackgroundSubTab("solid")}
             >
-              <Palette size={20} />
+              <SolidIcon />
               <span>{t("svgEditor.solidColor") || "Solid"}</span>
             </button>
             <button
@@ -1319,7 +1346,7 @@ export default function SvgEditorDialog({ onClose, direction = "ltr", initialSvg
               className={`svg-editor-bg-tab ${backgroundSubTab === "gradient" ? "is-active" : ""}`}
               onClick={() => setBackgroundSubTab("gradient")}
             >
-              <Sparkles size={20} />
+              <GradientIcon />
               <span>{t("svgEditor.gradientColor") || "Gradient"}</span>
             </button>
             <button
@@ -1327,57 +1354,56 @@ export default function SvgEditorDialog({ onClose, direction = "ltr", initialSvg
               className={`svg-editor-bg-tab ${backgroundSubTab === "image" ? "is-active" : ""}`}
               onClick={() => setBackgroundSubTab("image")}
             >
-              <Image size={20} />
+              <ImageIcon />
               <span>{t("svgEditor.imageBackground") || "Image"}</span>
             </button>
             <button
               type="button"
-              className={`svg-editor-bg-tab svg-editor-bg-reset-btn ${backgroundSubTab === "clear" ? "is-active" : ""}`}
-              onClick={() => {
-                handleRemoveBackground();
-                setBackgroundSubTab("clear");
-              }}
-              title={t("svgEditor.clearBackground") || "Clear"}
+              className="svg-editor-bg-tab svg-editor-bg-reset-btn"
+              onClick={() => handleRemoveBackground()}
+              disabled={!hasBackground}
+              title={t("svgEditor.resetBgAction") || "Reset"}
+              aria-label={t("svgEditor.resetBgAction") || "Reset"}
             >
-              <Trash2 size={20} />
-              <span>{t("svgEditor.clearBackground") || "Clear"}</span>
+              <ResetIcon />
+              <span>{t("svgEditor.resetBgAction") || "Reset"}</span>
             </button>
           </nav>
         ) : (
           <nav className="svg-editor-mobile-tabbar" aria-label="Editor tabs">
             {/* Layers: opens the animated layers drawer (first tab) */}
             <button type="button" className={`svg-editor-mobile-tab ${mobileEditorTab === "layers" ? "is-active" : ""}`} onClick={() => setMobileEditorTab((prev) => (prev === "layers" ? null : "layers"))} aria-expanded={mobileEditorTab === "layers"} disabled={!svgMarkup}>
-              <Layers size={20} />
+              <LayersIcon />
               <span>{t("svgEditor.layers") || "Layers"}</span>
             </button>
             <span className="svg-editor-mobile-tab-divider" aria-hidden="true" />
             {/* Object: arrange → size → colors */}
             <button type="button" className={`svg-editor-mobile-tab ${mobileEditorTab === "controls" ? "is-active" : ""}`} onClick={() => setMobileEditorTab(prev => prev === "controls" ? null : "controls")}>
-              <Move size={20} />
+              <ArrangeIcon />
               <span>{t("svgEditor.arrange")}</span>
             </button>
             <button type="button" className={`svg-editor-mobile-tab ${mobileEditorTab === "size" ? "is-active" : ""}`} onClick={() => setMobileEditorTab(prev => prev === "size" ? null : "size")}>
-              <Maximize2 size={20} />
+              <SizeIcon />
               <span>{t("svgEditor.size") || "Size"}</span>
             </button>
             <button type="button" className={`svg-editor-mobile-tab ${mobileEditorTab === "colors" ? "is-active" : ""}`} onClick={() => setMobileEditorTab(prev => prev === "colors" ? null : "colors")}>
-              <Palette size={20} />
+              <ColorsIcon />
               <span>{t("svgEditor.colors") || "Colors"}</span>
             </button>
             <span className="svg-editor-mobile-tab-divider" aria-hidden="true" />
             {/* Text: add text → typography */}
             <button type="button" className="svg-editor-mobile-tab" onClick={requestAddText}>
-              <Type size={20} />
+              <TextIcon />
               <span>{t("svgEditor.text") || "Text"}</span>
             </button>
             <button type="button" className={`svg-editor-mobile-tab ${mobileEditorTab === "typography" ? "is-active" : ""}`} onClick={() => setMobileEditorTab(prev => prev === "typography" ? null : "typography")} disabled={!selectedIsText} aria-disabled={!selectedIsText} title={selectedIsText ? undefined : (t("svgEditor.typographyDisabled") || "Select a text item to edit its text options")}>
-              <span className="svg-editor-spacing-tab-icon">Aa</span>
+              <TypographyIcon />
               <span>{t("svgEditor.typography") || "Typography"}</span>
             </button>
             <span className="svg-editor-mobile-tab-divider" aria-hidden="true" />
             {/* Canvas */}
             <button type="button" className={`svg-editor-mobile-tab ${mobileEditorTab === "background" ? "is-active" : ""}`} onClick={() => { setMobileEditorTab("background"); setBackgroundSubTab("solid"); }}>
-              <Image size={20} />
+              <BackgroundIcon />
               <span>{t("svgEditor.background") || "Background"}</span>
             </button>
           </nav>
