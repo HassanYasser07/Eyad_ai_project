@@ -3,10 +3,12 @@ import {
   SlidersHorizontal, FlipHorizontal, FlipVertical, Copy, Trash2,
   Group, Ungroup, ArrowUp, ArrowRight, ArrowDown, ArrowLeft, Bold, Italic,
   ChevronLeft, ChevronRight, ChevronUp, ChevronDown, RotateCcw, Palette, Type,
-  RotateCw, Blend, Paintbrush, Maximize2, Image, Sparkles, Upload, AlignLeft, AlignCenter, AlignRight, MoveHorizontal,
+  RotateCw, Blend, Paintbrush, Maximize2, Image, Sparkles, AlignLeft, AlignCenter, AlignRight, MoveHorizontal,
 } from "lucide-react";
+import typographyArt from "@/components/svgEditor/icons/typography.svg";
+import { PenIcon, UploadIcon } from "@/components/svgEditor/svgEditorIcons";
 import {
-  FONT_PRESETS, getElementMetrics,
+  FontOptions, getElementMetrics,
   NumberField, TextContentField, RangeControl, RotationHalfWheel, ColorPickerCard, ColorSwatches, QuickAction, NudgeButton, paintKey,
 } from "@/components/svgEditor/svgEditorControls";
 
@@ -28,7 +30,7 @@ const GRADIENT_PRESETS = [
   { name: "Clean Gray", color1: "#f1f5f9", color2: "#cbd5e1", angle: 90 },
 ];
 
-function BgToolbarButton({ icon: Icon, label, isActive, onClick, isDanger }) {
+function BgToolbarButton({ icon: Icon, label, isActive, onClick, isDanger, disabled = false }) {
   return (
     <div className="svg-editor-bg-tool-wrapper">
       <button
@@ -37,6 +39,7 @@ function BgToolbarButton({ icon: Icon, label, isActive, onClick, isDanger }) {
         onClick={onClick}
         aria-label={label}
         title={label}
+        disabled={disabled}
       >
         <Icon size={17} />
         <span className="svg-editor-bg-tool-label">{label}</span>
@@ -80,6 +83,7 @@ export default function SvgPropertiesPanel({
   onRotateBackground,
   onRemoveBackground,
   backgroundInfo,
+  hasBackground = true,
   backgroundSubTab = "solid",
   onSelectBackgroundSubTab,
   locked,
@@ -217,14 +221,11 @@ export default function SvgPropertiesPanel({
                   onClick={() => onSelectBackgroundSubTab?.("image")}
                 />
                 <BgToolbarButton
-                  icon={Trash2}
-                  label={t("svgEditor.clearBackground") || "Clear"}
-                  isActive={backgroundSubTab === "clear" || (!backgroundInfo && backgroundSubTab !== "solid" && backgroundSubTab !== "gradient" && backgroundSubTab !== "image")}
-                  isDanger={true}
-                  onClick={() => {
-                    onRemoveBackground?.();
-                    onSelectBackgroundSubTab?.("clear");
-                  }}
+                  icon={RotateCcw}
+                  label={t("svgEditor.resetBgAction") || "Reset"}
+                  isActive={false}
+                  disabled={!hasBackground}
+                  onClick={() => onRemoveBackground?.()}
                 />
               </div>
               {backgroundSubTab === "solid" && (
@@ -257,7 +258,7 @@ export default function SvgPropertiesPanel({
                 <div className="svg-editor-bg-pane">
                   <h3><Sparkles size={14} /> {t("svgEditor.gradientColor") || "Gradient Color"}</h3>
                   <div className="svg-editor-subcard svg-editor-gradient-presets-card">
-                  <div className="svg-editor-swatches-label">{t("svgEditor.gradientHelp") || "Preset Gradients"}</div>
+                  <strong className="svg-editor-card-title">{t("svgEditor.gradientPresetsTitle") || "Preset gradients"}</strong>
                   <div className="svg-editor-gradient-presets">
                     {GRADIENT_PRESETS.map((preset) => (
                       <button
@@ -288,29 +289,6 @@ export default function SvgPropertiesPanel({
                       <ColorPickerCard label={t("svgEditor.color2") || "Color 2"} value={customColor2} onChange={(color) => { setCustomColor2(color); onSetGradientBackground?.(customColor1, color, customAngle); }} onLive={(color) => { setCustomColor2(color); onSetGradientBackgroundLive?.(customColor1, color, customAngle); }} t={t} />
                     </div>
 
-                    <div style={{ marginTop: 6 }}>
-                      <span className="svg-editor-swatches-label" style={{ margin: 0 }}>{t("svgEditor.angle") || "Direction"}</span>
-                      <div className="svg-editor-quick-pills" style={{ marginTop: 6 }}>
-                        {[
-                          { label: "0° (H)", angle: 0 },
-                          { label: "90° (V)", angle: 90 },
-                          { label: "45°", angle: 45 },
-                          { label: "135°", angle: 135 },
-                        ].map(({ label, angle }) => (
-                          <button
-                            key={angle}
-                            type="button"
-                            className={`svg-editor-preset-pill ${customAngle === angle ? "is-active" : ""}`}
-                            onClick={() => {
-                              setCustomAngle(angle);
-                              onSetGradientBackground?.(customColor1, customColor2, angle);
-                            }}
-                          >
-                            {label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
                   </div>
                 </div>
               )}
@@ -337,10 +315,10 @@ export default function SvgPropertiesPanel({
                   <div className="svg-editor-subcard">
                   <button
                     type="button"
-                    className="svg-editor-primary-btn svg-editor-add-text-action"
+                    className="svg-editor-primary-btn svg-editor-add-text-action svg-editor-pro-action svg-editor-upload-action"
                     onClick={() => bgImageInputRef.current?.click()}
                   >
-                    <Upload size={16} />
+                    <UploadIcon size={18} />
                     <span>{t("svgEditor.uploadBackgroundImage") || "Upload background photo"}</span>
                   </button>
                   </div>
@@ -403,46 +381,48 @@ export default function SvgPropertiesPanel({
                 </div>
               )}
 
-              {/* Background Rotation Section */}
-              <div className={`svg-editor-bg-rotation-box ${isRotationEnabled ? "is-enabled" : "is-disabled"}`}>
-                <div className="svg-editor-bg-rotation-header">
-                  <h3><RotateCw size={13} /> {t("svgEditor.backgroundRotation") || "Background Rotation"}</h3>
-                  <span className="svg-editor-bg-rotation-badge">
-                    {isRotationEnabled ? `${currentBgRotation}°` : "0°"}
-                  </span>
-                </div>
-                <div className="svg-editor-quick-pills" style={{ marginTop: 8 }}>
-                  {[0, 90, 180, 270].map((deg) => (
-                    <button
-                      key={deg}
-                      type="button"
+              {/* Background Rotation Section — gradients and images only (a solid color has nothing to rotate) */}
+              {backgroundSubTab !== "solid" && (
+                <div className={`svg-editor-bg-rotation-box ${isRotationEnabled ? "is-enabled" : "is-disabled"}`}>
+                  <div className="svg-editor-bg-rotation-header">
+                    <h3><RotateCw size={13} /> {t("svgEditor.backgroundRotation") || "Background Rotation"}</h3>
+                    <span className="svg-editor-bg-rotation-badge">
+                      {isRotationEnabled ? `${currentBgRotation}°` : "0°"}
+                    </span>
+                  </div>
+                  <div className="svg-editor-quick-pills" style={{ marginTop: 8 }}>
+                    {[0, 90, 180, 270].map((deg) => (
+                      <button
+                        key={deg}
+                        type="button"
+                        disabled={!isRotationEnabled}
+                        className={`svg-editor-preset-pill ${isRotationEnabled && currentBgRotation === deg ? "is-active" : ""}`}
+                        onClick={() => handleBgRotationCommit(deg)}
+                      >
+                        {deg}°
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{ marginTop: 12 }}>
+                    <RangeControl
+                      label={t("svgEditor.rotation") || "Rotation"}
+                      value={currentBgRotation}
+                      min={0}
+                      max={360}
+                      step={5}
+                      suffix="°"
                       disabled={!isRotationEnabled}
-                      className={`svg-editor-preset-pill ${isRotationEnabled && currentBgRotation === deg ? "is-active" : ""}`}
-                      onClick={() => handleBgRotationCommit(deg)}
-                    >
-                      {deg}°
-                    </button>
-                  ))}
+                      onCommit={(value) => handleBgRotationCommit(value)}
+                      onLive={(value) => handleBgRotationLive(value)}
+                    />
+                  </div>
+                  {!isRotationEnabled && (
+                    <p className="svg-editor-rotation-disabled-hint">
+                      {t("svgEditor.rotationDisabledForSolid") || "Rotation is only available for gradients and images."}
+                    </p>
+                  )}
                 </div>
-                <div style={{ marginTop: 12 }}>
-                  <RangeControl
-                    label={t("svgEditor.rotation") || "Rotation"}
-                    value={currentBgRotation}
-                    min={0}
-                    max={360}
-                    step={5}
-                    suffix="°"
-                    disabled={!isRotationEnabled}
-                    onCommit={(value) => handleBgRotationCommit(value)}
-                    onLive={(value) => handleBgRotationLive(value)}
-                  />
-                </div>
-                {!isRotationEnabled && (
-                  <p className="svg-editor-rotation-disabled-hint">
-                    {t("svgEditor.rotationDisabledForSolid") || "Rotation is only available for gradients and images."}
-                  </p>
-                )}
-              </div>
+              )}
             </div>
             {error && <p className="svg-editor-inline-error" role="alert">{error}</p>}
           </div>
@@ -455,14 +435,13 @@ export default function SvgPropertiesPanel({
                 {/* Same grouping, order and controls as the desktop "Typography" bar:
                     [ font · B I · align ]  [ size · weight ]  [ letter spacing ] */}
                 <div className="svg-editor-context-group svg-editor-sheet-typography" data-group="text">
-                  <span className="svg-editor-context-title"><Type size={14} /><em>{t("svgEditor.typography")}</em></span>
+                  <span className="svg-editor-context-title"><img className="svg-editor-context-title-art" src={typographyArt} alt="" draggable="false" /><em>{t("svgEditor.typography")}</em></span>
                   <div className="svg-editor-context-stack">
                     <div className="svg-editor-context-row">
                       <label className="svg-editor-field is-inline svg-editor-context-font" title={t("svgEditor.fontFamily")}>
                         <span className="svg-editor-sr-only">{t("svgEditor.fontFamily")}</span>
                         <select value={fontFamily} disabled={locked} aria-label={t("svgEditor.fontFamily")} onChange={(event) => onAttribute("font-family", event.target.value)}>
-                          {!FONT_PRESETS.some(([font]) => font === fontFamily) && <option value={fontFamily}>{fontFamily}</option>}
-                          {FONT_PRESETS.map(([font, label]) => <option key={font} value={font}>{label}</option>)}
+                          <FontOptions value={fontFamily} t={t} />
                         </select>
                       </label>
                     </div>
@@ -540,8 +519,8 @@ export default function SvgPropertiesPanel({
               <h3><SlidersHorizontal size={13} />{t("svgEditor.arrange")}</h3>
               {activeMobileTab === "controls" && isTextElement && (
                 <div className="svg-editor-subcard svg-editor-edit-text-card">
-                  <button type="button" className="svg-editor-primary-btn svg-editor-edit-text-action" onClick={onEditText} disabled={locked}>
-                    <Type size={16} /><span>{t("svgEditor.editText") || "Edit text"}</span>
+                  <button type="button" className="svg-editor-pro-action svg-editor-edit-text-action" onClick={onEditText} disabled={locked}>
+                    <PenIcon size={26} /><span>{t("svgEditor.editText") || "Edit text"}</span>
                   </button>
                 </div>
               )}

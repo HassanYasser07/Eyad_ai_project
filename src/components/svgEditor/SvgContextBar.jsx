@@ -1,10 +1,13 @@
 import React from "react";
 import {
-  Paintbrush, Type, Bold, Italic, AlignLeft, AlignCenter, AlignRight, SlidersHorizontal, Droplet, Blend, Palette, MoveHorizontal,
+  Paintbrush, Type, Bold, Italic, AlignLeft, AlignCenter, AlignRight, SlidersHorizontal, Droplet, Blend, MoveHorizontal,
 } from "lucide-react";
 import {
-  RangeControl, ColorPickerCard, ColorSwatches, FONT_PRESETS, getElementMetrics, paintKey,
+  RangeControl, ColorPickerCard, ColorSwatches, FontOptions, getElementMetrics, paintKey,
 } from "@/components/svgEditor/svgEditorControls";
+import colorsArt from "@/components/svgEditor/icons/colors.svg";
+import appearanceArt from "@/components/svgEditor/icons/appearance.svg";
+import typographyArt from "@/components/svgEditor/icons/typography.svg";
 
 /**
  * Desktop top bar: everything that controls HOW the selected item looks.
@@ -69,7 +72,7 @@ export default function SvgContextBar({
     <div className={`svg-editor-context-bar ${isIdle ? "is-idle" : ""}`.trim()} style={{ display: isMobile ? "none" : "flex" }} data-svg-context-bar="desktop" aria-disabled={isIdle || undefined} role="toolbar" aria-label={t("svgEditor.contextBarLabel")}>
       {/* COLORS — target chips + quick palette */}
       <div className="svg-editor-context-group" data-group="colors">
-        <span className="svg-editor-context-title" title={t("svgEditor.colors")}><Palette size={14} /><em>{t("svgEditor.colors")}</em></span>
+        <span className="svg-editor-context-title" title={t("svgEditor.colors")}><img className="svg-editor-context-title-art" src={colorsArt} alt="" draggable="false" /><em>{t("svgEditor.colors")}</em></span>
         <div className="svg-editor-context-stack svg-editor-ctx-targets" role="radiogroup" aria-label={t("svgEditor.colorTarget")}>
           {targets.map(({ key, icon: Icon, label }) => (
             <div
@@ -106,7 +109,7 @@ export default function SvgContextBar({
 
       {/* STYLE — opacity + stroke width (two stacked sliders) */}
       <div className="svg-editor-context-group" data-group="style">
-        <span className="svg-editor-context-title" title={t("svgEditor.appearance")}><Blend size={14} /><em>{t("svgEditor.appearance")}</em></span>
+        <span className="svg-editor-context-title" title={t("svgEditor.appearance")}><img className="svg-editor-context-title-art" src={appearanceArt} alt="" draggable="false" /><em>{t("svgEditor.appearance")}</em></span>
         <div className="svg-editor-context-stack">
           <div className="svg-editor-context-row">
             <RangeControl
@@ -149,14 +152,13 @@ export default function SvgContextBar({
       {/* TEXT — only for text items */}
       {isTextElement && (
         <div className="svg-editor-context-group" data-group="text">
-          <span className="svg-editor-context-title" title={t("svgEditor.typography")}><Type size={14} /><em>{t("svgEditor.typography")}</em></span>
+          <span className="svg-editor-context-title" title={t("svgEditor.typography")}><img className="svg-editor-context-title-art" src={typographyArt} alt="" draggable="false" /><em>{t("svgEditor.typography")}</em></span>
           <div className="svg-editor-context-stack">
             <div className="svg-editor-context-row">
               <label className="svg-editor-field is-inline svg-editor-context-font" title={t("svgEditor.fontFamily")}>
                 <span className="svg-editor-sr-only">{t("svgEditor.fontFamily")}</span>
                 <select value={fontFamily} disabled={off} aria-label={t("svgEditor.fontFamily")} onChange={(event) => onAttribute("font-family", event.target.value)}>
-                  {!FONT_PRESETS.some(([font]) => font === fontFamily) && <option value={fontFamily}>{fontFamily}</option>}
-                  {FONT_PRESETS.map(([font, label]) => <option key={font} value={font}>{label}</option>)}
+                  <FontOptions value={fontFamily} t={t} />
                 </select>
               </label>
             </div>
