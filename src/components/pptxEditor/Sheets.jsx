@@ -1,5 +1,7 @@
 import React from "react";
-import { X, Plus, Copy, Trash2, ChevronUp, ChevronDown, Check } from "lucide-react";
+import { Plus, Copy, Trash2, ChevronUp, ChevronDown, Check } from "lucide-react";
+import { EditorSheet } from "@/components/editorKit";
+import { useI18n } from "@/i18n/I18nContext";
 import SlideView, { collectImagePaths } from "./SlideView.jsx";
 import { useMediaUrls } from "./useMediaUrls.js";
 import { readSlide } from "./engine/slideModel.js";
@@ -30,14 +32,8 @@ export function useVisualViewport(enabled = true) {
 }
 
 export function BottomSheet({ title, onClose, children, testId, tall = false, footer }) {
-  return (
-    <div className={`pe-sheet ${tall ? "is-tall" : ""}`} role="dialog" aria-label={title} data-testid={testId}>
-      <div className="pe-sheet-grab" aria-hidden="true" />
-      <div className="pe-sheet-head"><strong>{title}</strong><IconButton icon={X} label="Close" onClick={onClose} testId={`${testId}-close`} /></div>
-      <div className="pe-sheet-body">{children}</div>
-      {footer && <div className="pe-sheet-foot">{footer}</div>}
-    </div>
-  );
+  const { t } = useI18n();
+  return <EditorSheet title={title} onClose={onClose} testId={testId} tall={tall} footer={footer} closeLabel={t("pptxEditor.close")}>{children}</EditorSheet>;
 }
 
 /** Dedicated text-editing mode: native <textarea> (reliable with mobile keyboards), committed explicitly. */
