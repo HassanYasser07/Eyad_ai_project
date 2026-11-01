@@ -5,11 +5,12 @@ import {
   X, Upload, Download, Undo2, Redo2, RotateCcw,
   Copy, Trash2, Group, Ungroup, FileCode2,
   MousePointer2, Type, CircleAlert, CheckCircle2, FileUp,
-  SlidersHorizontal, Maximize2, Layers, Palette, Eye, EyeOff,
-  Blend, RotateCw, Paintbrush, Image, Sparkles, ChevronLeft, Check, Bold, Loader2,
+  Maximize2, Layers, Palette, Eye, EyeOff,
+  Image, Sparkles, ChevronLeft, Check, Loader2, Move,
 } from "lucide-react";
 import SvgLayersPanel from "@/components/svgEditor/SvgLayersPanel";
 import SvgPropertiesPanel from "@/components/svgEditor/SvgPropertiesPanel";
+import SvgContextBar from "@/components/svgEditor/SvgContextBar";
 import ColorPalettePicker from "@/components/shared/ColorPalettePicker";
 import {
   addTextElement,
@@ -19,6 +20,7 @@ import {
   exportSvgMarkup,
   flipElement,
   getElementDetails,
+  getElementPaint,
   getElementTree,
   groupSelectedElements,
   parseSvgDocument,
@@ -41,6 +43,23 @@ import {
   removeBackground,
 } from "@/components/svgEditor/svgDocument";
 import "@/components/svgEditor/svgEditor.css";
+
+const MOBILE_QUERY = "(max-width: 660px)";
+
+/** Tracks a CSS media query so the editor can switch between the desktop and mobile layouts live. */
+function useMediaQuery(query) {
+  const getMatch = () => (typeof window !== "undefined" && typeof window.matchMedia === "function" ? window.matchMedia(query).matches : false);
+  const [matches, setMatches] = React.useState(getMatch);
+  React.useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return undefined;
+    const media = window.matchMedia(query);
+    const onChange = () => setMatches(media.matches);
+    onChange();
+    media.addEventListener ? media.addEventListener("change", onChange) : media.addListener(onChange);
+    return () => { media.removeEventListener ? media.removeEventListener("change", onChange) : media.removeListener(onChange); };
+  }, [query]);
+  return matches;
+}
 
 const MAX_HISTORY = 100;
 
@@ -194,7 +213,12 @@ function updateSelectionFrames(svg, ids, labels = {}, includeHandles = true) {
   const matrix = svg.getScreenCTM?.();
   const screenScale = matrix ? Math.hypot(matrix.a, matrix.b) : 1;
   const userUnitsPerPixel = 1 / Math.max(0.015, screenScale);
-  const handleRadius = Math.max(2.4, Math.min(30, 6.5 * userUnitsPerPixel));
+  // Handles are sized in SCREEN pixels (converted to user units), so they stay the same readable size
+  // whatever the artwork's viewBox is. (They used to be clamped to 30 user units, which made them tiny on
+  // large viewBoxes, while their strokes were computed in user units but drawn in pixels - a thick white blob.)
+  const coarsePointer = typeof window !== "undefined" && typeof window.matchMedia === "function"
+    && window.matchMedia("(max-width: 660px), (pointer: coarse)").matches;
+  const handleRadius = (coarsePointer ? 13 : 11) * userUnitsPerPixel;
 
   ids.forEach((id) => {
     const element = Array.from(svg.querySelectorAll("[data-editor-id]"))
@@ -209,11 +233,11 @@ function updateSelectionFrames(svg, ids, labels = {}, includeHandles = true) {
     frame.setAttribute("y", String(bounds.y - padding));
     frame.setAttribute("width", String(bounds.width + padding * 2));
     frame.setAttribute("height", String(bounds.height + padding * 2));
-    frame.setAttribute("rx", String(Math.max(1.5, handleRadius * 0.22)));
+    frame.setAttribute("rx", String(3 * userUnitsPerPixel));
     frame.setAttribute("fill", "none");
     frame.setAttribute("stroke", "#60a5fa");
-    frame.setAttribute("stroke-width", String(Math.max(1, handleRadius * 0.22)));
-    frame.setAttribute("stroke-dasharray", `${Math.max(3, handleRadius * 0.65)} ${Math.max(2, handleRadius * 0.48)}`);
+    frame.setAttribute("stroke-width", "1.5");
+    frame.setAttribute("stroke-dasharray", "4 3");
     frame.setAttribute("vector-effect", "non-scaling-stroke");
     frame.setAttribute("pointer-events", "none");
     frame.setAttribute("aria-hidden", "true");
@@ -236,8 +260,10 @@ function updateSelectionFrames(svg, ids, labels = {}, includeHandles = true) {
       hitArea.setAttribute("r", String(handleRadius));
       hitArea.setAttribute("fill", fill);
       hitArea.setAttribute("stroke", "#ffffff");
-      hitArea.setAttribute("stroke-width", String(Math.max(1.2, handleRadius * 0.28)));
+      hitArea.setAttribute("stroke-width", "2");
       hitArea.setAttribute("vector-effect", "non-scaling-stroke");
+      // Inline style wins over any <style> rule shipped inside an uploaded SVG (e.g. "circle { fill: #fff }").
+      hitArea.setAttribute("style", `fill:${fill};stroke:#ffffff;stroke-width:2px;`);
       group.appendChild(hitArea);
 
       const glyph = svg.ownerDocument.createElementNS(namespace, "path");
@@ -248,7 +274,8 @@ function updateSelectionFrames(svg, ids, labels = {}, includeHandles = true) {
       }
       glyph.setAttribute("fill", "none");
       glyph.setAttribute("stroke", "#ffffff");
-      glyph.setAttribute("stroke-width", String(Math.max(1, handleRadius * 0.16)));
+      glyph.setAttribute("stroke-width", "1.7");
+      glyph.setAttribute("style", "fill:none;stroke:#ffffff;stroke-width:1.7px;");
       glyph.setAttribute("stroke-linecap", "round");
       glyph.setAttribute("stroke-linejoin", "round");
       glyph.setAttribute("vector-effect", "non-scaling-stroke");
@@ -289,7 +316,7 @@ export default function SvgEditorDialog({ onClose, direction = "ltr", initialSvg
   const [selectedBounds, setSelectedBounds] = React.useState(null);
   const [history, setHistory] = React.useState({ past: [], future: [] });
   const [error, setError] = React.useState("");
-  const [notice, setNotice] = React.useState("");
+  const [, setNotice] = React.useState(""); // success notices are no longer displayed (no message bar)
   const [zoom, setZoom] = React.useState(1);
   const [pan, setPan] = React.useState({ x: 0, y: 0 });
   const [canvasSize, setCanvasSize] = React.useState({ width: 0, height: 0 });
@@ -297,6 +324,8 @@ export default function SvgEditorDialog({ onClose, direction = "ltr", initialSvg
   const [layersCollapsed, setLayersCollapsed] = React.useState(false);
   const [propertiesCollapsed, setPropertiesCollapsed] = React.useState(false);
   const [mobileEditorTab, setMobileEditorTab] = React.useState(null);
+  const [colorTarget, setColorTarget] = React.useState("fill");
+  const isMobile = useMediaQuery(MOBILE_QUERY);
   const [mobileTextComposerOpen, setMobileTextComposerOpen] = React.useState(false);
   const [mobileTextDraft, setMobileTextDraft] = React.useState("");
   const [mobileTextComposerMode, setMobileTextComposerMode] = React.useState("add");
@@ -310,6 +339,8 @@ export default function SvgEditorDialog({ onClose, direction = "ltr", initialSvg
   const markupRef = React.useRef("");
   const dragRef = React.useRef(null);
   const shortcutsRef = React.useRef({});
+  const paintSnapshotsRef = React.useRef(new Map());
+  const [dragEndTick, setDragEndTick] = React.useState(0);
   const viewRef = React.useRef({ zoom: 1, pan: { x: 0, y: 0 } });
   viewRef.current = { zoom, pan };
 
@@ -338,8 +369,8 @@ export default function SvgEditorDialog({ onClose, direction = "ltr", initialSvg
   const artboardSize = React.useMemo(() => {
     if (!canvasSize.width) return { width: 1, height: 1 };
     const isMobile = canvasSize.width <= 660;
-    const horizontalMargin = isMobile ? 0 : 48;
-    const verticalMargin = isMobile ? 16 : 48;
+    const horizontalMargin = isMobile ? 0 : 14;
+    const verticalMargin = isMobile ? 10 : 14;
     const maxWidth = Math.max(1, canvasSize.width - horizontalMargin * 2);
     const maxHeight = Math.max(1, canvasSize.height - verticalMargin * 2);
     const width = Math.max(1, Math.min(maxWidth, maxHeight * pageAspect));
@@ -471,6 +502,7 @@ export default function SvgEditorDialog({ onClose, direction = "ltr", initialSvg
     setOriginalMarkup(parsed.markup);
     setFileName(String(name || "").replace(/\.svg$/i, "") || "untitled");
     setSelectedIds([]);
+    paintSnapshotsRef.current = new Map();
     setPreviewHiddenIds(new Set());
     setSelectedPaletteId("ocean-mist");
     setPalettePickerOpen(false);
@@ -565,6 +597,46 @@ export default function SvgEditorDialog({ onClose, direction = "ltr", initialSvg
     const element = Array.from(stageRef.current?.querySelectorAll("[data-editor-id]") || []).find((item) => item.getAttribute("data-editor-id") === id);
     return element ? isDomElementLocked(element) : false;
   });
+
+  // Fill / stroke of the selected item now, and its ORIGINAL paints (from the file as it was opened,
+  // or — for items created inside the editor — as they were when first selected). The original
+  // color is offered as the first swatch so a preset can always be undone.
+  const paint = React.useMemo(() => {
+    if (!svgMarkup || !selectedId) return null;
+    let current = null;
+    let original = null;
+    try { current = getElementPaint(svgMarkup, selectedId); } catch { current = null; }
+    if (!current) return null;
+    try { original = originalMarkup ? getElementPaint(originalMarkup, selectedId) : null; } catch { original = null; }
+    if (!original) {
+      const snapshots = paintSnapshotsRef.current;
+      if (!snapshots.has(selectedId)) snapshots.set(selectedId, current);
+      original = snapshots.get(selectedId);
+    }
+    return { current, original };
+  }, [svgMarkup, originalMarkup, selectedId]);
+
+  // Mobile: picking an item opens "Arrange"; picking a text item opens its text options.
+  const selectedIsText = !!details && ["text", "tspan"].includes(details.tag);
+  const lastAutoTabId = React.useRef(null);
+  React.useEffect(() => {
+    if (!isMobile) { lastAutoTabId.current = selectedId; return; }
+    if (!selectedId) {
+      if (lastAutoTabId.current && ["controls", "size", "colors", "typography"].includes(mobileEditorTab)) setMobileEditorTab(null);
+      lastAutoTabId.current = null;
+      return;
+    }
+    if (!details) return; // wait until the item's details are available
+    if (dragRef.current) return; // opening a sheet mid-drag would resize the canvas under the pointer; retried on drag end
+    if (lastAutoTabId.current === selectedId) return;
+    lastAutoTabId.current = selectedId;
+    setMobileEditorTab((current) => (current === "layers" || mobileTextComposerOpen ? current : selectedIsText ? "typography" : "controls"));
+  }, [isMobile, selectedId, details, selectedIsText, dragEndTick]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The "Typography" sheet only makes sense for text; never leave it open on another item.
+  React.useEffect(() => {
+    if (mobileEditorTab === "typography" && selectedId && details && !selectedIsText) setMobileEditorTab("controls");
+  }, [mobileEditorTab, selectedId, details, selectedIsText]);
 
   React.useLayoutEffect(() => {
     const svg = stageRef.current?.querySelector("svg");
@@ -788,6 +860,7 @@ export default function SvgEditorDialog({ onClose, direction = "ltr", initialSvg
     replaceMarkup(originalMarkup);
     setHistory({ past: [], future: [] });
     setSelectedIds([]);
+    paintSnapshotsRef.current = new Map();
     setPreviewHiddenIds(new Set());
     setError("");
     setNotice(t("svgEditor.resetDone"));
@@ -882,13 +955,12 @@ export default function SvgEditorDialog({ onClose, direction = "ltr", initialSvg
       if (handle.getAttribute("data-editor-handle") === "delete") deleteSelection();
       return;
     }
+    // A click must NEVER deselect. Selecting an item changes the layout (context bar / bottom sheet) a few
+    // milliseconds after pointer-down, so by pointer-up the pointer is often over empty canvas and the browser
+    // reports the click on the canvas itself - which used to clear the selection the user had just made.
+    // Deselecting on empty space is handled on pointer-down (beginCanvasInteraction) instead.
     const target = event.target.closest?.("[data-editor-id]");
-    if (!target) {
-      if (selectedIds.length > 0) {
-        setSelectedIds([]);
-      }
-      return;
-    }
+    if (!target) return;
     // SVG element selection is performed during pointer-down; this click fallback
     // is only for keyboard-generated activation events.
     if (event.detail !== 0) return;
@@ -931,6 +1003,7 @@ export default function SvgEditorDialog({ onClose, direction = "ltr", initialSvg
             const drag = dragRef.current;
       dragRef.current = null;
       if (!drag) return;
+      setDragEndTick((tick) => tick + 1);
       if (!drag.moved) {
         if (drag.target?.isConnected) {
           if (drag.originalTransform) drag.target.setAttribute("transform", drag.originalTransform);
@@ -1045,19 +1118,27 @@ export default function SvgEditorDialog({ onClose, direction = "ltr", initialSvg
         if (handle.getAttribute("data-editor-handle") === "delete") deleteSelection();
       }}>
         {previewVisibilityCss && <style>{previewVisibilityCss}</style>}
-        <div
-          className="svg-editor-artboard"
-          style={{
-            width: `${artboardSize.width}px`,
-            height: `${artboardSize.height}px`,
-            transform: "translate(-50%, -50%)",
-          }}
-          dangerouslySetInnerHTML={{ __html: svgMarkup }}
-        />
+        <ArtboardSurface markup={svgMarkup} width={artboardSize.width} height={artboardSize.height} />
         <div className="svg-editor-canvas-hint"><MousePointer2 size={13} /> {t("svgEditor.selectHint")}</div>
       </div>
     );
   };
+
+  // Handlers shared by the properties sidebar, the desktop context bar and the mobile sheets.
+  const handleSizeCommit = (dimension, value, bounds) => liveCommit(t("svgEditor.dimensionsUpdated"), (root, b) => updateElementSize(root, selectedId, dimension, value, b), bounds);
+  const handleSizeLive = (dimension, value, bounds) => livePreview((root, b) => updateElementSize(root, selectedId, dimension, value, b), bounds);
+  const handleAttributeCommit = (name, value) => liveCommit(t("svgEditor.appearanceUpdated"), (root) => updateElementAttribute(root, selectedId, name, value));
+  const handleAttributeLive = (name, value) => livePreview((root) => updateElementAttribute(root, selectedId, name, value));
+
+  // Mobile sheets only exist in the mobile layout; on desktop the sidebar always shows the item's own controls.
+  const activeMobileTab = isMobile ? mobileEditorTab : null;
+
+  // Errors never push the layout around: they float over the canvas and dismiss themselves.
+  React.useEffect(() => {
+    if (!error) return undefined;
+    const timer = window.setTimeout(() => setError(""), 6000);
+    return () => window.clearTimeout(timer);
+  }, [error]);
 
   const body = (
     <div className="svg-editor-overlay" role="presentation">
@@ -1069,9 +1150,8 @@ export default function SvgEditorDialog({ onClose, direction = "ltr", initialSvg
           </div>
           <div className="svg-editor-header-actions">
             <input ref={fileInputRef} type="file" accept=".svg,image/svg+xml" onChange={(event) => loadFile(event.target.files?.[0])} hidden />
-            <button type="button" className={`svg-editor-secondary-button svg-editor-layers-header-btn ${mobileEditorTab === "layers" ? "is-active" : ""}`} onClick={() => setMobileEditorTab(prev => prev === "layers" ? null : "layers")} title={t("svgEditor.layersTitle") || "Layers"}><Layers size={15} /><span>{t("svgEditor.layersTitle") || "Layers"}</span></button>
-            <button type="button" className="svg-editor-secondary-button" onClick={() => fileInputRef.current?.click()}><Upload size={15} />{t("svgEditor.open")}</button>
-            <button type="button" className="svg-editor-export-button" onClick={downloadSvg} disabled={!svgMarkup}><Download size={15} />{t("svgEditor.export")}</button>
+            <button type="button" className="svg-editor-secondary-button" onClick={() => fileInputRef.current?.click()}><Upload size={15} /><span className="svg-editor-header-btn-label">{t("svgEditor.open")}</span></button>
+            <button type="button" className="svg-editor-export-button" onClick={downloadSvg} disabled={!svgMarkup}><Download size={15} /><span className="svg-editor-header-btn-label">{t("svgEditor.export")}</span></button>
             <button type="button" className="svg-editor-close-button" onClick={onClose} aria-label={t("svgEditor.close")}><X size={19} /></button>
           </div>
         </header>
@@ -1103,7 +1183,19 @@ export default function SvgEditorDialog({ onClose, direction = "ltr", initialSvg
           </div>
         </div>
 
-        {(error || notice) && <div className={`svg-editor-feedback ${error ? "is-error" : "is-success"}`} role={error ? "alert" : "status"}>{error ? <CircleAlert size={15} /> : <CheckCircle2 size={15} />}{error || notice}</div>}
+        <SvgContextBar
+          selectedCount={selectedIds.length}
+          isMobile={isMobile}
+          details={details}
+          bounds={selectedBounds}
+          locked={locked}
+          paint={paint}
+          colorTarget={colorTarget}
+          onColorTargetChange={setColorTarget}
+          onAttribute={handleAttributeCommit}
+          onAttributeLive={handleAttributeLive}
+          t={t}
+        />
 
         {palettePickerOpen && (
           <div className="svg-editor-palette-overlay" role="presentation" onPointerDown={(event) => { if (event.target === event.currentTarget) setPalettePickerOpen(false); }}>
@@ -1132,8 +1224,11 @@ export default function SvgEditorDialog({ onClose, direction = "ltr", initialSvg
           </div>
         )}
 
-        <div className={`svg-editor-workspace ${layersCollapsed ? "layers-collapsed" : ""} ${propertiesCollapsed ? "properties-collapsed" : ""}`} data-mobile-tab={mobileEditorTab || ""}>
-          <SvgLayersPanel tree={tree} selectedIds={selectedIds} onSelect={selectElement} onHide={hideElement} onLock={lockElement} onReorder={reorderBetween} t={t} collapsed={layersCollapsed} onToggleCollapsed={() => setLayersCollapsed((value) => !value)} />
+        {error && <div className="svg-editor-toast" role="alert"><CircleAlert size={15} /><span>{error}</span><button type="button" onClick={() => setError("")} aria-label={t("svgEditor.close")}><X size={14} /></button></div>}
+
+        <div className={`svg-editor-workspace ${layersCollapsed ? "layers-collapsed" : ""} ${propertiesCollapsed ? "properties-collapsed" : ""}`} data-mobile-tab={activeMobileTab || ""}>
+          <SvgLayersPanel tree={tree} selectedIds={selectedIds} onSelect={selectElement} onHide={hideElement} onLock={lockElement} onReorder={reorderBetween} t={t} collapsed={layersCollapsed} onToggleCollapsed={() => setLayersCollapsed((value) => !value)} onClose={() => setMobileEditorTab(null)} />
+          <button type="button" className="svg-editor-layers-backdrop" tabIndex={-1} aria-hidden="true" onClick={() => setMobileEditorTab(null)} />
           <main
             className="svg-editor-center-panel"
             onPointerDown={(event) => {
@@ -1165,13 +1260,13 @@ export default function SvgEditorDialog({ onClose, direction = "ltr", initialSvg
             onRename={(label) => performEdit(t("svgEditor.labelUpdated"), (root) => renameElement(root, selectedId, label))}
             onText={(value) => liveCommit(t("svgEditor.textUpdated"), (root) => updateElementText(root, selectedId, value))}
             onTextLive={(value) => livePreview((root) => updateElementText(root, selectedId, value))}
-            onSize={(dimension, value, bounds) => liveCommit(t("svgEditor.dimensionsUpdated"), (root, b) => updateElementSize(root, selectedId, dimension, value, b), bounds)}
-            onSizeLive={(dimension, value, bounds) => livePreview((root, b) => updateElementSize(root, selectedId, dimension, value, b), bounds)}
+            onSize={handleSizeCommit}
+            onSizeLive={handleSizeLive}
             onRotate={(value, bounds) => liveCommit(t("svgEditor.rotationUpdated"), (root, b) => rotateElement(root, selectedId, value, b), bounds)}
             onRotateLive={(value, bounds) => livePreview((root, b) => rotateElement(root, selectedId, value, b), bounds)}
             onFlip={(axis) => flipSelectedElement(axis)}
-            onAttribute={(name, value) => liveCommit(t("svgEditor.appearanceUpdated"), (root) => updateElementAttribute(root, selectedId, name, value))}
-            onAttributeLive={(name, value) => livePreview((root) => updateElementAttribute(root, selectedId, name, value))}
+            onAttribute={handleAttributeCommit}
+            onAttributeLive={handleAttributeLive}
             onLiveCancel={liveCancel}
             onNudge={nudgeSelection}
             collapsed={propertiesCollapsed}
@@ -1181,7 +1276,10 @@ export default function SvgEditorDialog({ onClose, direction = "ltr", initialSvg
             onGroup={groupSelection}
             onUngroup={ungroupSelection}
             onEditText={requestEditText}
-            activeMobileTab={mobileEditorTab}
+            activeMobileTab={activeMobileTab}
+            paint={paint}
+            colorTarget={colorTarget}
+            onColorTargetChange={setColorTarget}
             onSetSolidBackground={handleSetSolidBackground}
             onSetSolidBackgroundLive={handleSetSolidBackgroundLive}
             onSetGradientBackgroundLive={handleSetGradientBackgroundLive}
@@ -1247,17 +1345,17 @@ export default function SvgEditorDialog({ onClose, direction = "ltr", initialSvg
           </nav>
         ) : (
           <nav className="svg-editor-mobile-tabbar" aria-label="Editor tabs">
+            {/* Layers: opens the animated layers drawer (first tab) */}
+            <button type="button" className={`svg-editor-mobile-tab ${mobileEditorTab === "layers" ? "is-active" : ""}`} onClick={() => setMobileEditorTab((prev) => (prev === "layers" ? null : "layers"))} aria-expanded={mobileEditorTab === "layers"} disabled={!svgMarkup}>
+              <Layers size={20} />
+              <span>{t("svgEditor.layers") || "Layers"}</span>
+            </button>
+            <span className="svg-editor-mobile-tab-divider" aria-hidden="true" />
+            {/* Object: arrange → size → colors */}
             <button type="button" className={`svg-editor-mobile-tab ${mobileEditorTab === "controls" ? "is-active" : ""}`} onClick={() => setMobileEditorTab(prev => prev === "controls" ? null : "controls")}>
-              <SlidersHorizontal size={20} />
-              <span>{t("svgEditor.controls") || "Controls"}</span>
+              <Move size={20} />
+              <span>{t("svgEditor.arrange")}</span>
             </button>
-            <button type="button" className="svg-editor-mobile-tab" onClick={requestAddText}>
-              <Type size={20} />
-              <span>{t("svgEditor.text") || "Text"}</span>
-            </button>
-            <button type="button" className={`svg-editor-mobile-tab ${mobileEditorTab === "fontFamily" ? "is-active" : ""}`} onClick={() => setMobileEditorTab("fontFamily")}><Type size={20} /><span>{t("svgEditor.fontFamily") || "Font"}</span></button>
-            <button type="button" className={`svg-editor-mobile-tab ${mobileEditorTab === "letterSpacing" ? "is-active" : ""}`} onClick={() => setMobileEditorTab("letterSpacing")}><span className="svg-editor-spacing-tab-icon">A↔</span><span>{t("svgEditor.letterSpacing") || "Spacing"}</span></button>
-            <button type="button" className={`svg-editor-mobile-tab ${mobileEditorTab === "textStyle" ? "is-active" : ""}`} onClick={() => setMobileEditorTab("textStyle")}><Bold size={20} /><span>{t("svgEditor.typography") || "Style"}</span></button>
             <button type="button" className={`svg-editor-mobile-tab ${mobileEditorTab === "size" ? "is-active" : ""}`} onClick={() => setMobileEditorTab(prev => prev === "size" ? null : "size")}>
               <Maximize2 size={20} />
               <span>{t("svgEditor.size") || "Size"}</span>
@@ -1266,21 +1364,21 @@ export default function SvgEditorDialog({ onClose, direction = "ltr", initialSvg
               <Palette size={20} />
               <span>{t("svgEditor.colors") || "Colors"}</span>
             </button>
+            <span className="svg-editor-mobile-tab-divider" aria-hidden="true" />
+            {/* Text: add text → typography */}
+            <button type="button" className="svg-editor-mobile-tab" onClick={requestAddText}>
+              <Type size={20} />
+              <span>{t("svgEditor.text") || "Text"}</span>
+            </button>
+            <button type="button" className={`svg-editor-mobile-tab ${mobileEditorTab === "typography" ? "is-active" : ""}`} onClick={() => setMobileEditorTab(prev => prev === "typography" ? null : "typography")} disabled={!selectedIsText} aria-disabled={!selectedIsText} title={selectedIsText ? undefined : (t("svgEditor.typographyDisabled") || "Select a text item to edit its text options")}>
+              <span className="svg-editor-spacing-tab-icon">Aa</span>
+              <span>{t("svgEditor.typography") || "Typography"}</span>
+            </button>
+            <span className="svg-editor-mobile-tab-divider" aria-hidden="true" />
+            {/* Canvas */}
             <button type="button" className={`svg-editor-mobile-tab ${mobileEditorTab === "background" ? "is-active" : ""}`} onClick={() => { setMobileEditorTab("background"); setBackgroundSubTab("solid"); }}>
               <Image size={20} />
               <span>{t("svgEditor.background") || "Background"}</span>
-            </button>
-            <button type="button" className={`svg-editor-mobile-tab ${mobileEditorTab === "opacity" ? "is-active" : ""}`} onClick={() => setMobileEditorTab(prev => prev === "opacity" ? null : "opacity")}>
-              <Blend size={20} />
-              <span>{t("svgEditor.opacity") || "Opacity"}</span>
-            </button>
-            <button type="button" className={`svg-editor-mobile-tab ${mobileEditorTab === "rotation" ? "is-active" : ""}`} onClick={() => setMobileEditorTab(prev => prev === "rotation" ? null : "rotation")}>
-              <RotateCw size={20} />
-              <span>{t("svgEditor.rotation")?.replace(/\(.*\)/, "").trim() || "Rotation"}</span>
-            </button>
-            <button type="button" className={`svg-editor-mobile-tab ${mobileEditorTab === "stroke" ? "is-active" : ""}`} onClick={() => setMobileEditorTab(prev => prev === "stroke" ? null : "stroke")}>
-              <Paintbrush size={20} />
-              <span>{t("svgEditor.stroke") || "Stroke"}</span>
             </button>
           </nav>
         )}
@@ -1291,6 +1389,20 @@ export default function SvgEditorDialog({ onClose, direction = "ltr", initialSvg
 
   return createPortal(body, document.body);
 }
+
+// The artwork is injected as raw markup. Keeping the `{ __html }` object stable (and the component memoised)
+// guarantees React never re-injects it on an unrelated re-render, which would wipe the live selection frame,
+// the resize/delete handles and the data-editor-selected flags the moment anything else changes.
+const ArtboardSurface = React.memo(function ArtboardSurface({ markup, width, height }) {
+  const html = React.useMemo(() => ({ __html: markup }), [markup]);
+  return (
+    <div
+      className="svg-editor-artboard"
+      style={{ width: `${width}px`, height: `${height}px`, transform: "translate(-50%, -50%)" }}
+      dangerouslySetInnerHTML={html}
+    />
+  );
+});
 
 function countTreeNodes(node) {
   return 1 + node.children.reduce((sum, child) => sum + countTreeNodes(child), 0);

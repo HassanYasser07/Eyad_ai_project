@@ -32,7 +32,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 16px;
+  padding: 0;
   background: rgba(0, 0, 0, .55);
   backdrop-filter: blur(12px) saturate(1.3);
   -webkit-backdrop-filter: blur(12px) saturate(1.3);
@@ -52,14 +52,14 @@
 .svg-editor-dialog {
   display: flex;
   flex-direction: column;
-  width: min(1760px, calc(100vw - 32px));
-  height: min(1080px, calc(100dvh - 32px));
+  width: 100vw;
+  height: 100dvh;
   overflow: hidden;
   color: hsl(var(--foreground));
   background: hsl(var(--background));
-  border: 1px solid hsl(var(--border) / .6);
-  border-radius: var(--sve-radius-xl);
-  box-shadow: var(--sve-shadow-xl), 0 0 0 1px rgba(255,255,255,.04);
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
   font-family: var(--font-body, 'Inter', system-ui, -apple-system, sans-serif);
   font-size: 13px;
   animation: sve-dialog-in .35s cubic-bezier(.16,1,.3,1);
@@ -93,7 +93,6 @@
 .svg-editor-canvas-heading,
 .svg-editor-canvas-heading > div,
 .svg-editor-footer,
-.svg-editor-feedback,
 .svg-editor-warning > div {
   display: flex;
   align-items: center;
@@ -245,30 +244,6 @@
   height: 20px;
   margin: 0 4px;
   background: hsl(var(--border) / .6);
-}
-
-/* ─── Feedback bar ─── */
-.svg-editor-feedback {
-  gap: 8px;
-  padding: 8px 16px;
-  font-size: 12px;
-  font-weight: 600;
-  border-bottom: 1px solid transparent;
-  animation: sve-feedback-in .25s ease;
-}
-@keyframes sve-feedback-in {
-  from { opacity: 0; transform: translateY(-4px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-.svg-editor-feedback.is-error {
-  color: #dc2626;
-  background: linear-gradient(135deg, #fef2f2, #fff1f2);
-  border-bottom-color: #fecaca;
-}
-.svg-editor-feedback.is-success {
-  color: #16a34a;
-  background: linear-gradient(135deg, #f0fdf4, #ecfdf5);
-  border-bottom-color: #bbf7d0;
 }
 
 /* ─── Workspace Layout ─── */
@@ -693,49 +668,6 @@
   overflow: auto;
   padding: 14px;
   scrollbar-gutter: stable;
-}
-
-.svg-editor-selected-heading {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 10px;
-  margin: 0 0 14px;
-  padding: 10px 12px;
-  background: linear-gradient(135deg, hsl(var(--primary) / .06), hsl(var(--card)) 80%);
-  border: 1px solid hsl(var(--primary) / .1);
-  border-radius: var(--sve-radius-md);
-}
-
-.svg-editor-selected-object-icon {
-  display: grid;
-  width: 36px;
-  height: 36px;
-  flex: 0 0 auto;
-  place-items: center;
-  color: hsl(var(--primary));
-  background: var(--sve-surface-1);
-  border: 1px solid hsl(var(--border) / .5);
-  border-radius: 10px;
-  box-shadow: var(--sve-shadow-sm);
-}
-.svg-editor-selected-heading > div {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 3px;
-}
-.svg-editor-selected-heading strong {
-  max-width: 100%;
-  overflow-wrap: anywhere;
-  color: hsl(var(--foreground));
-  font-size: 13px;
-  font-weight: 650;
-  letter-spacing: -.01em;
-}
-.svg-editor-selected-heading small {
-  color: hsl(var(--muted-foreground));
-  font-size: 10px;
 }
 
 /* ─── Form Fields ─── */
@@ -1616,19 +1548,11 @@
 
 @media (max-width: 1280px) {
   .svg-editor-workspace { grid-template-columns: 230px minmax(0, 1fr) 260px; }
-  .svg-editor-tool > span { display: none; }
-  .svg-editor-tool { width: 32px; padding: 0; }
   .svg-editor-properties-scroll { padding: 10px; }
   .svg-editor-property-section { padding: 10px; }
 }
 
 @media (max-width: 1000px) {
-  .svg-editor-overlay { padding: 8px; }
-  .svg-editor-dialog {
-    width: calc(100vw - 16px);
-    height: calc(100dvh - 16px);
-    border-radius: var(--sve-radius-lg);
-  }
   .svg-editor-workspace {
     grid-template-columns: minmax(200px, .8fr) minmax(0, 1.5fr);
     grid-template-rows: minmax(250px, 1fr) auto;
@@ -1677,17 +1601,11 @@
 
 @media (max-width: 660px) {
   .svg-editor-overlay { padding: 0; }
-  .svg-editor-dialog {
-    width: 100vw;
-    height: 100dvh;
-    border: 1px solid hsl(var(--border) / .6);
-    border-radius: var(--sve-radius-lg);
-    box-shadow: 0 18px 56px rgba(0, 0, 0, .25);
-  }
+  .svg-editor-dialog { width: 100vw; height: 100dvh; border: 0; border-radius: 0; box-shadow: none; }
 
   .svg-editor-header {
     align-items: flex-start;
-    padding: 10px 12px;
+    padding: max(10px, env(safe-area-inset-top, 0px)) 12px 10px;
     gap: 8px;
     box-shadow: 0 2px 8px rgba(0, 0, 0, .03);
   }
@@ -1807,64 +1725,7 @@
   .svg-editor-workspace .svg-editor-panel-heading,
   .svg-editor-panel-tabs { display: none !important; }
 
-  /* Tab-driven panel visibility */
-  .svg-editor-workspace[data-mobile-tab="layers"] .svg-editor-layers-panel { display: flex !important; }
-  .svg-editor-workspace[data-mobile-tab="controls"] .svg-editor-properties-panel,
-  .svg-editor-workspace[data-mobile-tab="text"] .svg-editor-properties-panel,
-  .svg-editor-workspace[data-mobile-tab="size"] .svg-editor-properties-panel,
-  .svg-editor-workspace[data-mobile-tab="colors"] .svg-editor-properties-panel,
-  .svg-editor-workspace[data-mobile-tab="background"] .svg-editor-properties-panel,
-  .svg-editor-workspace[data-mobile-tab="opacity"] .svg-editor-properties-panel,
-  .svg-editor-workspace[data-mobile-tab="rotation"] .svg-editor-properties-panel,
-  .svg-editor-workspace[data-mobile-tab="stroke"] .svg-editor-properties-panel,
-  .svg-editor-workspace[data-mobile-tab="fontFamily"] .svg-editor-properties-panel,
-  .svg-editor-workspace[data-mobile-tab="letterSpacing"] .svg-editor-properties-panel,
-  .svg-editor-workspace[data-mobile-tab="textStyle"] .svg-editor-properties-panel { display: flex !important; }
-
-  /* Section filtering per tab */
-  .svg-editor-workspace[data-mobile-tab="controls"] .svg-editor-selected-heading,
-  .svg-editor-workspace[data-mobile-tab="controls"] .svg-editor-properties-scroll > .svg-editor-field:first-of-type,
-  .svg-editor-workspace[data-mobile-tab="controls"] [data-section]:not([data-section="controls"]) { display: none !important; }
-
-  .svg-editor-workspace[data-mobile-tab="text"] .svg-editor-selected-heading,
-  .svg-editor-workspace[data-mobile-tab="text"] .svg-editor-properties-scroll > .svg-editor-field:first-of-type,
-  .svg-editor-workspace[data-mobile-tab="text"] [data-section]:not([data-section="text"]):not([data-section="typography"]) { display: none !important; }
-
-  .svg-editor-workspace[data-mobile-tab="fontFamily"] .svg-editor-selected-heading,
-  .svg-editor-workspace[data-mobile-tab="fontFamily"] .svg-editor-properties-scroll > .svg-editor-field:first-of-type,
-  .svg-editor-workspace[data-mobile-tab="fontFamily"] [data-section]:not([data-section="font-family"]) { display: none !important; }
-
-  .svg-editor-workspace[data-mobile-tab="letterSpacing"] .svg-editor-selected-heading,
-  .svg-editor-workspace[data-mobile-tab="letterSpacing"] .svg-editor-properties-scroll > .svg-editor-field:first-of-type,
-  .svg-editor-workspace[data-mobile-tab="letterSpacing"] [data-section]:not([data-section="letter-spacing"]) { display: none !important; }
-
-  .svg-editor-workspace[data-mobile-tab="textStyle"] .svg-editor-selected-heading,
-  .svg-editor-workspace[data-mobile-tab="textStyle"] .svg-editor-properties-scroll > .svg-editor-field:first-of-type,
-  .svg-editor-workspace[data-mobile-tab="textStyle"] [data-section]:not([data-section="text-style"]) { display: none !important; }
-
-  .svg-editor-workspace[data-mobile-tab="background"] .svg-editor-selected-heading,
-  .svg-editor-workspace[data-mobile-tab="background"] .svg-editor-properties-scroll > .svg-editor-field:first-of-type,
-  .svg-editor-workspace[data-mobile-tab="background"] [data-section]:not([data-section="background"]) { display: none !important; }
-
-  .svg-editor-workspace[data-mobile-tab="size"] .svg-editor-selected-heading,
-  .svg-editor-workspace[data-mobile-tab="size"] .svg-editor-properties-scroll > .svg-editor-field:first-of-type,
-  .svg-editor-workspace[data-mobile-tab="size"] [data-section]:not([data-section="size"]) { display: none !important; }
-
-  .svg-editor-workspace[data-mobile-tab="colors"] .svg-editor-selected-heading,
-  .svg-editor-workspace[data-mobile-tab="colors"] .svg-editor-properties-scroll > .svg-editor-field:first-of-type,
-  .svg-editor-workspace[data-mobile-tab="colors"] [data-section]:not([data-section="colors"]) { display: none !important; }
-
-  .svg-editor-workspace[data-mobile-tab="opacity"] .svg-editor-selected-heading,
-  .svg-editor-workspace[data-mobile-tab="opacity"] .svg-editor-properties-scroll > .svg-editor-field:first-of-type,
-  .svg-editor-workspace[data-mobile-tab="opacity"] [data-section]:not([data-section="opacity"]) { display: none !important; }
-
-  .svg-editor-workspace[data-mobile-tab="rotation"] .svg-editor-selected-heading,
-  .svg-editor-workspace[data-mobile-tab="rotation"] .svg-editor-properties-scroll > .svg-editor-field:first-of-type,
-  .svg-editor-workspace[data-mobile-tab="rotation"] [data-section]:not([data-section="rotation"]) { display: none !important; }
-
-  .svg-editor-workspace[data-mobile-tab="stroke"] .svg-editor-selected-heading,
-  .svg-editor-workspace[data-mobile-tab="stroke"] .svg-editor-properties-scroll > .svg-editor-field:first-of-type,
-  .svg-editor-workspace[data-mobile-tab="stroke"] [data-section]:not([data-section="stroke"]) { display: none !important; }
+  /* Tab-driven panel visibility: see "UX REORGANISATION" at the end of this file */
 
   .svg-editor-properties-scroll {
     display: flex !important;
@@ -1875,14 +1736,6 @@
     padding: 9px 10px 12px !important;
   }
   .svg-editor-panel .svg-editor-property-empty { min-height: 80px !important; padding: 16px 12px; }
-  .svg-editor-selected-heading {
-    flex-direction: row;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    padding: 8px 10px;
-    margin-bottom: 8px;
-  }
   .svg-editor-property-section {
     margin-top: 7px;
     padding: 10px;
@@ -2008,18 +1861,6 @@
   }
   .svg-editor-bg-reset-btn { color: #e11d48; }
   .svg-editor-bg-reset-btn:hover { background: rgba(225, 29, 72, .06); }
-
-  /* Layers header button */
-  .svg-editor-layers-header-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-  }
-  .svg-editor-layers-header-btn.is-active {
-    background: hsl(var(--primary)) !important;
-    color: hsl(var(--primary-foreground)) !important;
-    border-color: hsl(var(--primary)) !important;
-  }
 
   /* Add text action */
   .svg-editor-add-text-action {
@@ -2704,12 +2545,12 @@
 }
 .svg-editor-artboard svg [data-editor-ui-overlay="handle"][data-editor-handle="resize"] { cursor: nwse-resize; }
 .svg-editor-artboard svg [data-editor-ui-overlay="handle"] circle {
-  transition: filter 120ms ease, stroke-width 120ms ease;
+  filter: drop-shadow(0 1px 2px rgba(15, 23, 42, .4));
+  transition: filter 120ms ease;
 }
 .svg-editor-artboard svg [data-editor-ui-overlay="handle"]:hover circle,
 .svg-editor-artboard svg [data-editor-ui-overlay="handle"]:focus-visible circle {
-  filter: drop-shadow(0 1px 4px rgba(0, 0, 0, .25));
-  stroke-width: 2.2px;
+  filter: drop-shadow(0 2px 5px rgba(15, 23, 42, .5)) brightness(1.12);
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -2868,3 +2709,847 @@
 .svg-editor-angle-presets { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 
 .svg-editor-edit-text-action { margin-bottom: 10px; }
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   UX REORGANISATION
+   - Desktop: contextual "quick properties" bar under the main toolbar
+   - Sidebar: arrange (arrows → actions → rotation dial) + colors (+ opacity)
+   - Half-wheel dashed rotation dial
+   - Mobile: grouped bottom tabs with horizontally-scrolling sheets
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.svg-editor-sr-only {
+  position: absolute !important;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Sections that only exist for the mobile sheets (desktop shows them in the context bar) */
+.svg-editor-mobile-only { display: none; }
+
+/* ─── Sidebar sub-cards (logical groups inside a section) ─── */
+.svg-editor-property-section > .svg-editor-subcard { min-width: 0; margin: 0; }
+.svg-editor-property-section > .svg-editor-subcard + .svg-editor-subcard { margin-top: 10px; }
+.svg-editor-subcard > .svg-editor-range-control { margin: 2px 0 4px; }
+.svg-editor-subcard > .svg-editor-quick-pills { margin-top: 6px; }
+.svg-editor-subcard .svg-editor-color-picker-card { margin: 0; }
+.svg-editor-subcard .svg-editor-swatches-label { margin-top: 0; }
+.svg-editor-subcard .svg-editor-color-swatches { margin-bottom: 0; }
+.svg-editor-subcard .svg-editor-field { margin-bottom: 0; }
+.svg-editor-subcard-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  color: hsl(var(--foreground));
+  font-size: 11px;
+  font-weight: 650;
+}
+.svg-editor-subcard-title svg { color: hsl(var(--primary)); }
+
+.svg-editor-rotation-card {
+  padding: 10px;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border) / .5);
+  border-radius: 12px;
+}
+.svg-editor-rotation-fields { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.svg-editor-rotation-fields .svg-editor-inline-actions { margin: 0; }
+
+/* ─── Half rotation wheel ─── */
+.svg-editor-hw { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 100%; }
+.svg-editor-hw-dial {
+  position: relative;
+  width: 100%;
+  max-width: 244px;
+  aspect-ratio: 200 / 124;
+  touch-action: none;
+  cursor: grab;
+  outline: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.svg-editor-hw-dial:active { cursor: grabbing; }
+.svg-editor-hw-dial:focus-visible { border-radius: 14px; box-shadow: 0 0 0 3px hsl(var(--primary) / .18); }
+.svg-editor-hw-dial.is-disabled { opacity: .4; cursor: not-allowed; }
+.svg-editor-hw-dial > svg { display: block; width: 100%; height: 100%; overflow: visible; }
+
+.svg-editor-hw-rim {
+  fill: none;
+  stroke: hsl(var(--muted-foreground) / .5);
+  stroke-width: 10;
+  stroke-dasharray: 0.55 1.45;   /* 48 evenly spaced dashes (pathLength = 96) */
+  stroke-dashoffset: .275;
+}
+.svg-editor-hw-inner { fill: none; stroke: hsl(var(--border)); stroke-width: 1; }
+.svg-editor-hw-major { stroke: hsl(var(--muted-foreground) / .85); stroke-width: 1.6; stroke-linecap: round; }
+.svg-editor-hw-major.is-zero { stroke: hsl(var(--primary)); stroke-width: 2.4; }
+.svg-editor-hw-label { fill: hsl(var(--muted-foreground)); font-size: 8.5px; font-weight: 600; font-variant-numeric: tabular-nums; pointer-events: none; }
+.svg-editor-hw-progress { fill: none; stroke: hsl(var(--primary)); stroke-width: 3.5; stroke-linecap: round; }
+.svg-editor-hw-needle { stroke: hsl(var(--primary)); stroke-width: 2.4; stroke-linecap: round; }
+.svg-editor-hw-hub { fill: hsl(var(--primary)); stroke: hsl(var(--card)); stroke-width: 2; }
+.svg-editor-hw-handle {
+  fill: hsl(var(--card));
+  stroke: hsl(var(--primary));
+  stroke-width: 3;
+  filter: drop-shadow(0 1px 3px hsl(var(--primary) / .3));
+}
+.svg-editor-hw-value { fill: hsl(var(--foreground)); font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; pointer-events: none; }
+.svg-editor-hw-hint { color: hsl(var(--muted-foreground)); font-size: 10px; text-align: center; }
+.svg-editor-hw .svg-editor-angle-presets { margin-top: 2px; }
+
+/* ─── Top bar (desktop): colors · style · text ─────────────────────────────
+   Every group is a row of "stacks"; a stack holds at most TWO rows, so a column
+   never carries more than two sliders. ──────────────────────────────────────── */
+.svg-editor-context-bar {
+  /* This is the desktop appearance toolbar. Keep it in the dialog's flex flow
+     and prevent legacy/global toolbar rules from collapsing or hiding it. */
+  display: flex !important;
+  position: relative;
+  z-index: 2;
+  flex: 0 0 auto;
+  align-items: stretch;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  min-height: 76px;
+  padding: 7px 14px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  background: var(--sve-surface-1);
+  border-bottom: 1px solid hsl(var(--border) / .4);
+}
+.svg-editor-context-bar.is-empty { align-items: center; min-height: 54px; }
+.svg-editor-context-bar > .svg-editor-context-group { flex: 0 0 auto; }
+.svg-editor-context-bar .svg-editor-range-slider[data-variant="wave"],
+.svg-editor-context-bar .pe-wave-slider-track { min-width: 0; }
+.svg-editor-context-bar .svg-editor-range-control.is-compact .svg-editor-range-slider { height: 22px; }
+.svg-editor-context-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: hsl(var(--muted-foreground));
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.svg-editor-context-hint svg { color: hsl(var(--primary)); flex: 0 0 auto; }
+
+.svg-editor-context-group {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 14px;
+  padding: 6px 10px 6px 6px;
+  background: hsl(var(--secondary) / .3);
+  border: 1px solid hsl(var(--border) / .45);
+  border-radius: 12px;
+}
+.svg-editor-context-title {
+  display: inline-flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  align-self: stretch;
+  gap: 3px;
+  min-width: 60px;
+  padding-inline-end: 10px;
+  color: hsl(var(--muted-foreground));
+  border-inline-end: 1px solid hsl(var(--border) / .6);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  text-align: center;
+}
+.svg-editor-context-title em { font-style: normal; white-space: nowrap; }
+.svg-editor-context-title svg { color: hsl(var(--primary)); }
+
+/* A stack = two aligned rows */
+.svg-editor-context-stack {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+}
+.svg-editor-context-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+}
+
+.svg-editor-field.is-inline { flex-direction: row; align-items: center; gap: 6px; margin-bottom: 0; }
+.svg-editor-field.is-inline > span { white-space: nowrap; }
+.svg-editor-field.is-inline input,
+.svg-editor-field.is-inline select { height: 28px; }
+.svg-editor-field.is-inline .svg-editor-number-input-wrap { width: 80px; flex: 0 0 auto; }
+.svg-editor-context-font select { width: 124px; }
+
+/* Compact slider row: label · slider · value */
+.svg-editor-range-control.is-compact {
+  display: grid;
+  grid-template-columns: 62px 76px auto;
+  align-items: center;
+  gap: 6px;
+  width: auto;
+  margin: 0;
+}
+.svg-editor-range-control.is-compact .svg-editor-range-label { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 10.5px; }
+.svg-editor-range-control.is-compact .svg-editor-range-slider { width: 76px; margin: 0; }
+.svg-editor-range-control.is-compact .svg-editor-range-output { min-width: 46px; padding: 2px 4px; }
+
+/* Editable value (typed number that replaces the read-only output) */
+.svg-editor-range-input-wrap { position: relative; display: inline-flex; flex: 0 0 auto; min-width: 0; }
+.svg-editor-range-input {
+  width: 68px;
+  height: 28px;
+  padding: 0 24px 0 8px;
+  color: hsl(var(--foreground));
+  background: var(--sve-surface-2);
+  border: 1px solid hsl(var(--border) / .6);
+  border-radius: 7px;
+  outline: none;
+  font-size: 11px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  -moz-appearance: textfield;
+}
+.svg-editor-range-input::-webkit-outer-spin-button,
+.svg-editor-range-input::-webkit-inner-spin-button { margin: 0; -webkit-appearance: none; }
+.svg-editor-range-input:focus { border-color: hsl(var(--primary) / .6); box-shadow: 0 0 0 3px hsl(var(--primary) / .08); }
+.svg-editor-range-input:disabled { opacity: .5; }
+.svg-editor-range-control.is-editable:not(.is-compact) { display: flex; flex-direction: column; gap: 5px; margin: 0; }
+.svg-editor-range-control.is-editable .svg-editor-range-row { display: flex; align-items: center; gap: 10px; }
+.svg-editor-range-control.is-editable .svg-editor-range-row .svg-editor-range-slider { flex: 1 1 auto; min-width: 0; margin: 0; }
+.svg-editor-range-control.is-editable .svg-editor-range-input { width: 74px; }
+
+/* Color chips (fill / stroke) */
+.svg-editor-context-color-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 42px;
+  color: hsl(var(--muted-foreground));
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.svg-editor-context-color-label svg { color: hsl(var(--primary)); }
+.svg-editor-ctx-targets { gap: 4px; }
+.svg-editor-ctx-target {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 1px 6px 1px 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: background var(--sve-transition-fast), border-color var(--sve-transition-fast);
+}
+.svg-editor-ctx-target:hover { background: hsl(var(--secondary) / .6); }
+.svg-editor-ctx-target.is-active {
+  background: hsl(var(--card));
+  border-color: hsl(var(--primary) / .45);
+  box-shadow: 0 0 0 2px hsl(var(--primary) / .1);
+}
+.svg-editor-color-picker-card.is-chip {
+  display: inline-grid;
+  grid-template-columns: 24px 76px;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+}
+.svg-editor-color-picker-card.is-chip .svg-editor-large-color-swatch { width: 24px; height: 24px; flex-basis: 24px; border-radius: 7px; }
+.svg-editor-color-picker-card.is-chip .svg-editor-color-hex-field { height: 24px; }
+.svg-editor-color-picker-card.is-chip .svg-editor-color-value-copy strong,
+.svg-editor-color-picker-card.is-chip .svg-editor-color-picker-edit { display: none; }
+
+/* Quick palette in the bar: original + 16 presets in two rows */
+.svg-editor-color-swatches.svg-editor-ctx-swatches {
+  display: grid;
+  grid-template-columns: none;
+  grid-template-rows: repeat(2, 22px);
+  grid-auto-flow: column;
+  grid-auto-columns: 22px;
+  gap: 4px;
+  margin: 0;
+}
+.svg-editor-ctx-swatches .svg-editor-color-swatch { padding: 2px; border-width: 1.5px; border-radius: 7px; }
+.svg-editor-ctx-swatches .svg-editor-color-swatch > span { border-radius: 4px; }
+
+/* Segmented controls (B / I / align / opacity pills) */
+.svg-editor-context-segment {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  background: var(--sve-surface-2);
+  border: 1px solid hsl(var(--border) / .5);
+  border-radius: 9px;
+}
+.svg-editor-context-icon {
+  display: grid;
+  width: 28px;
+  height: 24px;
+  place-items: center;
+  color: hsl(var(--muted-foreground));
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  transition: all var(--sve-transition-fast);
+}
+.svg-editor-context-icon:hover:not(:disabled) { color: hsl(var(--foreground)); background: hsl(var(--secondary) / .8); }
+.svg-editor-context-icon.is-active,
+.svg-editor-context-pill.is-active {
+  color: hsl(var(--primary));
+  background: hsl(var(--primary) / .1);
+  border-color: hsl(var(--primary) / .2);
+}
+.svg-editor-context-pill {
+  min-width: 27px;
+  height: 24px;
+  padding: 0 4px;
+  color: hsl(var(--muted-foreground));
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  font-size: 10px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  transition: all var(--sve-transition-fast);
+}
+.svg-editor-context-pill:hover:not(:disabled) { color: hsl(var(--foreground)); background: hsl(var(--secondary) / .8); }
+.svg-editor-context-pill:disabled, .svg-editor-context-icon:disabled { opacity: .45; }
+
+/* Swatch variants: "original color" first swatch */
+.svg-editor-color-swatch.is-original > span {
+  position: relative;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  border-color: rgba(0, 0, 0, .18);
+}
+.svg-editor-color-swatch.is-original > span svg {
+  padding: 1px;
+  color: #0f172a;
+  background: rgba(255, 255, 255, .88);
+  border-radius: 50%;
+  filter: drop-shadow(0 0 1px rgba(0, 0, 0, .35));
+}
+.svg-editor-color-swatch.is-none > span,
+.svg-editor-large-color-swatch.is-none {
+  background-color: #fff;
+  background-image:
+    linear-gradient(135deg, transparent 46%, #ef4444 46%, #ef4444 54%, transparent 54%),
+    repeating-conic-gradient(#e2e8f0 0% 25%, #fff 0% 50%);
+  background-size: 100% 100%, 8px 8px;
+}
+.svg-editor-color-swatch.is-paint > span { background: linear-gradient(135deg, #38bdf8, #6366f1 55%, #ec4899); }
+
+/* Tablet: the bar stays, only tighter */
+@media (max-width: 1760px) {
+  .svg-editor-context-title { min-width: 28px; padding-inline-end: 8px; }
+  .svg-editor-context-title em { display: none; }
+  .svg-editor-context-group { gap: 10px; }
+  /* icon-only slider labels (the full name stays in the tooltip / aria-label) */
+  .svg-editor-range-control.is-compact { grid-template-columns: 16px 76px auto; }
+  .svg-editor-range-control.is-compact .svg-editor-range-label-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+}
+@media (max-width: 1280px) {
+  .svg-editor-context-bar { padding-inline: 10px; gap: 8px; }
+  .svg-editor-range-control.is-compact { grid-template-columns: 16px 64px auto; gap: 5px; }
+  .svg-editor-range-control.is-compact .svg-editor-range-slider { width: 64px; }
+}
+
+/* ─── Sidebar: item-level controls ─── */
+.svg-editor-arrange-stack { display: flex; flex-direction: column; gap: 10px; }
+.svg-editor-arrange-stack > .svg-editor-subcard { margin: 0; }
+.svg-editor-arrange-stack + .svg-editor-subcard { margin-top: 10px; }
+.svg-editor-property-section > .svg-editor-subcard.svg-editor-size-card { display: flex; flex-direction: column; gap: 12px; }
+.svg-editor-size-card > .svg-editor-range-control { margin: 0; }
+.svg-editor-scale-card > .svg-editor-range-control { margin: 0; }
+.svg-editor-name-field { margin-bottom: 4px; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MOBILE (≤ 660px)
+   ═══════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 660px) {
+  .svg-editor-context-bar { display: none !important; }
+
+  /* Tab bar: grouped, with thin dividers between groups */
+  .svg-editor-mobile-tabbar { justify-content: space-between; }
+  .svg-editor-mobile-tab { flex: 1 1 0; min-width: 56px; }
+  .svg-editor-mobile-tab-divider {
+    flex: 0 0 1px;
+    align-self: stretch;
+    margin: 8px 2px;
+    background: hsl(var(--border) / .6);
+  }
+  .svg-editor-mobile-tab .svg-editor-spacing-tab-icon { height: 19px; display: grid; place-items: center; }
+
+  /* Bottom sheet: sized by its content, items laid out in one horizontally-scrolling row */
+  .svg-editor-workspace .svg-editor-properties-panel {
+    height: auto !important;
+    max-height: min(46vh, 300px) !important;
+    overflow: hidden !important;
+  }
+  .svg-editor-workspace .svg-editor-properties-panel .svg-editor-panel-content { overflow: hidden; }
+
+  .svg-editor-workspace .svg-editor-properties-scroll {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: stretch !important;
+    gap: 8px !important;
+    overflow-x: auto !important;
+    overflow-y: auto !important;
+    padding: 10px 12px 12px !important;
+    scrollbar-width: none;
+    scrollbar-gutter: auto;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+  .svg-editor-workspace .svg-editor-properties-scroll::-webkit-scrollbar { display: none; }
+
+  /* Sections dissolve into the row: their sub-cards become the scrolling items */
+  .svg-editor-workspace .svg-editor-properties-scroll > .svg-editor-property-section { display: contents; }
+  .svg-editor-workspace .svg-editor-properties-scroll > .svg-editor-property-section > h3,
+  .svg-editor-workspace .svg-editor-bg-pane > h3,
+  .svg-editor-workspace .svg-editor-bg-toolbar { display: none !important; }
+  .svg-editor-workspace .svg-editor-bg-pane,
+  .svg-editor-workspace .svg-editor-sheet-group { display: contents; }
+
+  /* Which section(s) each tab shows */
+  .svg-editor-workspace:is([data-mobile-tab="controls"], [data-mobile-tab="size"], [data-mobile-tab="colors"], [data-mobile-tab="typography"], [data-mobile-tab="text"], [data-mobile-tab="background"]) .svg-editor-properties-panel { display: flex !important; }
+  .svg-editor-workspace:is([data-mobile-tab="controls"], [data-mobile-tab="size"], [data-mobile-tab="colors"], [data-mobile-tab="text"]) .svg-editor-name-field { display: none !important; }
+  .svg-editor-workspace[data-mobile-tab="controls"] .svg-editor-properties-scroll > [data-section]:not([data-tabs~="controls"]) { display: none !important; }
+  .svg-editor-workspace[data-mobile-tab="size"] .svg-editor-properties-scroll > [data-section]:not([data-tabs~="size"]) { display: none !important; }
+  .svg-editor-workspace[data-mobile-tab="colors"] .svg-editor-properties-scroll > [data-section]:not([data-tabs~="colors"]) { display: none !important; }
+  .svg-editor-workspace[data-mobile-tab="text"] .svg-editor-properties-scroll > [data-section]:not([data-tabs~="text"]) { display: none !important; }
+  .svg-editor-workspace[data-mobile-tab="background"] .svg-editor-properties-scroll > [data-section]:not([data-tabs~="background"]) { display: none !important; }
+
+  /* Every sub-card is a self-contained tile in the row */
+  .svg-editor-workspace .svg-editor-properties-scroll .svg-editor-subcard {
+    display: flex;
+    flex: 0 0 auto;
+    flex-direction: column;
+    justify-content: center;
+    gap: 6px;
+    width: max-content;
+    min-width: 200px;
+    max-width: 300px;
+    margin: 0 !important;
+    padding: 10px 12px;
+    background: hsl(var(--secondary) / .22);
+    border: 1px solid hsl(var(--border) / .4);
+    border-radius: 14px;
+  }
+  .svg-editor-workspace .svg-editor-properties-scroll .svg-editor-subcard > .svg-editor-range-control { min-width: 190px; margin: 0; }
+  .svg-editor-workspace .svg-editor-range-scale { display: none; }
+  .svg-editor-workspace .svg-editor-properties-scroll .svg-editor-help { display: none; }
+  .svg-editor-workspace .svg-editor-properties-scroll > .svg-editor-inline-error { flex: 0 0 auto; align-self: center; width: auto; max-width: 80vw; margin: 0; }
+  .svg-editor-workspace .svg-editor-bg-pane .svg-editor-subcard { max-width: none; }
+
+  /* Arrange sheet: precise move with duplicate / group / flip / delete directly UNDER it, then rotation */
+  .svg-editor-workspace .svg-editor-properties-scroll .svg-editor-arrange-stack {
+    flex: 0 0 auto;
+    width: 292px;
+    gap: 8px;
+    margin: 0;
+  }
+  .svg-editor-workspace .svg-editor-properties-scroll .svg-editor-arrange-stack > .svg-editor-subcard {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    padding: 8px 10px;
+  }
+  .svg-editor-workspace .svg-editor-properties-scroll .svg-editor-nudge-wrap { padding: 8px 10px; }
+  .svg-editor-workspace .svg-editor-properties-scroll .svg-editor-nudge-heading { margin-bottom: 6px; }
+  .svg-editor-workspace .svg-editor-properties-scroll .svg-editor-actions-card { padding: 6px; }
+  .svg-editor-workspace .svg-editor-properties-scroll .svg-editor-action-grid {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 4px;
+  }
+  .svg-editor-workspace .svg-editor-properties-scroll .svg-editor-action-grid .svg-editor-action {
+    flex: none;
+    min-height: 48px;
+    padding: 5px 1px;
+    gap: 3px;
+    font-size: 8.5px !important;
+    line-height: 1.1;
+  }
+  .svg-editor-workspace .svg-editor-properties-scroll .svg-editor-action-grid .svg-editor-action span { overflow-wrap: anywhere; }
+  .svg-editor-workspace .svg-editor-properties-scroll .svg-editor-edit-text-card { min-width: 150px; }
+  .svg-editor-workspace .svg-editor-properties-scroll .svg-editor-edit-text-card .svg-editor-edit-text-action { margin: 0; }
+  .svg-editor-workspace .svg-editor-properties-scroll .svg-editor-rotation-card { width: 248px; min-width: 248px; max-width: 248px; background: hsl(var(--card)); }
+  .svg-editor-workspace .svg-editor-rotation-card .svg-editor-hw-hint { display: none; }
+  .svg-editor-workspace .svg-editor-rotation-card .svg-editor-rotation-fields { margin-top: 6px; gap: 6px; }
+  .svg-editor-workspace .svg-editor-rotation-card .svg-editor-inline-actions .svg-editor-action { min-height: 40px; }
+
+  /* Colors sheet */
+  .svg-editor-workspace .svg-editor-properties-scroll .svg-editor-colors-main { width: 236px; min-width: 236px; }
+  .svg-editor-workspace .svg-editor-colors-main .svg-editor-color-targets { margin-bottom: 8px; }
+  .svg-editor-workspace .svg-editor-properties-scroll .svg-editor-swatches-card { max-width: none; }
+  .svg-editor-workspace .svg-editor-swatches-card .svg-editor-color-swatches,
+  .svg-editor-workspace .svg-editor-bg-pane .svg-editor-color-swatches {
+    grid-template-columns: none;
+    grid-template-rows: repeat(2, 34px);
+    grid-auto-flow: column;
+    grid-auto-columns: 34px;
+    gap: 5px;
+  }
+  .svg-editor-workspace .svg-editor-opacity-card .svg-editor-quick-pills { margin-top: 2px; }
+
+  /* Size sheet: scale tile + one tile with the width and height sliders (two stacked, value typed in the field) */
+  .svg-editor-workspace .svg-editor-properties-scroll .svg-editor-size-card { width: 256px; min-width: 256px; gap: 10px; }
+  .svg-editor-workspace .svg-editor-properties-scroll .svg-editor-size-card > .svg-editor-range-control { min-width: 0; }
+  .svg-editor-workspace .svg-editor-properties-scroll .svg-editor-scale-card { min-width: 220px; }
+
+  /* Colors sheet: opacity + stroke width share one tile (two stacked sliders) */
+  .svg-editor-workspace .svg-editor-properties-scroll .svg-editor-opacity-card { gap: 8px; min-width: 220px; }
+  .svg-editor-workspace .svg-editor-opacity-card > .svg-editor-range-control { min-width: 0; }
+
+  /* Tab bar: the Typography tab is disabled until a text item is selected */
+  .svg-editor-mobile-tab:disabled { opacity: .35; cursor: not-allowed; }
+  .svg-editor-mobile-tab:disabled:active { transform: none; }
+
+  /* Typography sheet: font chips are first-class horizontal items */
+  .svg-editor-workspace .svg-editor-sheet-group > .svg-editor-font-choice { align-self: center; flex: 0 0 auto; }
+  .svg-editor-workspace .svg-editor-properties-scroll > .svg-editor-property-empty,
+  .svg-editor-workspace .svg-editor-properties-scroll > .svg-editor-property-empty-block { flex: 1 0 100%; }
+  .svg-editor-workspace .svg-editor-style-card .svg-editor-text-style-icon-row { margin-top: 0; }
+
+  /* Background sheet */
+  .svg-editor-workspace .svg-editor-bg-pane .svg-editor-gradient-presets {
+    grid-template-columns: none;
+    grid-template-rows: repeat(2, 40px);
+    grid-auto-flow: column;
+    grid-auto-columns: 56px;
+    margin-top: 4px;
+  }
+  .svg-editor-workspace .svg-editor-properties-scroll .svg-editor-gradient-presets-card { max-width: none; }
+  .svg-editor-workspace .svg-editor-properties-scroll .svg-editor-custom-gradient-box { flex: 0 0 auto; width: 270px; margin: 0; padding: 10px 12px; gap: 8px; }
+  .svg-editor-workspace .svg-editor-custom-gradient-box .svg-editor-gradient-preview { height: 22px; }
+  .svg-editor-workspace .svg-editor-properties-scroll .svg-editor-bg-rotation-box { flex: 0 0 auto; width: 250px; margin: 0; padding: 10px 12px; }
+  .svg-editor-workspace .svg-editor-properties-scroll .svg-editor-bg-clear-panel { flex: 0 0 auto; width: 270px; }
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   REVISION: full-screen shell · titled cards · error toast · layers drawer ·
+   mobile rotation / typography layout
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ─── Disabled slider (e.g. stroke width while the stroke colour is "none") ─── */
+.svg-editor-range-control.is-disabled .svg-editor-range-label,
+.svg-editor-range-control.is-disabled .svg-editor-range-output,
+.svg-editor-range-control.is-disabled .svg-editor-range-input-wrap { opacity: .45; }
+.svg-editor-range-control.is-disabled .svg-editor-range-slider { pointer-events: none; }
+
+/* ─── Context bar keeps one fixed height, so selecting an item never shifts the canvas ─── */
+.svg-editor-context-bar,
+.svg-editor-context-bar.is-empty { min-height: 78px; }
+.svg-editor-context-bar.is-empty { align-items: center; }
+
+/* ─── Group titles in the top bar: small titled cards (never icon-only) ─── */
+.svg-editor-context-title {
+  min-width: 66px !important;
+  padding: 6px 9px !important;
+  gap: 4px;
+  color: hsl(var(--primary));
+  background: linear-gradient(180deg, hsl(var(--primary) / .09), hsl(var(--primary) / .04));
+  border: 1px solid hsl(var(--primary) / .2) !important;
+  border-radius: 10px;
+  box-shadow: 0 1px 2px hsl(var(--primary) / .08), inset 0 1px 0 hsl(var(--card) / .6);
+}
+.svg-editor-context-title em { display: block !important; font-size: 9.5px; letter-spacing: .04em; line-height: 1.1; }
+
+/* ─── Collapsed side rails: icon + a vertical title card ─── */
+.svg-editor-rail-title { display: none; }
+.svg-editor-panel.is-collapsed .svg-editor-rail-title {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  margin: 10px 0;
+  padding: 12px 7px;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  color: hsl(var(--primary));
+  background: linear-gradient(180deg, hsl(var(--primary) / .09), hsl(var(--primary) / .04));
+  border: 1px solid hsl(var(--primary) / .2);
+  border-radius: 10px;
+  box-shadow: 0 1px 2px hsl(var(--primary) / .08);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .03em;
+  white-space: nowrap;
+}
+.svg-editor-dialog[dir="rtl"] .svg-editor-panel.is-collapsed .svg-editor-rail-title { transform: none; }
+.svg-editor-panel-close { display: none; }
+@media (max-width: 1000px) { .svg-editor-rail-title { display: none !important; } }
+
+/* ─── Toolbar tools: small titled cards on narrower screens (label stays visible) ─── */
+@media (max-width: 1280px) {
+  .svg-editor-tool {
+    flex-direction: column;
+    gap: 2px;
+    width: auto;
+    min-width: 54px;
+    max-width: 78px;
+    height: 44px;
+    padding: 4px 7px;
+    background: hsl(var(--secondary) / .35);
+    border-color: hsl(var(--border) / .45);
+    border-radius: 10px;
+  }
+  .svg-editor-tool > span { display: block; max-width: 100%; overflow: hidden; font-size: 9.5px !important; line-height: 1.1; text-overflow: ellipsis; }
+  .svg-editor-tool.is-active { background: hsl(var(--primary) / .1); border-color: hsl(var(--primary) / .25); }
+}
+
+/* ─── Background toolbar (sidebar): icon with its title underneath ─── */
+.svg-editor-bg-tool-btn {
+  flex-direction: column !important;
+  gap: 3px !important;
+  height: 54px !important;
+  padding: 4px 2px !important;
+  border-color: hsl(var(--border) / .35) !important;
+  background: hsl(var(--card) / .7) !important;
+}
+.svg-editor-bg-tool-btn.is-active { background: var(--sve-surface-1) !important; border-color: hsl(var(--primary) / .35) !important; box-shadow: 0 1px 4px hsl(var(--primary) / .12); }
+.svg-editor-bg-tool-label {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 9.5px;
+  font-weight: 650;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ─── Error toast (replaces the old message bar; floats, never moves the layout) ─── */
+.svg-editor-toast {
+  position: fixed;
+  top: 68px;
+  inset-inline: 12px;
+  z-index: 100002;
+  display: flex;
+  width: fit-content;
+  max-width: min(520px, calc(100vw - 24px));
+  align-items: center;
+  gap: 9px;
+  margin-inline: auto;
+  padding: 9px 10px 9px 13px;
+  color: #b91c1c;
+  background: #fff1f2;
+  border: 1px solid #fecaca;
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, .22);
+  font-size: 12px;
+  font-weight: 600;
+  animation: sve-toast-in .25s cubic-bezier(.16,1,.3,1);
+}
+.svg-editor-toast > svg { flex: 0 0 auto; }
+.svg-editor-toast > span { min-width: 0; flex: 1 1 auto; }
+.svg-editor-toast > button { display: grid; width: 24px; height: 24px; flex: 0 0 auto; place-items: center; color: inherit; background: transparent; border: 0; border-radius: 6px; }
+.svg-editor-toast > button:hover { background: rgba(185, 28, 28, .1); }
+@keyframes sve-toast-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+
+.svg-editor-layers-backdrop { display: none; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MOBILE additions (≤ 660px)
+   ═══════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 660px) {
+  /* Header buttons: small titled cards instead of bare icons */
+  .svg-editor-header-actions .svg-editor-secondary-button,
+  .svg-editor-header-actions .svg-editor-export-button {
+    width: auto;
+    min-width: 46px;
+    height: 42px;
+    min-height: 42px;
+    flex-direction: column;
+    gap: 2px;
+    padding: 4px 6px;
+    border-radius: 10px;
+  }
+  .svg-editor-header-btn-label { display: block; font-size: 9px !important; font-weight: 650; line-height: 1.1; }
+  .svg-editor-close-button { height: 42px; }
+  .svg-editor-header-brand p { max-width: 30vw; }
+
+  /* Toolbar tools: titled cards */
+  .svg-editor-tool { width: auto; min-width: 50px; height: 44px; min-height: 44px; padding: 4px 6px; }
+  .svg-editor-tool > span { font-size: 9px !important; }
+
+  /* Bottom tab bar: seven tabs */
+  .svg-editor-mobile-tab { flex: 1 0 auto; min-width: 52px; padding: 6px 5px 4px; font-size: 9.5px; }
+
+  /* ── Layers: animated side drawer ── */
+  .svg-editor-workspace .svg-editor-layers-panel {
+    display: flex !important;
+    top: 0 !important;
+    bottom: 0 !important;
+    inset-inline-start: 0 !important;
+    inset-inline-end: auto !important;
+    z-index: 41 !important;
+    width: min(86vw, 330px) !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: hidden !important;
+    border: 0 !important;
+    border-inline-end: 1px solid hsl(var(--border) / .5) !important;
+    border-radius: 0 var(--sve-radius-lg) var(--sve-radius-lg) 0 !important;
+    box-shadow: 18px 0 44px rgba(15, 23, 42, .28);
+    transform: translateX(-104%);
+    visibility: hidden;
+    transition: transform .34s cubic-bezier(.16,1,.3,1), visibility 0s linear .34s;
+  }
+  .svg-editor-dialog[dir="rtl"] .svg-editor-workspace .svg-editor-layers-panel {
+    transform: translateX(104%);
+    border-radius: var(--sve-radius-lg) 0 0 var(--sve-radius-lg) !important;
+    box-shadow: -18px 0 44px rgba(15, 23, 42, .28);
+  }
+  .svg-editor-dialog .svg-editor-workspace[data-mobile-tab="layers"] .svg-editor-layers-panel {
+    transform: none !important;
+    visibility: visible;
+    transition: transform .34s cubic-bezier(.16,1,.3,1), visibility 0s;
+  }
+  .svg-editor-workspace .svg-editor-layers-panel .svg-editor-panel-heading,
+  .svg-editor-workspace .svg-editor-layers-panel.is-collapsed .svg-editor-panel-heading {
+    display: flex !important;
+    min-height: 52px;
+    flex-direction: row;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 0 12px 0 14px;
+  }
+  .svg-editor-workspace .svg-editor-layers-panel.is-collapsed .svg-editor-panel-heading > span { flex-direction: row; gap: 7px; }
+  .svg-editor-workspace .svg-editor-layers-panel.is-collapsed .svg-editor-panel-heading-label,
+  .svg-editor-workspace .svg-editor-layers-panel.is-collapsed .svg-editor-panel-heading-actions > small { display: inline; }
+  .svg-editor-workspace .svg-editor-layers-panel .svg-editor-panel-toggle { display: none; }
+  .svg-editor-layers-panel .svg-editor-panel-close {
+    display: grid;
+    width: 34px;
+    height: 34px;
+    flex: 0 0 auto;
+    place-items: center;
+    color: hsl(var(--foreground));
+    background: hsl(var(--secondary) / .6);
+    border: 1px solid hsl(var(--border) / .6);
+    border-radius: 10px;
+  }
+  .svg-editor-workspace .svg-editor-layers-panel .svg-editor-panel-content { flex: 1 1 auto; max-height: none !important; opacity: 1 !important; transform: none !important; pointer-events: auto !important; }
+  .svg-editor-workspace .svg-editor-layers-panel .svg-editor-layer-list { padding-bottom: max(14px, env(safe-area-inset-bottom, 0px)); }
+
+  .svg-editor-layers-backdrop {
+    position: absolute;
+    inset: 0;
+    z-index: 40;
+    display: block;
+    padding: 0;
+    background: rgba(15, 23, 42, .5);
+    border: 0;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .3s ease;
+  }
+  .svg-editor-workspace[data-mobile-tab="layers"] .svg-editor-layers-backdrop { opacity: 1; pointer-events: auto; }
+
+  /* ── Rotation: the dial comes BEFORE (at the start side of) its attributes ── */
+  .svg-editor-workspace .svg-editor-properties-scroll .svg-editor-subcard.svg-editor-rotation-card {
+    display: grid !important;
+    flex: 0 0 auto;
+    grid-template-columns: 206px 196px;
+    grid-template-areas: "title title" "wheel fields";
+    align-items: center;
+    column-gap: 14px;
+    row-gap: 4px;
+    width: auto;
+    min-width: 0;
+    max-width: none;
+  }
+  .svg-editor-rotation-card > .svg-editor-subcard-title { grid-area: title; margin-bottom: 0; }
+  .svg-editor-rotation-card > .svg-editor-rotation-fields { grid-area: fields; margin-top: 0; }
+  .svg-editor-rotation-card > .svg-editor-hw { grid-area: wheel; }
+  .svg-editor-rotation-card .svg-editor-hw-dial { max-width: 206px; }
+
+  /* ── Typography sheet: same grouping as the desktop top bar ── */
+  .svg-editor-workspace .svg-editor-properties-scroll > .svg-editor-context-group.svg-editor-sheet-typography { flex: 0 0 auto; }
+  .svg-editor-sheet-typography .svg-editor-range-control.is-compact { grid-template-columns: 18px 104px auto; }
+  .svg-editor-sheet-typography .svg-editor-range-control.is-compact .svg-editor-range-slider { width: 104px; }
+  .svg-editor-sheet-typography .svg-editor-context-font select { width: 150px; }
+  .svg-editor-sheet-typography .svg-editor-context-icon { width: 34px; height: 30px; }
+}
+
+/* ─── Desktop: a little less chrome so the artwork gets more room ─── */
+.svg-editor-canvas-heading { min-height: 38px; }
+/* Below this width the bar always needs its (thin) horizontal scrollbar - reserve it so the bar never changes height on select */
+@media (max-width: 1560px) {
+  .svg-editor-context-bar,
+  .svg-editor-context-bar.is-empty { min-height: 93px; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   REVISION 2: top bar slider label cards · idle (disabled) top bar
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ─── Top bar sliders: every slider gets its name in a small card behind its icon (all widths) ─── */
+.svg-editor-context-bar .svg-editor-range-control.is-compact {
+  grid-template-columns: auto auto auto;
+  gap: 8px;
+}
+.svg-editor-context-bar .svg-editor-range-control.is-compact .svg-editor-range-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 96px;
+  min-height: 26px;
+  padding: 3px 8px;
+  overflow: visible;
+  color: hsl(var(--primary));
+  background: linear-gradient(180deg, hsl(var(--primary) / .09), hsl(var(--primary) / .04));
+  border: 1px solid hsl(var(--primary) / .2);
+  border-radius: 8px;
+  box-shadow: 0 1px 2px hsl(var(--primary) / .08), inset 0 1px 0 hsl(var(--card) / .6);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  white-space: nowrap;
+  text-overflow: clip;
+}
+.svg-editor-context-bar .svg-editor-range-control.is-compact .svg-editor-range-label svg { flex: 0 0 auto; }
+.svg-editor-context-bar .svg-editor-range-control.is-compact .svg-editor-range-label-text {
+  position: static;
+  width: auto;
+  height: auto;
+  overflow: visible;
+  clip: auto;
+  white-space: nowrap;
+}
+
+/* ─── Idle top bar: nothing selected → the controls of an ordinary item, all disabled ─── */
+.svg-editor-context-bar.is-idle .svg-editor-context-group {
+  opacity: .55;
+  pointer-events: none;
+  user-select: none;
+}
+.svg-editor-context-bar.is-idle .svg-editor-ctx-target.is-active {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}

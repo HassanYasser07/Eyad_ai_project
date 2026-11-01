@@ -418,6 +418,37 @@ export function getElementDetails(markup, id, labels = {}) {
   };
 }
 
+/**
+ * The paints (fill / stroke) of one element, as `{ raw, value }`:
+ *  - raw   → what the element itself authors ("" when it inherits / uses the default),
+ *            i.e. exactly what must be written back to restore this paint;
+ *  - value → the effective paint after inheritance from ancestor groups.
+ * Used to offer the element's original color as the first swatch.
+ */
+export function getElementPaint(markup, id) {
+  if (!markup || !id) return null;
+  const root = parseSvgMarkup(markup).documentElement;
+  const element = getElementByEditorId(root, id);
+  if (!element) return null;
+  const authored = (node, property) => {
+    const style = node.getAttribute("style") || "";
+    const match = style.match(new RegExp(`(?:^|;)\\s*${property}\\s*:\\s*([^;]+)`, "i"));
+    if (match) return match[1].trim();
+    return (node.getAttribute(property) || "").trim();
+  };
+  const effective = (property, fallback) => {
+    for (let node = element; node && node.nodeType === 1; node = node.parentElement) {
+      const value = authored(node, property);
+      if (value && value.toLowerCase() !== "inherit") return value;
+    }
+    return fallback;
+  };
+  return {
+    fill: { raw: authored(element, "fill"), value: effective("fill", "#000000") },
+    stroke: { raw: authored(element, "stroke"), value: effective("stroke", "none") },
+  };
+}
+
 export function cloneSelectedElements(root, ids) {
   const elements = ids.map((id) => getElementByEditorId(root, id)).filter(Boolean);
   if (!elements.length) throw new Error("Select at least one element to duplicate.");
