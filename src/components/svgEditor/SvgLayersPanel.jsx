@@ -1,5 +1,5 @@
 import React from "react";
-import { Eye, EyeOff, Lock, Unlock, Layers3, GripVertical, ChevronLeft, ChevronRight } from "lucide-react";
+import { Eye, EyeOff, Lock, Unlock, Layers3, GripVertical, ChevronLeft, ChevronRight, X } from "lucide-react";
 
 // Layer thumbnails embed their own copy of the artwork. Duplicate element ids
 // (e.g. the background gradient "svg-editor-bg-gradient") make `url(#id)` resolve to the
@@ -32,6 +32,11 @@ function LayerRow({ node, depth, selectedIds, onSelect, onHide, onLock, onReorde
   const EyeIcon = hidden ? EyeOff : Eye;
   const LockIcon = effectiveLock ? Lock : Unlock;
   const thumbnailRef = React.useRef(null);
+  // Stable object: the thumbnail's fitted viewBox (set in the layout effect below) must survive re-renders.
+  const thumbnailHtml = React.useMemo(
+    () => ({ __html: scopeMarkupIds(node.previewMarkup, `lp${String(node.id).replace(/[^a-zA-Z0-9_-]/g, "")}-`) }),
+    [node.previewMarkup, node.id],
+  );
 
   React.useLayoutEffect(() => {
     const preview = thumbnailRef.current?.querySelector("svg");
@@ -106,7 +111,7 @@ function LayerRow({ node, depth, selectedIds, onSelect, onHide, onLock, onReorde
         title={node.label}
       >
         <span className="svg-editor-layer-drag-handle" aria-hidden="true"><GripVertical size={15} /></span>
-        <span ref={thumbnailRef} className="svg-editor-layer-thumbnail" aria-hidden="true" dangerouslySetInnerHTML={{ __html: scopeMarkupIds(node.previewMarkup, `lp${String(node.id).replace(/[^a-zA-Z0-9_-]/g, "")}-`) }} />
+        <span ref={thumbnailRef} className="svg-editor-layer-thumbnail" aria-hidden="true" dangerouslySetInnerHTML={thumbnailHtml} />
         <span className="svg-editor-layer-copy"><strong>{node.label}</strong></span>
       </button>
       {selectable && (
@@ -131,7 +136,7 @@ function LayerRow({ node, depth, selectedIds, onSelect, onHide, onLock, onReorde
   );
 }
 
-export default function SvgLayersPanel({ tree, selectedIds, onSelect, onHide, onLock, onReorder, t, collapsed = false, onToggleCollapsed }) {
+export default function SvgLayersPanel({ tree, selectedIds, onSelect, onHide, onLock, onReorder, t, collapsed = false, onToggleCollapsed, onClose }) {
   const layerListRef = React.useRef(null);
   const pointerDragRef = React.useRef(null);
 
@@ -203,11 +208,13 @@ export default function SvgLayersPanel({ tree, selectedIds, onSelect, onHide, on
         <span><Layers3 size={16} /> <span className="svg-editor-panel-heading-label">{t("svgEditor.layersTitle")}</span></span>
         <div className="svg-editor-panel-heading-actions">
           <small>{tree.reduce((sum, node) => sum + countNodes(node), 0)}</small>
+          {onClose && <button type="button" className="svg-editor-panel-close" onClick={onClose} aria-label={t("svgEditor.closeLayers") || "Close layers"} title={t("svgEditor.closeLayers") || "Close layers"}><X size={16} /></button>}
           <button type="button" className="svg-editor-panel-toggle" onClick={onToggleCollapsed} aria-expanded={!collapsed} aria-label={t(collapsed ? "svgEditor.expandLayers" : "svgEditor.collapseLayers")} title={t(collapsed ? "svgEditor.expandLayers" : "svgEditor.collapseLayers")}>
             {collapsed ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}
           </button>
         </div>
       </div>
+      <span className="svg-editor-rail-title" aria-hidden="true">{t("svgEditor.layersTitle")}</span>
       <div className="svg-editor-panel-content">
         {!tree.length ? (
           <div className="svg-editor-panel-empty">{t("svgEditor.layersEmpty")}</div>
