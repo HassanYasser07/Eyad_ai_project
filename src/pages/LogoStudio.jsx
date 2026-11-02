@@ -6,6 +6,7 @@ import { useAuth } from "@/lib/AuthContext";
 import { runEyadEngine } from "@/services/eyadEngineService";
 import { jobService } from "@/services/jobService";
 import { projectService } from "@/services/projectService";
+import { assetService } from "@/services/assetService";
 import { saveBrandIdentity } from "@/services/brandService";
 import { saveStudioOutput } from "@/services/projectContextService";
 import { storePendingAction, getPendingAction, clearPendingAction } from "@/services/guestUsageService";
@@ -144,6 +145,9 @@ export default function LogoStudio() {
   const [editorSource, setEditorSource] = React.useState(null);
   const svgCacheRef = React.useRef(new Map());
   const svgInflightRef = React.useRef(new Map());
+  // True once this mount started its own generation, so the project loader below
+  // never overwrites fresh results with the previously saved ones.
+  const generatedHereRef = React.useRef(false);
   const [mobileTab, setMobileTab] = React.useState("style");
 
   const ar = direction === "rtl";
@@ -169,15 +173,53 @@ export default function LogoStudio() {
   React.useEffect(() => {
     if (!projectId) return;
     let active = true;
-    projectService.get(projectId).then((data) => {
+    projectService.get(projectId).then(async (data) => {
       if (!active || !data) return;
       setProject(data);
-      const saved = data.project_data?.logo_selections;
-      const brief = data.project_data?.logo_brief;
-      const persistedBrief = brief || data.project_data?.logo_brief || null;
+      const pd = data.project_data || {};
+      const saved = pd.logo_selections;
+      const persistedBrief = pd.logo_brief || null;
       if (persistedBrief?.name) setName(persistedBrief.name);
       if (persistedBrief?.activity) setActivity(persistedBrief.activity);
       if (saved) setSelections(saved);
+
+      // Restore the saved logo exactly as My Projects shows it: the approved logo
+      // (or, when nothing is approved yet, the latest generated concepts) is shown
+      // in the results step instead of an empty brief.
+      if (generatedHereRef.current) return;
+      const brandLogo = pd.brand_identity?.logo || null;
+      const approvedId = pd.approved_studio === "logo" ? (pd.approved_asset_id || brandLogo?.asset_id || null) : null;
+      if (approvedId) {
+        let url = brandLogo?.asset_id === approvedId ? brandLogo?.url : null;
+        url = url || pd.approved_asset?.url || pd.approved_asset?.data_url || null;
+        if (!url) {
+          const fromList = (Array.isArray(pd.assets) ? pd.assets : []).find((a) => (a?.id || a?.asset_id) === approvedId);
+          url = fromList?.url || fromList?.data_url || null;
+        }
+        if (!url) {
+          try { url = (await assetService.get(approvedId))?.url || null; } catch {}
+        }
+        if (!active || generatedHereRef.current) return;
+        url = url || brandLogo?.url || pd.latest_asset_url || null;
+        if (url) {
+          setImages([{ asset_id: approvedId, id: approvedId, url }]);
+          setSelectedIndex(0);
+          setApproved(true);
+          setStep("results");
+          return;
+        }
+      }
+      const list = (Array.isArray(pd.assets) ? pd.assets : [])
+        .filter((a) => a?.url || a?.data_url)
+        .slice(-2)
+        .map((a) => ({ asset_id: a.id || a.asset_id, id: a.id || a.asset_id, url: a.url || a.data_url, data_url: a.data_url }));
+      const restored = list.length ? list : (pd.latest_asset_url ? [{ asset_id: pd.latest_asset_id, id: pd.latest_asset_id, url: pd.latest_asset_url }] : []);
+      if (restored.length && (data.studio_type === "logo" || pd.last_studio_id === "logo")) {
+        setImages(restored);
+        setSelectedIndex(null);
+        setApproved(false);
+        setStep("results");
+      }
     }).catch(() => {});
     return () => { active = false; };
   }, [projectId]);
@@ -222,9 +264,11 @@ export default function LogoStudio() {
       return;
     }
 
+    generatedHereRef.current = true;
     setError("");
     setLoading(true);
     setPolling(false);
+    setStep("generating");
     setImages([]);
     setSelectedIndex(null);
     setApproved(false);
@@ -297,6 +341,7 @@ export default function LogoStudio() {
     } catch (err) {
       setLoading(false);
       setPolling(false);
+      setStep("choices");
       setError(formatError(err));
     }
   };
@@ -325,6 +370,7 @@ export default function LogoStudio() {
           setError(formatError(new Error(data?.error || "GENERATION_FAILED")));
           setLoading(false);
           setPolling(false);
+          setStep("choices");
           return;
         }
       } catch {}
@@ -332,6 +378,7 @@ export default function LogoStudio() {
         setError(ar ? "استغرق التوليد وقتًا أطول من المتوقع. يمكنك العودة للمشروع ومتابعته لاحقًا." : "Generation is taking longer than expected. You can return to the project and continue later.");
         setLoading(false);
         setPolling(false);
+        setStep("choices");
       }
     };
 
@@ -499,6 +546,8 @@ export default function LogoStudio() {
     if (step === "results" || step === "generating") {
       setImages([]);
       setSelectedIndex(null);
+      setApproved(false);
+      setDownloadMenuOpen(false);
       setStep("choices");
       setPolling(false);
       setJobId(null);
@@ -600,7 +649,7 @@ export default function LogoStudio() {
             <ChoiceGroup title={ar ? "الأسلوب (ستايل)" : "Style"} items={OPTIONS.style} value={selections.style} onChange={(v) => updateSelection("style", v)} ar={ar} type="style" />
             <ChoiceGroup title={ar ? "ألوان الشعار" : "Logo colors"} items={OPTIONS.colors} value={selections.colors} onChange={(v) => updateSelection("colors", v)} ar={ar} type="colors" />
             <ChoiceGroup title={ar ? "نوع الشعار" : "Logo type"} items={OPTIONS.logo_type} value={selections.logo_type} onChange={(v) => updateSelection("logo_type", v)} ar={ar} type="logo-type" />
-            <button disabled={!canGenerate || loading} onClick={generate} className="h-13 rounded-2xl bg-primary text-white font-extrabold disabled:opacity-40 flex items-center justify-center gap-2">
+            <button disabled={!canGenerate || loading} onClick={() => generate()} className="h-13 rounded-2xl bg-primary text-white font-extrabold disabled:opacity-40 flex items-center justify-center gap-2">
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
               {ar ? "ابدأ التصميم" : "Start Design"}
             </button>
@@ -645,7 +694,7 @@ export default function LogoStudio() {
             </div>
             {!approved && (
               <div className="grid grid-cols-2 gap-3">
-                <button type="button" disabled={loading} onClick={generate} className="h-13 rounded-2xl border-2 border-primary bg-white text-primary font-extrabold disabled:opacity-40 flex items-center justify-center gap-2">
+                <button type="button" disabled={loading} onClick={() => generate()} className="h-13 rounded-2xl border-2 border-primary bg-white text-primary font-extrabold disabled:opacity-40 flex items-center justify-center gap-2">
                   {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
                   {ar ? "توليد مرة أخرى" : "Generate again"}
                 </button>
