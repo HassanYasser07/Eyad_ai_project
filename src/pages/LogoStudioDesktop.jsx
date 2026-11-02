@@ -163,6 +163,16 @@ export default function LogoStudioDesktop({
     if (!activity.trim() && parsed.activity) setActivity(parsed.activity);
   }, [brief, name, activity, setName, setActivity]);
   const [showMoreColors, setShowMoreColors] = React.useState(false);
+  const resultsRef = React.useRef(null);
+  // Bring the generating / results panel into view as soon as it appears,
+  // otherwise it renders out of sight and the generation looks like it did nothing.
+  React.useEffect(() => {
+    if (step !== "generating" && step !== "results") return;
+    const timer = window.setTimeout(() => {
+      resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 60);
+    return () => window.clearTimeout(timer);
+  }, [step]);
 
   const chooseIndustry = (value) => {
     setIndustry(value);
@@ -356,6 +366,14 @@ export default function LogoStudioDesktop({
             {isAnonymous && <small className="logo-desktop-note">{ar ? "سيطلب منك تسجيل الدخول عند بدء التوليد." : "Sign in will be required when generation starts."}</small>}
           </section>
 
+          {(step === "generating" || step === "results") && (
+            <section className="logo-desktop-advanced card" id="logo-desktop-results" ref={resultsRef}>
+              <div className="logo-desktop-advanced-head"><div><b>{ar ? "مسار التصميم المتقدم" : "Advanced logo workflow"}</b><span>{name} · {activity}</span></div><button onClick={back}>{ar ? "رجوع" : "Back"}</button></div>
+                            {step === "generating" && <div className="logo-desktop-status"><Sparkles/><b>{ar ? "إياد يصمم الشعار الآن..." : "EYAD is designing your logo..."}</b></div>}
+              {step === "results" && <div className="logo-desktop-results">{images.slice(0,2).map((image,index)=>{const id="concept-"+index; const selected=selectedIndex===index; const selectConcept=()=>{const selectHandler=typeof setSelectedImage==="function"?setSelectedImage:onSelectImage; if(typeof selectHandler==="function") selectHandler(index);}; return <button type="button" key={String(id)} aria-pressed={selected} aria-label={ar?`اختيار الشعار ${index+1}`:`Select logo ${index+1}`} className={"logo-desktop-result "+(selected?"selected":"")} onClick={selectConcept}><img src={image.data_url||image.url} alt={ar?`الشعار المقترح ${index+1}`:`Generated logo ${index+1}`} draggable="false"/><span aria-hidden="true">{selected?"✓":""}</span><strong>{ar?`الشعار ${index+1}`:`Logo ${index+1}`}</strong></button>})}{!approved && <div className="logo-desktop-result-actions"><button type="button" className="logo-desktop-regenerate" disabled={loading} onClick={() => generate()}><Sparkles/>{loading?(ar?"جاري التوليد...":"Generating..."):(ar?"توليد مرة أخرى":"Generate again")}</button><button type="button" className="logo-desktop-approve logo-desktop-approve-gradient" disabled={!selectedImage||loading} onClick={approve}>{ar?"اعتماد الشعار":"Approve logo"}</button></div>}{approved && <div style={{gridColumn:"1 / -1"}}><button type="button" className="logo-desktop-approve" disabled style={{width:"100%",marginBottom:12}}>{ar?"تم اعتماد الشعار":"Logo approved"}</button>{approvedActions}</div>}</div>}
+            </section>
+          )}
+
           <section className="logo-desktop-templates">
             <div className="logo-desktop-gallery-head">
               <div><h2>{ar ? "قوالب مقترحة" : "Suggested templates"}</h2><p>{ar ? "ابدأ من قالب وعدّل عليه ليناسب هويتك." : "Start from a template and customize it for your brand."}</p></div>
@@ -364,14 +382,6 @@ export default function LogoStudioDesktop({
             <div className="logo-desktop-logo-row logo-desktop-template-row">{TEMPLATE_LOGOS.map(item=><LogoMock key={item[0]} item={item} interactive/>)}</div>
           </section>
 
-          {(step === "choices" || step === "generating" || step === "results") && (
-            <section className="logo-desktop-advanced card">
-              <div className="logo-desktop-advanced-head"><div><b>{ar ? "مسار التصميم المتقدم" : "Advanced logo workflow"}</b><span>{name} · {activity}</span></div><button onClick={back}>{ar ? "رجوع" : "Back"}</button></div>
-              {step === "choices" && <div className="logo-desktop-advanced-actions"><button onClick={generate} disabled={!canGenerate || loading}><Sparkles/>{ar ? "توليد الآن" : "Generate now"}</button><span>{canGenerate ? "✓" : ""}</span></div>}
-              {step === "generating" && <div className="logo-desktop-status"><Sparkles/><b>{ar ? "إياد يصمم الشعار الآن..." : "EYAD is designing your logo..."}</b></div>}
-              {step === "results" && <div className="logo-desktop-results">{images.slice(0,2).map((image,index)=>{const id="concept-"+index; const selected=selectedIndex===index; const selectConcept=()=>{const selectHandler=typeof setSelectedImage==="function"?setSelectedImage:onSelectImage; if(typeof selectHandler==="function") selectHandler(index);}; return <button type="button" key={String(id)} aria-pressed={selected} aria-label={ar?`اختيار الشعار ${index+1}`:`Select logo ${index+1}`} className={"logo-desktop-result "+(selected?"selected":"")} onClick={selectConcept}><img src={image.data_url||image.url} alt={ar?`الشعار المقترح ${index+1}`:`Generated logo ${index+1}`} draggable="false"/><span aria-hidden="true">{selected?"✓":""}</span><strong>{ar?`الشعار ${index+1}`:`Logo ${index+1}`}</strong></button>})}{!approved && <div className="logo-desktop-result-actions"><button type="button" className="logo-desktop-regenerate" disabled={loading} onClick={generate}><Sparkles/>{loading?(ar?"جاري التوليد...":"Generating..."):(ar?"توليد مرة أخرى":"Generate again")}</button><button type="button" className="logo-desktop-approve logo-desktop-approve-gradient" disabled={!selectedImage||loading} onClick={approve}>{ar?"اعتماد الشعار":"Approve logo"}</button></div>}{approved && <div style={{gridColumn:"1 / -1"}}><button type="button" className="logo-desktop-approve" disabled style={{width:"100%",marginBottom:12}}>{ar?"تم اعتماد الشعار":"Logo approved"}</button>{approvedActions}</div>}</div>}
-            </section>
-          )}
 
           <section className="logo-desktop-story logo-desktop-story-process">
             <div className="logo-desktop-story-heading"><span className="logo-desktop-eyebrow">{ar ? "كيف يعمل إياد؟" : "HOW EYAD WORKS"}</span><h2>{ar ? "من الفكرة إلى شعار احترافي في دقائق" : "From idea to a professional logo in minutes"}</h2><p>{ar ? "عملية واضحة وبسيطة تساعدك على تحويل فكرتك إلى هوية بصرية قابلة للاستخدام." : "A simple workflow that turns your idea into a visual identity you can actually use."}</p></div>
