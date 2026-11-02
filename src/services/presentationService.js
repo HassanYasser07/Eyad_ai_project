@@ -11,6 +11,7 @@ const REQUEST_TIMEOUT_MS = 45000;
 export const POLL_INTERVAL_MS = 5000; // Gamma recommends polling every ~5 seconds
 export const POLL_MAX_MS = 10 * 60 * 1000;
 const MAX_CONSECUTIVE_POLL_ERRORS = 4;
+const MAX_EXTRA_FILE_POLLS = 6;
 
 export class PresentationError extends Error {
   constructor(code, { fields = null, detail = "", retryable = false, status = 0, jobId = null } = {}) {
@@ -84,6 +85,26 @@ export async function getPresentationStatus(jobId, { signal } = {}) {
   return body.job;
 }
 
+/**
+ * Downloads the finished .pptx of a completed job so it can be opened in Eyad's own editor.
+ * The Edge Function hands back a short-lived signed URL to our private storage (never Gamma's link).
+ * Resolves with { bytes: Uint8Array, name }.
+ */
+export async function fetchPresentationFile(jobId, { signal } = {}) {
+  const meta = await callFunction({ action: "download", job_id: jobId }, { signal });
+  let response;
+  try {
+    response = await fetch(meta.url, { signal });
+  } catch (error) {
+    if (signal?.aborted) throw new PresentationError("ABORTED");
+    throw new PresentationError("NETWORK_ERROR", { retryable: true });
+  }
+  if (!response.ok) throw new PresentationError("PPTX_DOWNLOAD_FAILED", { retryable: true, status: response.status });
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  if (bytes.length < 4 || bytes[0] !== 0x50 || bytes[1] !== 0x4b) throw new PresentationError("PPTX_DOWNLOAD_FAILED");
+  return { bytes, name: meta.file_name || "presentation.pptx" };
+}
+
 const sleep = (ms, signal) => new Promise((resolve, reject) => {
   const timer = setTimeout(resolve, ms);
   signal?.addEventListener("abort", () => { clearTimeout(timer); reject(new PresentationError("ABORTED")); }, { once: true });
@@ -98,12 +119,19 @@ export async function waitForPresentation(jobId, { onUpdate, signal, intervalMs 
   const startedAt = Date.now();
   let consecutiveErrors = 0;
   let lastJob = { id: jobId, status: "pending" };
+  let extraPolls = 0; // completed, but the .pptx is not stored yet: give the export a few more tries
   for (;;) {
     try {
       lastJob = await getPresentationStatus(jobId, { signal });
       consecutiveErrors = 0;
-      onUpdate?.(lastJob);
-      if (lastJob.status === "completed" || lastJob.status === "failed") return lastJob;
+      if (lastJob.status === "failed") { onUpdate?.(lastJob); return lastJob; }
+      if (lastJob.status === "completed") {
+        const filePending = !lastJob.has_pptx && (!lastJob.pptx_error || lastJob.pptx_error === "NO_EXPORT_URL");
+        if (!filePending || extraPolls >= MAX_EXTRA_FILE_POLLS) { onUpdate?.(lastJob); return lastJob; }
+        extraPolls += 1;
+      } else {
+        onUpdate?.(lastJob);
+      }
     } catch (error) {
       if (error.code === "ABORTED") throw error;
       if (!error.retryable) throw error;

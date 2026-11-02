@@ -35,6 +35,7 @@ const baseInput = (overrides = {}) => ({
 const GAMMA_ALLOWED_KEYS = new Set([
   "inputText", "textMode", "format", "themeId", "numCards", "cardSplit",
   "additionalInstructions", "textOptions", "cardOptions",
+  "exportAs", // documented: https://developers.gamma.app/guides/generate-api-parameters-explained
 ]);
 const GAMMA_ALLOWED_TEXT_OPTIONS = new Set(["language", "tone", "audience"]);
 

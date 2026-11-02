@@ -73,9 +73,11 @@ test("start -> poll -> completed: real Gamma request, real result link, key stay
     assert.equal(done.json.job.gamma_url, "https://gamma.app/docs/real-deck");
     assert.equal(backend.tables.gamma_presentation_jobs[0].status, "completed");
 
-    // Terminal jobs are served from the database without calling Gamma again.
+    // Terminal jobs are served from the database. The only exception: a completed job whose .pptx export
+    // link is missing re-asks Gamma a bounded number of times (MAX_EXPORT_RECHECKS = 3), then stops.
+    for (let i = 0; i < 3; i += 1) await call({ action: "status", job_id: jobId });
     const gammaGets = fakeGamma.calls.filter((c) => c.method === "GET").length;
-    await call({ action: "status", job_id: jobId });
+    for (let i = 0; i < 3; i += 1) await call({ action: "status", job_id: jobId });
     assert.equal(fakeGamma.calls.filter((c) => c.method === "GET").length, gammaGets);
 
     // The secret never reaches a response or a log line.
