@@ -481,7 +481,58 @@ function solid(doc, hex, alpha) {
   return f;
 }
 
-/** props: {size,bold,italic,underline,color,font,align,bullet,lineSpacing,anchor,autofit,wrap} applied to the whole text body. */
+/**
+ * Run-level properties that both the text-box and the table-cell formatters share:
+ *   spacing  – letter spacing in pt (a:rPr/@spc, 1/100 pt)         0 removes it
+ *   baseline – super/subscript in % (a:rPr/@baseline)              0 removes it
+ *   outline  – { w (pt), hex } text outline (a:rPr/a:ln) | null removes it
+ *   opacity  – 0..1 alpha of the text colour (needs a solid text fill on the run)
+ */
+function setRunColor(doc, rPr, hex, keepAlpha = true) {
+  const old = kid(rPr, "solidFill");
+  const oldColor = old ? kids(old)[0] : null;
+  const oldAlpha = oldColor ? kid(oldColor, "alpha") : null;
+  const fill = solid(doc, String(hex).replace(/^#/, ""));
+  insertOrdered(rPr, fill, ORDER.rPr, { replace: true });
+  if (keepAlpha && oldAlpha) {
+    const a = num(oldAlpha, "val", 100000) / 100000;
+    const color = kids(fill)[0];
+    if (color && a < 1) color.appendChild(create(doc, "a", "alpha", { val: R(a * 100000) }));
+  }
+}
+function applyExtendedRunProps(doc, rPr, props) {
+  if (props.spacing !== undefined) {
+    const v = Number(props.spacing);
+    if (Number.isFinite(v)) {
+      if (Math.abs(v) < 0.005) rPr.removeAttribute("spc");
+      else rPr.setAttribute("spc", String(R(Math.max(-400, Math.min(2000, v)) * 100)));
+    }
+  }
+  if (props.baseline !== undefined) {
+    const v = Number(props.baseline);
+    if (!Number.isFinite(v) || v === 0) rPr.removeAttribute("baseline");
+    else rPr.setAttribute("baseline", String(R(Math.max(-100000, Math.min(100000, v)))));
+  }
+  if (props.outline !== undefined) {
+    for (const old of kids(rPr, "ln")) rPr.removeChild(old);
+    const o = props.outline;
+    if (o && Number(o.w) > 0) {
+      const hex = String(o.hex || "000000").replace(/^#/, "");
+      if (!HEX.test(hex)) throw new PptxError("BAD_COLOR", "Invalid outline colour");
+      const ln = create(doc, "a", "ln", { w: String(R(Math.min(Number(o.w), 40) * 12700)) });
+      ln.appendChild(solid(doc, hex));
+      insertOrdered(rPr, ln, ORDER.rPr, { replace: true });
+    }
+  }
+  if (props.opacity !== undefined) {
+    const v = Math.max(0, Math.min(1, Number(props.opacity)));
+    const fill = kid(rPr, "solidFill");
+    const color = fill ? kids(fill)[0] : null;
+    if (color && Number.isFinite(v)) writeColorAlpha(doc, color, v);
+  }
+}
+
+/** props: {size,bold,italic,underline,color,font,align,bullet,lineSpacing,anchor,autofit,wrap,spacing,baseline,outline,opacity} applied to the whole text body. */
 export function setTextProps(pkg, slidePath, ids, props, cell = null) {
   return mutateSlide(pkg, slidePath, "Format text", (doc, tree) => {
     for (const id of ids) {
@@ -519,7 +570,8 @@ export function setTextProps(pkg, slidePath, ids, props, cell = null) {
             if (props.italic !== undefined) rPr.setAttribute("i", props.italic ? "1" : "0");
             if (props.underline !== undefined) rPr.setAttribute("u", props.underline ? "sng" : "none");
             if (props.strike !== undefined) rPr.setAttribute("strike", props.strike ? "sngStrike" : "noStrike");
-            if (props.color) insertOrdered(rPr, solid(doc, props.color), ORDER.rPr, { replace: true });
+            if (props.color) setRunColor(doc, rPr, props.color, props.opacity === undefined);
+            applyExtendedRunProps(doc, rPr, props);
             if (props.highlight !== undefined) {
               for (const node of kids(rPr, "highlight")) rPr.removeChild(node);
               if (props.highlight) {
@@ -1256,7 +1308,8 @@ export function setTableRangeTextProps(pkg, slidePath, id, rowIndex, colIndex, s
           if (props.italic !== undefined) rPr.setAttribute("i", props.italic ? "1" : "0");
           if (props.underline !== undefined) rPr.setAttribute("u", props.underline ? "sng" : "none");
           if (props.strike !== undefined) rPr.setAttribute("strike", props.strike ? "sngStrike" : "noStrike");
-          if (props.color) insertOrdered(rPr, solid(doc, String(props.color).replace(/^#/, "")), ORDER.rPr, { replace: true });
+          if (props.color) setRunColor(doc, rPr, String(props.color).replace(/^#/, ""), props.opacity === undefined);
+          applyExtendedRunProps(doc, rPr, props);
           if (props.font) insertOrdered(rPr, create(doc, "a", "latin", { typeface: String(props.font).slice(0, 80) }), ORDER.rPr, { replace: true });
           if (props.highlight !== undefined) {
             for (const old of kids(rPr, "highlight")) rPr.removeChild(old);
@@ -1268,8 +1321,12 @@ export function setTableRangeTextProps(pkg, slidePath, id, rowIndex, colIndex, s
             }
           }
         }
-        const bodyPr = kid(body, "bodyPr");
-        if (bodyPr && props.anchor) bodyPr.setAttribute("anchor", props.anchor);
+      }
+      // Vertical alignment of a table cell lives on a:tcPr (that is what the renderer and PowerPoint read).
+      if (props.anchor) {
+        let tcPr = kid(cell, "tcPr");
+        if (!tcPr) { tcPr = create(doc, "a", "tcPr"); cell.appendChild(tcPr); }
+        tcPr.setAttribute("anchor", props.anchor);
       }
     }
   });

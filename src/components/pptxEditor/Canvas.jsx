@@ -16,7 +16,7 @@ const HANDLES = [["nw", 0, 0], ["n", 0.5, 0], ["ne", 1, 0], ["e", 1, 0.5], ["se"
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const boundsOf = (e) => ({ x: e.x, y: e.y, w: e.w, h: e.h, rot: e.rot, flipH: e.flipH, flipV: e.flipV });
 
-const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelect, onSelectionComplete, onInteractionStart, onCommit, onEditText, onTextCommit, onTextCancel, onTableCellSelect, onAutoSizeText, textAutoSizeHeights, editingText, tableSelection, cellToolbar, toolbarLabel, onTableAdd, onTableSelectAll, onCopy, onDelete, onRotate, multi, grid, locked, labels, onZoom, compact, onSwipe, canPrev, canNext, keepInView }, ref) {
+const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelect, onSelectionComplete, onInteractionStart, onCommit, onEditText, onTextCommit, onTextCancel, onTableCellSelect, onAutoSizeText, textAutoSizeHeights, liveOverrides, editingText, tableSelection, cellToolbar, toolbarLabel, onTableAdd, onTableSelectAll, onCopy, onDelete, onRotate, multi, grid, locked, labels, onZoom, compact, onSwipe, canPrev, canNext, keepInView }, ref) {
   const stageRef = React.useRef(null);
   const [size, setSize] = React.useState({ w: 800, h: 600 });
   const [view, setView] = React.useState({ zoom: 1, pan: { x: 0, y: 0 } });
@@ -520,6 +520,7 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
 
   const overrides = React.useMemo(() => {
     const combined = new Map(draft || []);
+    if (liveOverrides) for (const [id, b] of liveOverrides) if (!combined.has(id)) combined.set(id, b);
     if (textAutoSizeHeights?.size) {
       for (const element of model.elements) {
         const pendingHeight = textAutoSizeHeights.get(element.id);
@@ -533,7 +534,7 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
       if (element) combined.set(cellFit.id, { ...boundsOf(element), h: cellFit.h, tableGrid: cellFit.tableGrid });
     }
     return combined;
-  }, [draft, textAutoSizeHeights, model, cellFit]);
+  }, [draft, textAutoSizeHeights, model, cellFit, liveOverrides]);
   R.current.overrides = overrides;
   const sel = model.elements.filter((e) => selection.includes(e.id));
   const frames = sel.map((e) => ({ el: e, b: overrides.get(e.id) || boundsOf(e) }));

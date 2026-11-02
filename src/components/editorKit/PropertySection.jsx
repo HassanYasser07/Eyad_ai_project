@@ -29,9 +29,9 @@ export function SubCard({ title, icon: Icon, children, className = "" }) {
 }
 
 /** Soft "nothing selected" card. */
-export function EmptyCard({ icon: Icon, title, children }) {
+export function EmptyCard({ icon: Icon, title, children, className = "" }) {
   return (
-    <div className="ek-property-empty">
+    <div className={`ek-property-empty ${className}`.trim()}>
       {Icon && <span className="ek-property-empty-icon"><Icon size={20} strokeWidth={1.7} aria-hidden="true" /></span>}
       {title && <strong>{title}</strong>}
       {children && <p>{children}</p>}

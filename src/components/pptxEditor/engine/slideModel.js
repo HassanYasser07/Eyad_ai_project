@@ -72,7 +72,7 @@ function levelProps(chain, lvl) {
     if (!out.bullet) { const b = kid(lp, "buNone", "buChar", "buAutoNum"); if (b) out.bullet = b; }
     const d = kid(lp, "defRPr");
     if (d) {
-      for (const a of ["sz", "b", "i", "u", "strike", "baseline"]) if (out.rPr[a] === undefined && d.hasAttribute(a)) out.rPr[a] = d.getAttribute(a);
+      for (const a of ["sz", "b", "i", "u", "strike", "baseline", "spc"]) if (out.rPr[a] === undefined && d.hasAttribute(a)) out.rPr[a] = d.getAttribute(a);
       if (!out.rPr.fill) { const sf = kid(d, "solidFill"); if (sf) out.rPr.fill = sf; }
       if (!out.rPr.latin) { const l = kid(d, "latin"); if (l) out.rPr.latin = attr(l, "typeface"); }
     }
@@ -141,11 +141,16 @@ function readText(txBody, ctx, { ph, fontRefColor }) {
       if (!color) color = fontRefColor || { hex: ctx.theme.colors[ctx.theme.clrMap.tx1] || "000000", alpha: 1 };
       const face = (rPr && attr(kid(rPr, "latin"), "typeface")) || lp.rPr.latin || "+mn-lt";
       const hl = rPr && kid(rPr, "highlight");
+      // Text outline (a:rPr/a:ln): width in pt + colour. Absent / noFill → null.
+      const lnEl = rPr && kid(rPr, "ln");
+      const lnFill = lnEl && kid(lnEl, "solidFill");
+      const lnColor = lnFill ? resolveColor(kids(lnFill)[0], ctx.theme) : null;
+      const outline = lnColor && lnEl.hasAttribute("w") && num(lnEl, "w") > 0 ? { w: num(lnEl, "w") / 12700, hex: lnColor.hex } : null;
       return {
         size: ((g("sz") !== undefined ? Number(g("sz")) : baseSize) / 100) * autofit.fontScale,
         bold: g("b") === "1" || g("b") === "true", italic: g("i") === "1" || g("i") === "true",
         underline: (g("u") && g("u") !== "none") || !!link, strike: g("strike") && g("strike") !== "noStrike",
-        baseline: Number(g("baseline") || 0), color, font: themeFont(ctx.theme, face) || ctx.theme.minor,
+        baseline: Number(g("baseline") || 0), spacing: Number(g("spc") || 0) / 100, outline, color, font: themeFont(ctx.theme, face) || ctx.theme.minor,
         highlight: hl ? resolveColor(kids(hl)[0], ctx.theme) : null, link: !!link, endPara,
       };
     };

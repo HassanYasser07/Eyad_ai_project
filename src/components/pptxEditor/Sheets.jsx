@@ -1,6 +1,6 @@
 import React from "react";
-import { Plus, Copy, Trash2, ChevronUp, ChevronDown, Check } from "lucide-react";
-import { EditorSheet } from "@/components/editorKit";
+import { Plus, Copy, Trash2, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Check } from "lucide-react";
+import { EditorSheet, QuickAction } from "@/components/editorKit";
 import { useI18n } from "@/i18n/I18nContext";
 import SlideView, { collectImagePaths } from "./SlideView.jsx";
 import { useMediaUrls } from "./useMediaUrls.js";
@@ -31,9 +31,9 @@ export function useVisualViewport(enabled = true) {
   return vp;
 }
 
-export function BottomSheet({ title, onClose, children, testId, tall = false, footer }) {
+export function BottomSheet({ title, onClose, children, testId, tall = false, footer, closing = false, closingBottom = 0 }) {
   const { t } = useI18n();
-  return <EditorSheet title={title} onClose={onClose} testId={testId} tall={tall} footer={footer} closeLabel={t("pptxEditor.close")}>{children}</EditorSheet>;
+  return <EditorSheet title={title} onClose={onClose} testId={testId} tall={tall} footer={footer} closing={closing} closingBottom={closingBottom} closeLabel={t("pptxEditor.close")}>{children}</EditorSheet>;
 }
 
 /** Dedicated text-editing mode: native <textarea> (reliable with mobile keyboards), committed explicitly. */
@@ -111,6 +111,51 @@ export function SlidesPanel({ pkg, pres, idx, onSelect, onAdd, onDuplicate, onDe
         ))}
       </ol>
       <button type="button" className="pe-add-slide" onClick={onAdd} data-testid="pptx-add-slide"><Plus size={16} aria-hidden="true" />{t("pptxEditor.addSlide")}</button>
+    </div>
+  );
+}
+
+/**
+ * Phone "Slides" sheet: every slide in ONE horizontally scrolling row, with the slide actions right above it.
+ * Actions always apply to the current slide (the highlighted one). Tapping a thumbnail makes it current; the row
+ * keeps the current slide centred, so adding / duplicating / moving / deleting never leaves it off-screen.
+ */
+export function SlidesStrip({ pkg, pres, idx, onSelect, onAdd, onDuplicate, onDelete, onMove, t, width = 124, labels }) {
+  const listRef = React.useRef(null);
+  const count = pres.slides.length;
+  const first = idx <= 0, last = idx >= count - 1;
+  React.useEffect(() => {
+    const list = listRef.current;
+    const item = list?.children?.[idx];
+    if (!list || !item) return;
+    const left = item.offsetLeft - (list.clientWidth - item.offsetWidth) / 2;
+    const reduce = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    list.scrollTo({ left: Math.max(0, left), behavior: reduce ? "auto" : "smooth" });
+  }, [idx, count]);
+  return (
+    <div className="pe-strip" dir="ltr" data-testid="pptx-slides">
+      <div className="pe-strip-actions" role="group" aria-label={t("pptxEditor.slideStrip")}>
+        <QuickAction icon={Plus} label={t("pptxEditor.addSlide")} onClick={onAdd} testId="pptx-slide-add" />
+        <QuickAction icon={Copy} label={t("pptxEditor.duplicateSlide")} onClick={() => onDuplicate(idx)} testId="pptx-slide-dup" />
+        <QuickAction icon={ChevronLeft} label={t("pptxEditor.moveSlideEarlier")} onClick={() => onMove(idx, idx - 1)} disabled={first} testId="pptx-slide-up" />
+        <QuickAction icon={ChevronRight} label={t("pptxEditor.moveSlideLater")} onClick={() => onMove(idx, idx + 1)} disabled={last} testId="pptx-slide-down" />
+        <QuickAction icon={Trash2} label={t("pptxEditor.deleteSlide")} danger onClick={() => onDelete(idx)} disabled={count < 2} testId="pptx-slide-del" />
+      </div>
+      <ol className="pe-strip-list" ref={listRef} aria-label={t("pptxEditor.slides")}>
+        {pres.slides.map((s, i) => (
+          <li key={s.id} className={i === idx ? "is-active" : ""}>
+            <button type="button" className="pe-thumb-btn" onClick={() => onSelect(i)} aria-label={t("pptxEditor.goToSlide", { n: i + 1 })} aria-current={i === idx} data-testid={`pptx-thumb-${i}`}>
+              <span className="pe-thumb-n">{i + 1}</span>
+              <Thumb pkg={pkg} pres={pres} slide={s} width={width} labels={labels} />
+            </button>
+          </li>
+        ))}
+        <li className="pe-strip-add-item">
+          <button type="button" className="pe-strip-add" onClick={onAdd} aria-label={t("pptxEditor.addSlide")} data-testid="pptx-add-slide">
+            <Plus size={20} strokeWidth={1.7} aria-hidden="true" /><span>{t("pptxEditor.addSlide")}</span>
+          </button>
+        </li>
+      </ol>
     </div>
   );
 }

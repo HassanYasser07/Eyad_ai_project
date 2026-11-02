@@ -10,13 +10,13 @@ function NudgeButton({ icon: Icon, label, onClick, disabled, testId }) {
  * `onNudge(dx, dy)` receives values already multiplied by the current step.
  * The step is uncontrolled unless `step` + `onStepChange` are provided.
  */
-export function NudgePad({ title, stepLabel, step: stepProp, onStepChange, defaultStep = 1, stepMin = 0.1, stepMax = 1000, stepDelta = 0.1, unit = "", onNudge, disabled = false, labels = {}, testIds = {}, hint }) {
+export function NudgePad({ title, stepLabel, step: stepProp, onStepChange, defaultStep = 1, stepMin = 0.1, stepMax = 1000, stepDelta = 0.1, unit = "", onNudge, disabled = false, labels = {}, testIds = {}, hint, className = "" }) {
   const [inner, setInner] = React.useState(defaultStep);
   const step = stepProp ?? inner;
   const setStep = (n) => (onStepChange ? onStepChange(n) : setInner(n));
   const bump = (dir) => setStep(Math.min(stepMax, Math.max(stepMin, Math.round((step + dir * stepDelta) * 10) / 10)));
   return (
-    <div className="ek-subcard ek-nudge-wrap">
+    <div className={`ek-subcard ek-nudge-wrap ${className}`.trim()}>
       <div className="ek-nudge-heading">
         <strong>{title}</strong>
         <div className="ek-nudge-step">

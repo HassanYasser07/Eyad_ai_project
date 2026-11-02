@@ -223,7 +223,7 @@ export function TextBody({ text, hint, cellMode = false, newCell = false, emptyP
             {p.runs.map((r, j) => {
               const s = r.style;
               const visibleText = String(r.text ?? "").replace(/[\u200B\uFEFF]/g, "");
-              return <span key={j} style={{ fontFamily: font(s.font), fontSize: ptToPx(s.size) * renderScale, fontWeight: s.bold ? 700 : 400, fontStyle: s.italic ? "italic" : "normal", textDecoration: [s.underline && "underline", s.strike && "line-through"].filter(Boolean).join(" ") || "none", color: rgba(s.color), backgroundColor: s.highlight ? rgba(s.highlight) : undefined, verticalAlign: s.baseline > 0 ? "super" : s.baseline < 0 ? "sub" : "baseline" }}>{visibleText}</span>;
+              return <span key={j} style={{ fontFamily: font(s.font), fontSize: ptToPx(s.size) * renderScale, fontWeight: s.bold ? 700 : 400, fontStyle: s.italic ? "italic" : "normal", textDecoration: [s.underline && "underline", s.strike && "line-through"].filter(Boolean).join(" ") || "none", color: rgba(s.color), backgroundColor: s.highlight ? rgba(s.highlight) : undefined, verticalAlign: s.baseline > 0 ? "super" : s.baseline < 0 ? "sub" : "baseline", letterSpacing: s.spacing ? `${ptToPx(s.spacing) * renderScale}px` : undefined, ...(s.outline ? { WebkitTextStroke: `${Math.max(0.25, ptToPx(s.outline.w) * renderScale)}px #${s.outline.hex}`, paintOrder: "stroke fill" } : null) }}>{visibleText}</span>;
             })}
             {/* An actual line break gives empty editable paragraphs a caret target;
                 it is not persisted as text and avoids zero-width placeholder characters. */}
