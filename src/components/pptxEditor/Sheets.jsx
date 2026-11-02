@@ -1,5 +1,5 @@
 import React from "react";
-import { Plus, Copy, Trash2, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Check } from "lucide-react";
+import { Plus, Copy, Trash2, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Check, Type } from "lucide-react";
 import { EditorSheet, QuickAction } from "@/components/editorKit";
 import { useI18n } from "@/i18n/I18nContext";
 import SlideView, { collectImagePaths } from "./SlideView.jsx";
@@ -55,6 +55,40 @@ export function TextSheet({ initial, title, hint, onDone, onCancel, t, rtl }) {
   );
 }
 
+/**
+ * Phone text editing: a full screen of its own (same layout as the SVG editor's text composer) instead of typing
+ * inside the slide, so the software keyboard never covers or pushes the canvas. Desktop keeps editing in place.
+ * Commits the lines explicitly with "Done"; the back button leaves the text untouched.
+ * `viewport` ({ h, top }) is the visual viewport, so the screen shrinks above the keyboard.
+ */
+export function MobileTextScreen({ title, initial, placeholder, onDone, onCancel, t, viewport }) {
+  const [value, setValue] = React.useState(initial);
+  const ref = React.useRef(null);
+  React.useEffect(() => { const el = ref.current; if (el) { el.focus({ preventScroll: true }); el.setSelectionRange(el.value.length, el.value.length); } }, []);
+  const changed = value !== initial;
+  const style = viewport?.h ? { top: viewport.top || 0, bottom: "auto", height: viewport.h } : undefined;
+  return (
+    <div className="pe-mobile-text" role="dialog" aria-modal="true" aria-label={title} data-testid="pptx-mobile-text" style={style}
+      onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); onCancel(); } }}>
+      <header className="pe-mobile-text-header">
+        <button type="button" className="pe-mobile-text-back" onClick={onCancel} aria-label={t("svgEditor.backToTabs")} data-testid="pptx-mobile-text-back"><ChevronLeft size={20} aria-hidden="true" /></button>
+        <strong>{title}</strong>
+        <span />
+      </header>
+      <div className="pe-mobile-text-body">
+        <div className="pe-mobile-text-card">
+          <Type size={22} aria-hidden="true" />
+          <textarea ref={ref} dir="auto" value={value} placeholder={placeholder} aria-label={title} data-testid="pptx-mobile-textarea"
+            onChange={(e) => setValue(e.target.value)} />
+          <small>{value.length}</small>
+        </div>
+        <p className="pe-mobile-text-hint">{t("pptxEditor.textHint")}</p>
+        <button type="button" className="pe-mobile-text-confirm" onClick={() => onDone(value.split("\n"))} disabled={!changed} data-testid="pptx-mobile-text-done"><Check size={18} aria-hidden="true" />{t("pptxEditor.done")}</button>
+      </div>
+    </div>
+  );
+}
+
 function useInView(rootMargin = "300px") {
   const ref = React.useRef(null);
   const [seen, setSeen] = React.useState(false);
@@ -82,11 +116,17 @@ export function Thumb({ pkg, pres, slide, width, labels }) {
   );
 }
 
-export function SlidesPanel({ pkg, pres, idx, onSelect, onAdd, onDuplicate, onDelete, onMove, t, width = 168, grid = false, labels }) {
+export function SlidesPanel({ pkg, pres, idx, onSelect, onAdd, onDuplicate, onDelete, onDeleteCurrent, onMove, t, width = 168, grid = false, labels }) {
   const dragFrom = React.useRef(null);
   const [over, setOver] = React.useState(null);
   return (
     <div className={`pe-slides ${grid ? "is-grid" : ""}`} data-testid="pptx-slides">
+      {/* Same slide actions as the phone Slides sheet; they always apply to the current slide. */}
+      <div className="pe-slides-actions" role="group" aria-label={t("pptxEditor.slideStrip")}>
+        <QuickAction icon={Plus} label={t("pptxEditor.addSlide")} onClick={onAdd} testId="pptx-slide-bar-add" />
+        <QuickAction icon={Copy} label={t("pptxEditor.duplicateSlide")} onClick={() => onDuplicate(idx)} testId="pptx-slide-bar-dup" />
+        <QuickAction icon={Trash2} label={t("pptxEditor.deleteSlide")} danger onClick={() => (onDeleteCurrent ? onDeleteCurrent() : onDelete(idx))} disabled={pres.slides.length < 2} testId="pptx-slide-bar-del" />
+      </div>
       <ol>
         {pres.slides.map((s, i) => (
           <li key={s.id} className={`${i === idx ? "is-active" : ""} ${over === i ? "is-over" : ""}`}

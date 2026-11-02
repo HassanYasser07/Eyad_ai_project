@@ -913,3 +913,73 @@ with an opacity slider ---- */
 .pe-strip-add:hover { background: hsl(var(--primary) / .06); }
 .pe-strip-add span { text-align: center; text-wrap: balance; }
 .pe-root.is-compact .pe-sheet .pe-strip-list > li { animation: pe-card-in .36s cubic-bezier(.16, 1, .3, 1) both; }
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PHONE FIXES
+   1. Floating formatting bar scrolls sideways with one finger (the drag itself is handled in Canvas.jsx, because the
+      stage disables native panning). `touch-action: none` stops the browser and the script from both scrolling it.
+   2. "Apply … to all slides" cards no longer spill out of their card.
+   3. "Quick background" sits under "Slide background" (stacked column).
+   4. Full-screen text editor (same look as the SVG editor's text composer).
+   ═══════════════════════════════════════════════════════════════════════════ */
+.pptx-cell-toolbar { touch-action: none; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; }
+.pptx-cell-toolbar .pptx-cell-font { flex: 0 0 auto; }
+
+/* 2 — scope cards: the label wraps inside the card and the switch stays inside it */
+.pe-root.is-compact .pe-sheet .pe-mobile-ribbon .pe-scope-card .ek-switch-row { width: 100%; min-width: 0; max-width: none; flex: 1 1 auto; gap: 10px; }
+.pe-root.is-compact .pe-sheet .pe-mobile-ribbon .pe-scope-card .ek-switch-copy { min-width: 0; }
+.pe-root.is-compact .pe-sheet .pe-mobile-ribbon .pe-scope-card .ek-switch-label { overflow-wrap: anywhere; white-space: normal; text-align: start; font-size: 11.5px; }
+.pe-root.is-compact .pe-sheet .pe-mobile-ribbon .pe-scope-card { box-sizing: border-box; padding: 6px 10px; }
+.pe-root.is-compact .pe-sheet .pe-mobile-ribbon .pe-palette-control-stack { flex-direction: column; align-items: stretch; gap: 8px; width: 210px; max-width: 100%; }
+.pe-root.is-compact .pe-sheet .pe-mobile-ribbon .pe-palette-control-stack .pe-palette-scope { width: 100%; min-width: 0; max-width: none; height: auto; min-height: 48px; flex: 0 0 auto; padding: 6px 10px; }
+.pe-root.is-compact .pe-sheet .pe-mobile-ribbon .pe-palette-control-stack .pe-palette-scope span { max-width: none; }
+.pe-root.is-compact .pe-sheet .pe-mobile-ribbon .pe-palette-control-stack .pe-palette-open-button { width: 100%; justify-content: center; box-sizing: border-box; }
+.pe-root.is-compact .pe-sheet .pe-mobile-ribbon .pe-background-scope { width: 210px; max-width: 100%; min-width: 0; }
+
+/* 3 — "Quick background" stacked under "Slide background": one tidy row of swatches inside the card */
+.pe-root.is-compact .pe-sheet .pe-mobile-ribbon .pe-ribbon-col.is-stack .pe-background-presets { flex-wrap: nowrap; justify-content: flex-start; gap: 4px; }
+.pe-root.is-compact .pe-sheet .pe-mobile-ribbon .pe-ribbon-col.is-stack .pe-background-preset { min-width: 52px; min-height: 0; padding: 2px 3px; }
+.pe-root.is-compact .pe-sheet .pe-mobile-ribbon .pe-ribbon-col.is-stack .pe-design-background-color .ek-color-chip { width: 148px; }
+
+/* 4 — full-screen text editor (phone only; rendered inside .pe-root, which is fixed and fills the screen) */
+.pe-mobile-text {
+  position: absolute; inset: 0; z-index: 60; display: flex; flex-direction: column; box-sizing: border-box;
+  padding: max(12px, env(safe-area-inset-top)) 14px max(14px, env(safe-area-inset-bottom));
+  color: hsl(var(--foreground)); background: hsl(var(--background));
+}
+.pe-mobile-text-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; border-bottom: 1px solid hsl(var(--border) / .4); }
+.pe-mobile-text-header strong { font-size: 16px; font-weight: 700; }
+.pe-mobile-text-header > span { width: 38px; }
+.pe-mobile-text-back { display: grid; place-items: center; width: 38px; height: 38px; color: inherit; background: var(--ek-surface-1); border: 1px solid hsl(var(--border) / .5); border-radius: var(--ek-radius-md); }
+.pe-mobile-text-body { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: center; gap: 14px; width: 100%; max-width: 560px; margin: 0 auto; overflow-y: auto; overscroll-behavior: contain; }
+.pe-mobile-text-card { display: flex; flex-direction: column; gap: 12px; padding: 18px; background: var(--ek-surface-1); border: 1px solid hsl(var(--border) / .5); border-radius: var(--ek-radius-xl, 20px); box-shadow: var(--ek-shadow-lg); }
+.pe-mobile-text-card > svg { color: hsl(var(--primary)); }
+.pe-mobile-text-card textarea {
+  width: 100%; min-height: 150px; max-height: 42dvh; box-sizing: border-box; padding: 13px; resize: vertical; outline: none;
+  color: hsl(var(--foreground)); background: var(--ek-surface-2); border: 1px solid hsl(var(--border) / .5); border-radius: var(--ek-radius-md);
+  font: inherit; font-size: 18px; line-height: 1.45;
+}
+.pe-mobile-text-card textarea:focus { border-color: hsl(var(--primary) / .5); box-shadow: 0 0 0 3px hsl(var(--primary) / .1); }
+.pe-mobile-text-card small { align-self: flex-end; color: hsl(var(--muted-foreground)); font-size: 11px; }
+.pe-mobile-text-hint { margin: 0; color: hsl(var(--muted-foreground)); font-size: 11.5px; line-height: 1.45; text-align: center; }
+.pe-mobile-text-confirm {
+  display: inline-flex; align-items: center; justify-content: center; gap: 9px; min-height: 48px; border: 0; border-radius: 14px;
+  color: hsl(var(--primary-foreground)); background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary) / .85));
+  font-size: 15px; font-weight: 700; box-shadow: 0 8px 20px hsl(var(--primary) / .2); cursor: pointer;
+}
+.pe-mobile-text-confirm:disabled { opacity: .4; box-shadow: none; cursor: not-allowed; }
+
+
+/* ── Clipboard card (Arrange panel) ───────────────────────────────────────── */
+.pe-inspector .pe-clip-card .ek-action { min-height: 44px; flex-direction: column; justify-content: center; gap: 3px; font-size: 10px; text-align: center; }
+.pe-inspector .pe-clip-card .ek-action span { max-width: 100%; overflow-wrap: anywhere; white-space: normal; }
+/* phone sheet: Cut / Copy / Paste stacked under each other, not side by side */
+.pe-root.is-compact .pe-sheet .pe-inspector .pe-clip-card.is-stacked { width: 150px; min-width: 150px; max-width: 150px; padding: 6px; justify-content: stretch; }
+.pe-root.is-compact .pe-sheet .pe-inspector .pe-clip-card.is-stacked .ek-action-grid { grid-template-columns: minmax(0, 1fr); gap: 6px; height: 100%; }
+.pe-root.is-compact .pe-sheet .pe-inspector .pe-clip-card.is-stacked .ek-action { flex-direction: row; justify-content: flex-start; gap: 8px; min-height: 40px; padding: 6px 12px; font-size: 12px; text-align: start; }
+
+/* ── Desktop Slides sidebar: Add / Duplicate / Delete bar (same actions as the phone Slides sheet) ── */
+.pe-slides-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 6px; margin-bottom: 12px; background: hsl(var(--secondary) / .22); border: 1px solid hsl(var(--border) / .4); border-radius: 14px; }
+.pe-slides-actions .ek-action { flex-direction: column; justify-content: center; min-height: 48px; padding: 5px 1px; gap: 3px; font-size: 9.5px !important; line-height: 1.1; text-align: center; }
+.pe-slides-actions .ek-action span { max-width: 100%; overflow-wrap: anywhere; white-space: normal; text-align: center; }

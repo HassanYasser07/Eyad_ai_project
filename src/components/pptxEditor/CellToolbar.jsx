@@ -2,8 +2,8 @@ import React from "react";
 import { AlignCenterVertical, AlignEndVertical, AlignStartVertical, Bold, Italic, Strikethrough, Underline, Baseline, Highlighter, PaintBucket } from "lucide-react";
 import { ColorField } from "./Controls.jsx";
 import { Stepper, SelectField, Segmented, Divider } from "@/components/editorKit";
+import { fontSelectOptions } from "./fonts.js";
 
-const FONTS = ["Arial", "Calibri", "Verdana", "Georgia", "Times New Roman", "Courier New", "Inter", "Roboto", "Montserrat", "Poppins", "Cairo", "Tajawal", "Almarai"];
 
 /**
  * Text formatting controls for the floating selection bar. Used for a picked table cell (pass `onFill`
@@ -12,7 +12,7 @@ const FONTS = ["Arial", "Calibri", "Verdana", "Georgia", "Times New Roman", "Cou
  *
  * Clicking a control blurs an in-progress cell edit first, which commits the typed text
  * (same path the ribbon uses), then the format is applied to the saved cell text.
- * Font names are written into the .pptx, so the stored values are plain family names (see FONTS).
+ * Font names are written into the .pptx, so the stored values are plain family names (the list lives in ./fonts.js and mirrors the SVG editor).
  */
 export default function CellToolbar({ style, fill, themeColors, onText, onFill, onLiveText, onLiveFill, t }) {
   const size = Math.round(style?.size ?? 14);
@@ -20,8 +20,8 @@ export default function CellToolbar({ style, fill, themeColors, onText, onFill, 
   const colorProps = { themeColors, customColorLabel: t("pptxEditor.customColor"), themeLabel: t("pptxEditor.themeColors") };
   return (
     <>
-      <SelectField bare compact className="pptx-cell-font" label={t("pptxEditor.font")} value={FONTS.includes(style?.font) ? style.font : "Arial"}
-        options={FONTS.map((f) => ({ value: f, label: f }))} onChange={(font) => onText({ font })} />
+      <SelectField bare compact className="pptx-cell-font" label={t("pptxEditor.font")} value={style?.font || "Arial"}
+        options={fontSelectOptions(style?.font || "Arial", t)} onChange={(font) => onText({ font })} />
       <Stepper label={t("pptxEditor.size")} value={size} min={1} max={400} step={1} decimals={0} onCommit={(next) => onText({ size: next })} />
       <Divider />
       <Segmented label={t("pptxEditor.font")} items={[

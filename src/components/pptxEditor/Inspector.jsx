@@ -2,7 +2,7 @@ import React from "react";
 import {
   AlignStartVertical, AlignCenterVertical, AlignEndVertical,
   Group, Ungroup, Copy, Trash2, FlipHorizontal2, FlipVertical2,
-  RotateCcw, RotateCw, MousePointer2, SlidersHorizontal, Maximize2, Pencil,
+  Scissors, ClipboardCopy, ClipboardPaste, RotateCcw, RotateCw, MousePointer2, SlidersHorizontal, Maximize2, Pencil,
 } from "lucide-react";
 import {
   ActionGrid, QuickAction, SubCard, PropertySection, EmptyCard, NudgePad, RotationHalfWheel, RangeControl,
@@ -24,15 +24,29 @@ export { elementLabel };
  * `section` decides what is rendered: "all" (desktop sidebar), "arrange" or "size" (the two phone sheets,
  * which mirror the SVG editor's "Arrange" and "Size" tabs).
  */
-export default function Inspector({ tab = "arrange", section = "all", sel = [], model, a, t, locked = new Set(), pkg, labels }) {
+export default function Inspector({ tab = "arrange", section = "all", sel = [], model, a, t, locked = new Set(), pkg, labels, clip }) {
   if (tab === "layers") return <div className="pe-inspector pe-inspector-layers" data-testid="pptx-layers-panel"><PptxLayerList pkg={pkg} model={model} sel={sel} locked={locked} a={a} t={t} labels={labels} /></div>;
-  return <ArrangePanel section={section} sel={sel} model={model} a={a} t={t} locked={locked} />;
+  return <ArrangePanel section={section} sel={sel} model={model} a={a} t={t} locked={locked} clip={clip} />;
 }
 
 /** Stored rotation is 0–359°; the half-wheel works in −180…+180°. */
 const toStoredRotation = (v) => ((Math.round(v) % 360) + 360) % 360;
 
-function ArrangePanel({ section, sel, model, a, t, locked }) {
+/** Cut / Copy / Paste. Phone sheet: three buttons stacked in a column; desktop sidebar: one row like the other action cards. */
+function ClipboardCard({ clip, t, stacked }) {
+  if (!clip) return null;
+  return (
+    <SubCard className={`pe-clip-card ${stacked ? "is-stacked" : ""}`} title={stacked ? undefined : t("pptxEditor.ribbon.group.clipboard")}>
+      <ActionGrid cols={3} label={t("pptxEditor.ribbon.group.clipboard")} className="pe-clip-grid">
+        <QuickAction icon={Scissors} label={t("pptxEditor.cut")} onClick={clip.cut} disabled={!clip.hasSelection} testId="pptx-clip-cut" />
+        <QuickAction icon={ClipboardCopy} label={t("pptxEditor.copy")} onClick={clip.copy} disabled={!clip.hasSelection} testId="pptx-clip-copy" />
+        <QuickAction icon={ClipboardPaste} label={t("pptxEditor.paste")} onClick={clip.paste} disabled={!clip.canPaste} testId="pptx-clip-paste" />
+      </ActionGrid>
+    </SubCard>
+  );
+}
+
+function ArrangePanel({ section, sel, model, a, t, locked, clip }) {
   const [step, setStep] = React.useState(1);
   const el = sel[0] || null;
   const multi = sel.length > 1;
@@ -60,6 +74,7 @@ function ArrangePanel({ section, sel, model, a, t, locked }) {
   if (!el) {
     return (
       <div className={`pe-inspector pe-inspector-${section}`} data-testid={testId}>
+        {showArrange && <ClipboardCard clip={clip} t={t} stacked={section === "arrange"} />}
         <EmptyCard className="pe-arr-empty" icon={MousePointer2} title={t("pptxEditor.nothingSelected")}>{t("pptxEditor.selectHint")}</EmptyCard>
       </div>
     );
@@ -69,6 +84,8 @@ function ArrangePanel({ section, sel, model, a, t, locked }) {
     <div className={`pe-inspector pe-inspector-${section}`} data-testid={testId}>
       {showArrange && (
         <PropertySection icon={SlidersHorizontal} title={t("pptxEditor.section.arrange")} className="pe-section-arrange" testId="pptx-section-arrange">
+          <ClipboardCard clip={clip} t={t} stacked={section === "arrange"} />
+
           {multi && <span className="ek-note-chip">{t("pptxEditor.multiSelected", { n: sel.length })}</span>}
 
           {canEditText && (

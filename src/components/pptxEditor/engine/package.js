@@ -237,6 +237,24 @@ export class PptxPackage {
     }
     return result;
   }
+  /**
+   * Like transact(), but folds the resulting undo record into the previous one, so a follow-up fix
+   * (e.g. re-fitting a text frame to freshly formatted text) undoes together with the edit it belongs to.
+   */
+  amend(label, fn) {
+    const depth = this.undoStack.length;
+    const result = this.transact(label, fn);
+    if (depth > 0 && this.undoStack.length === depth + 1) {
+      const add = this.undoStack.pop();
+      const prev = this.undoStack[depth - 1];
+      for (const c of add.changes) {
+        const hit = prev.changes.find((x) => x.path === c.path);
+        if (hit) { hit.after = c.after; hit.bin = c.bin || hit.bin; }
+        else prev.changes.push(c);
+      }
+    }
+    return result;
+  }
   commit() {
     const tx = this.tx;
     this.tx = null;

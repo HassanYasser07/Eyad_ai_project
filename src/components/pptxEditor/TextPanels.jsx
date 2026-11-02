@@ -7,6 +7,7 @@ import {
   RangeControl, Segmented, SelectField, SwitchRow, ColorPickerCard, ColorSwatches, COLOR_PRESETS,
   AlignStartHorizontal, AlignCenterHorizontal, AlignEndHorizontal, hexToCss, cssToHex,
 } from "@/components/editorKit";
+import { PPTX_FONTS, fontSelectOptions } from "./fonts.js";
 import typographyArt from "@/components/svgEditor/icons/typography.svg";
 import colorsArt from "@/components/svgEditor/icons/colors.svg";
 import appearanceArt from "@/components/svgEditor/icons/appearance.svg";
@@ -26,7 +27,8 @@ import appearanceArt from "@/components/svgEditor/icons/appearance.svg";
  * `onText(props)` commits it (one undo step).
  */
 
-export const FONTS = ["Arial", "Calibri", "Verdana", "Georgia", "Times New Roman", "Courier New", "Inter", "Roboto", "Montserrat", "Poppins", "Cairo", "Tajawal", "Almarai"];
+// Same fonts as the SVG editor (see ./fonts.js); the stored value is the plain family name.
+export const FONTS = PPTX_FONTS;
 
 const iconProps = (size, strokeWidth) => ({ width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true" });
 function SuperscriptIcon({ size = 16, strokeWidth = 1.7 }) {
@@ -87,7 +89,7 @@ export function TextFormatGroups({
   const algn = paragraph?.algn || "l";
   const lineSpacingPct = Math.round((paragraph?.lnSpc?.pct ?? 1) * 100);
   const font = st.font || "Arial";
-  const fonts = FONTS.includes(font) ? FONTS : [font, ...FONTS];
+  const fontOptions = fontSelectOptions(font, t);
   const live = (props) => onLive?.(props);
   const live1 = onLive ? live : undefined;
 
@@ -134,12 +136,21 @@ export function TextFormatGroups({
 
   return (
     <div className="pe-tp" data-testid={testIds.root}>
+      {/* ACTIONS — first card, on the phone strip and in the desktop ribbon */}
+      {actions?.length > 0 && (
+        <TpGroup id="actions" title={t("pptxEditor.tp.actions")} icon={actionsIcon || Type}>
+          <TpActionGrid cols={Math.min(3, Math.ceil(actions.length / 2))}>
+            {actions.map((a) => <TpAction key={a.key} {...a} />)}
+          </TpActionGrid>
+        </TpGroup>
+      )}
+
       {/* TYPOGRAPHY — [ font · B I U S ]  [ size · letter spacing ] (same grouping as the SVG editor bar) */}
       <TpGroup idle={off} id="typography" title={t("pptxEditor.tp.typography")} art={typographyArt}>
         <TpStack>
           <TpRow>
             <SelectField bare compact className="pe-tp-font" label={t("pptxEditor.font")} value={font} disabled={off} testId={testIds.font}
-              options={fonts.map((f) => ({ value: f, label: f }))} onChange={(next) => onText({ font: next })} />
+              options={fontOptions} onChange={(next) => onText({ font: next })} />
           </TpRow>
           <TpRow>
             <Segmented label={t("pptxEditor.font")} items={[
@@ -212,13 +223,6 @@ export function TextFormatGroups({
         </TpStack>
       </TpGroup>
 
-      {actions?.length > 0 && (
-        <TpGroup id="actions" title={t("pptxEditor.tp.actions")} icon={actionsIcon || Type}>
-          <TpActionGrid cols={Math.min(3, Math.ceil(actions.length / 2))}>
-            {actions.map((a) => <TpAction key={a.key} {...a} />)}
-          </TpActionGrid>
-        </TpGroup>
-      )}
     </div>
   );
 }

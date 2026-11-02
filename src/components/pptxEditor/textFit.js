@@ -128,3 +128,47 @@ export function fitTableGrid(root, el, cols, rows, knownNatural) {
   const fitted = rows.map((h, i) => Math.max(h, natural[i]));
   return { w: cols.reduce((a, b) => a + b, 0), h: fitted.reduce((a, b) => a + b, 0), tableGrid: { cols: cols.slice(), rows: fitted } };
 }
+
+const FIT_TOLERANCE = 2 * EMU_PER_PX;
+
+/**
+ * Geometry changes that make each element's frame match its rendered content after a formatting change
+ * (letter spacing, line spacing, size, font, wrapping...). Only height (and, for centred / bottom anchored
+ * text boxes, the matching y so the text stays where it was) is touched; x, width, rotation and every other
+ * element stay as they are.
+ *  - plain text boxes follow their text in both directions (same rule as typing)
+ *  - shapes / placeholders only grow when their text no longer fits
+ *  - tables grow rows that no longer fit their text
+ * @returns {Array<object>} changes shaped like setBounds input ({id,x,y,w,h,rot,flipH,flipV,tableGrid?})
+ */
+export function fitContentChanges(root, model, ids) {
+  if (!root || !model?.elements || !ids?.length) return [];
+  const out = [];
+  for (const id of ids) {
+    const el = model.elements.find((x) => x.id === id);
+    if (!el || el.hidden || el.readOnlyGeometry) continue;
+    const b = { x: el.x, y: el.y, w: el.w, h: el.h, rot: el.rot, flipH: el.flipH, flipV: el.flipV };
+    if (el.kind === "table") {
+      const fit = fitTableToContent(root, el);
+      if (fit) out.push({ id, ...b, ...fit });
+      continue;
+    }
+    if (!isTextFitElement(el)) continue;
+    const need = measureTextFrameHeight(root, id, el.w);
+    if (need == null) continue;
+    const follows = el.kind === "text" && !el.ph;
+    const limit = Math.max(1, (model.size?.h || el.y + el.h) - el.y);
+    let h = follows ? need : Math.max(el.h, need);
+    h = Math.min(Math.max(limit, 1), Math.ceil(h));
+    if (!follows && h <= el.h) continue;
+    if (Math.abs(h - el.h) <= FIT_TOLERANCE) continue;
+    const anchor = el.text?.body?.anchor;
+    let y = el.y;
+    if (follows && !el.rot && (anchor === "ctr" || anchor === "b")) {
+      const delta = el.h - h;
+      y = Math.round(el.y + (anchor === "ctr" ? delta / 2 : delta));
+    }
+    out.push({ id, ...b, y, h });
+  }
+  return out;
+}

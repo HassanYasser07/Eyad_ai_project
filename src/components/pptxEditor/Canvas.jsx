@@ -4,7 +4,7 @@ import SlideView, { collectImagePaths } from "./SlideView.jsx";
 import { useMediaUrls } from "./useMediaUrls.js";
 import { EMU_PER_PX } from "./engine/slideModel.js";
 import { hitTest, rotatedBox, unionBox, snapBox } from "./engine/geometry.js";
-import { fitFrame, fitTableToContent, fitTableGrid, measureTableRowHeights } from "./textFit.js";
+import { fitFrame, fitTableToContent, fitTableGrid, measureTableRowHeights, fitContentChanges } from "./textFit.js";
 import TableHandles from "./TableHandles.jsx";
 
 const MIN_SIZE = 91440;
@@ -15,6 +15,51 @@ const GRID = 228600; // 0.25 in
 const HANDLES = [["nw", 0, 0], ["n", 0.5, 0], ["ne", 1, 0], ["e", 1, 0.5], ["se", 1, 1], ["s", 0.5, 1], ["sw", 0, 1], ["w", 0, 0.5]];
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const boundsOf = (e) => ({ x: e.x, y: e.y, w: e.w, h: e.h, rot: e.rot, flipH: e.flipH, flipV: e.flipV });
+
+/**
+ * The floating formatting bar scrolls sideways when it is wider than the slide area (phones).
+ * The stage turns native panning off (`touch-action: none`, needed for its own gestures) and that also reaches the bar
+ * on some mobile browsers, so a one-finger drag is turned into a scroll here. Wheel / trackpad scrolling over the bar
+ * scrolls the bar instead of zooming the slide behind it. Sliders keep their own drag.
+ */
+function useFloatingBarScroll(ref, active) {
+  React.useEffect(() => {
+    const el = ref.current;
+    if (!el || !active) return undefined;
+    let tracking = false, dragged = false, startX = 0, startLeft = 0, suppressUntil = 0;
+    const onStart = (e) => {
+      const onSlider = e.target?.closest?.('[role="slider"], .ek-range-slider, input[type="range"]');
+      tracking = e.touches.length === 1 && !onSlider;
+      dragged = false;
+      if (tracking) { startX = e.touches[0].clientX; startLeft = el.scrollLeft; }
+    };
+    const onMove = (e) => {
+      if (!tracking || e.touches.length !== 1) return;
+      const dx = e.touches[0].clientX - startX;
+      if (!dragged && Math.abs(dx) < 6) return;
+      dragged = true;
+      el.scrollLeft = startLeft - dx;
+    };
+    const onEnd = () => { if (dragged) suppressUntil = Date.now() + 350; tracking = false; dragged = false; };
+    const onClick = (e) => { if (Date.now() < suppressUntil) { e.preventDefault(); e.stopPropagation(); } };
+    const onWheel = (e) => {
+      if (el.scrollWidth <= el.clientWidth + 1) return;
+      el.scrollLeft += Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+      e.preventDefault(); e.stopPropagation();
+    };
+    el.addEventListener("touchstart", onStart, { passive: true });
+    el.addEventListener("touchmove", onMove, { passive: true });
+    el.addEventListener("touchend", onEnd);
+    el.addEventListener("touchcancel", onEnd);
+    el.addEventListener("click", onClick, true);
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => {
+      el.removeEventListener("touchstart", onStart); el.removeEventListener("touchmove", onMove);
+      el.removeEventListener("touchend", onEnd); el.removeEventListener("touchcancel", onEnd);
+      el.removeEventListener("click", onClick, true); el.removeEventListener("wheel", onWheel);
+    };
+  }, [ref, active]);
+}
 
 const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelect, onSelectionComplete, onInteractionStart, onCommit, onEditText, onTextCommit, onTextCancel, onTableCellSelect, onAutoSizeText, textAutoSizeHeights, liveOverrides, editingText, tableSelection, cellToolbar, toolbarLabel, onTableAdd, onTableSelectAll, onCopy, onDelete, onRotate, multi, grid, locked, labels, onZoom, compact, onSwipe, canPrev, canNext, keepInView }, ref) {
   const stageRef = React.useRef(null);
@@ -164,6 +209,8 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
       const fit = fitOf(c.id, c.w, c.h);
       return fit && (fit.h > c.h || fit.tableGrid) ? { ...c, ...fit } : c;
     }),
+    // Frames re-fitted to their current (already rendered) text, e.g. after letter / line spacing, size or font changes.
+    fitContent: (ids) => fitContentChanges(stageRef.current, R.current.model, ids),
     // Rows grown to fit freshly typed cell text; null when nothing needs to change.
     fitTable: (id) => { const el = R.current.model.elements.find((x) => x.id === id); return el ? fitTableToContent(stageRef.current, el) : null; },
     zoomBy: (f) => zoomAt(f, R.current.size.w / 2, R.current.size.h / 2),
@@ -200,6 +247,9 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
     for (const t of ["gesturestart", "gesturechange", "gestureend"]) el.addEventListener(t, stop);
     return () => { el.removeEventListener("wheel", wheel); for (const t of ["gesturestart", "gesturechange", "gestureend"]) el.removeEventListener(t, stop); };
   }, [zoomAt, clampPan]);
+
+  const toolbarRef = React.useRef(null);
+  useFloatingBarScroll(toolbarRef, !!cellToolbar);
 
   const cancelGesture = () => { gesture.current = null; setDraft(null); setGuides(null); setMarquee(null); setSwipe(null); };
 
@@ -659,7 +709,7 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
           canAdd={!tblSel.el.table.hasMerge} compact={compact} drag={tblDrag} selected={tableSelection?.id === tblSel.el.id && tableSelection.picked && tableSelection.scope === "table"} labels={labels}
           onSelectAll={() => onTableSelectAll?.(tblSel.el.id)} onAdd={(kind, boundary) => onTableAdd?.(kind, boundary)} onResizeStart={startTableResize} />}
         {/* Docked at the top of the workspace, under the editor ribbon; shown while something is selected (cell formatting for a picked table cell, otherwise tools matching the selected object). */}
-        {cellToolbar && <div className="pptx-cell-toolbar" role="toolbar" aria-label={toolbarLabel || labels.cellToolbar}
+        {cellToolbar && <div ref={toolbarRef} className="pptx-cell-toolbar" role="toolbar" aria-label={toolbarLabel || labels.cellToolbar}
           onPointerDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>{cellToolbar}</div>}
         {union && <div className="pptx-union" style={{ left: ox + (union.x / EMU_PER_PX) * s, top: oy + (union.y / EMU_PER_PX) * s, width: (union.w / EMU_PER_PX) * s, height: (union.h / EMU_PER_PX) * s }}><span>{frames.length}</span></div>}
         {marquee && <div className="pptx-marquee" style={{ left: Math.min(marquee.x0, marquee.x1), top: Math.min(marquee.y0, marquee.y1), width: Math.abs(marquee.x1 - marquee.x0), height: Math.abs(marquee.y1 - marquee.y0) }} />}
