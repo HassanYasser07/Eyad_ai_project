@@ -1,9 +1,9 @@
 import React from "react";
-import { AlertTriangle, CheckCircle2, ExternalLink, Loader2, Presentation, RefreshCw } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Download, Loader2, Pencil, Play, Presentation, RefreshCw } from "lucide-react";
 import { errorMessage } from "./presentationMessages";
 
 /** Result panel: shows the real state reported by the backend (never a simulated one). */
-export default function PresentationResult({ phase, job, error, timedOut, onRetry, onRecheck, loc }) {
+export default function PresentationResult({ phase, job, error, timedOut, onRetry, onRecheck, onOpen, onDownload, fileBusy = null, fileError = null, loc }) {
   if (phase === "idle") {
     return (
       <div className="grid min-h-64 place-items-center text-center text-muted-foreground">
@@ -35,18 +35,42 @@ export default function PresentationResult({ phase, job, error, timedOut, onRetr
           <CheckCircle2 className="mt-0.5 h-6 w-6 shrink-0 text-emerald-500" aria-hidden="true" />
           <div>
             <h2 className="text-lg font-black text-foreground">{loc({ ar: "تم إنشاء العرض التقديمي", en: "Your presentation is ready" })}</h2>
-            <p className="mt-1 text-sm text-muted-foreground">{loc({ ar: "أنشأته Gamma وهو متاح الآن للفتح والتعديل.", en: "Gamma created it and it is ready to open and edit." })}</p>
+            <p className="mt-1 text-sm text-muted-foreground">{loc({ ar: "أنشأته Gamma وهو متاح الآن للعرض والتعديل داخل المحرر.", en: "Gamma created it and it is ready to view and edit in the editor." })}</p>
           </div>
         </div>
-        <a href={job.gamma_url} target="_blank" rel="noopener noreferrer" data-testid="open-presentation"
-          className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-primary px-5 text-sm font-bold text-primary-foreground shadow hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background">
-          <ExternalLink className="h-4 w-4" aria-hidden="true" />
-          {loc({ ar: "فتح العرض التقديمي", en: "Open presentation" })}
-        </a>
-        {job.export_url && (
-          <a href={job.export_url} target="_blank" rel="noopener noreferrer" className="ms-3 text-sm font-bold text-primary underline-offset-4 hover:underline">
-            {loc({ ar: "تنزيل الملف", en: "Download file" })}
-          </a>
+        {onOpen && (job.has_pptx || job.export_url) ? (
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <button type="button" onClick={() => onOpen(job, { present: true })} disabled={Boolean(fileBusy)} data-testid="open-presentation"
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-primary px-5 text-sm font-bold text-primary-foreground shadow hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-60">
+                {fileBusy === "present" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Play className="h-4 w-4" aria-hidden="true" />}
+                {loc({ ar: "عرض العرض التقديمي", en: "View presentation" })}
+              </button>
+              <button type="button" onClick={() => onOpen(job, { present: false })} disabled={Boolean(fileBusy)} data-testid="edit-presentation"
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-border bg-card px-5 text-sm font-bold text-foreground hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60">
+                {fileBusy === "edit" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Pencil className="h-4 w-4" aria-hidden="true" />}
+                {loc({ ar: "تعديل", en: "Edit" })}
+              </button>
+              {onDownload && (
+                <button type="button" onClick={() => onDownload(job)} disabled={Boolean(fileBusy)} data-testid="export-presentation"
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-border bg-card px-5 text-sm font-bold text-foreground hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60">
+                  {fileBusy === "export" ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Download className="h-4 w-4" aria-hidden="true" />}
+                  {loc({ ar: "تصدير PPTX", en: "Export PPTX" })}
+                </button>
+              )}
+            </div>
+            {fileError && (
+              <p role="alert" data-testid="pptx-file-error" className="text-xs font-bold leading-6 text-destructive">
+                {loc({ ar: "تعذر فتح ملف العرض. حاول مرة أخرى.", en: "Could not open the presentation file. Please try again." })}
+                {typeof fileError === "string" && <> <code dir="ltr">{fileError}</code></>}
+              </p>
+            )}
+          </div>
+        ) : (
+          <p role="alert" data-testid="pptx-unavailable" className="text-xs font-bold leading-6 text-destructive">
+            {loc({ ar: "تم إنشاء العرض لكن Gamma لم تُرجع ملف PPTX للمحرر. أعد المحاولة بإنشاء عرض جديد.", en: "The presentation was created but Gamma did not return a PPTX file for the editor. Please generate again." })}
+            {job.pptx_error && <> <code dir="ltr">{job.pptx_error}</code></>}
+          </p>
         )}
         <ul className="space-y-1.5 rounded-xl border border-border bg-muted/50 p-3 text-xs leading-6 text-muted-foreground">
           <li>

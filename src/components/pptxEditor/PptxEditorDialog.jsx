@@ -120,7 +120,7 @@ function useSwipeNav({ onPrev, onNext, canPrev, canNext }) {
   return { handlers, dx, settling, consumeClick };
 }
 
-export default function PptxEditorDialog({ onClose }) {
+export default function PptxEditorDialog({ onClose, initialFile = null }) {
   const { t, direction } = useI18n();
   const compact = useCompact();
   const vp = useVisualViewport(compact);
@@ -351,6 +351,21 @@ export default function PptxEditorDialog({ onClose }) {
     if (bad) { setFeedback({ kind: "error", text: t(`pptxEditor.err.${bad}`) }); return; }
     try { await openBytes(new Uint8Array(await readFile(file)), file.name); } catch { setFeedback({ kind: "error", text: t("pptxEditor.err.READ_FAILED") }); }
   };
+  // A deck handed in by the host (e.g. the one Gamma just generated) opens straight away; `present` starts the slideshow.
+  const initialOpened = React.useRef(false);
+  const [presentWhenReady, setPresentWhenReady] = React.useState(false);
+  React.useEffect(() => {
+    if (!initialFile?.bytes || initialOpened.current) return;
+    initialOpened.current = true;
+    (async () => {
+      await openBytes(new Uint8Array(initialFile.bytes), initialFile.name || "presentation.pptx");
+      if (initialFile.present) setPresentWhenReady(true);
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialFile]);
+  React.useEffect(() => {
+    if (presentWhenReady && pkg) { setPresentWhenReady(false); setPresenting(true); }
+  }, [presentWhenReady, pkg]);
   const resetToOriginal = () => { const o = original.current; if (o) openBytes(o.slice(), fileName, o); };
 
   // ----- autosave draft + lifecycle -----

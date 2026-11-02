@@ -11,6 +11,8 @@ import OptionCardGroup from "@/components/presentations/OptionCardGroup";
 import ColorPackagePicker from "@/components/presentations/ColorPackagePicker";
 import PresentationResult from "@/components/presentations/PresentationResult";
 import { usePresentationGeneration } from "@/components/presentations/usePresentationGeneration";
+import { fetchPresentationFile } from "@/services/presentationService";
+import { saveBytes } from "@/components/pptxEditor/fileIO";
 import { fieldMessage } from "@/components/presentations/presentationMessages";
 import {
   DEFAULT_PRESENTATION_SETTINGS, LIMITS, PRESENTATION_AUDIENCES, PRESENTATION_LANGUAGES,
@@ -89,11 +91,46 @@ export default function PresentationsStudio() {
   const [pptxEditorOpen, setPptxEditorOpen] = React.useState(false);
   const [pptxEditorAttempt, setPptxEditorAttempt] = React.useState(0);
   const [PptxEditorComponent, setPptxEditorComponent] = React.useState(() => createPptxEditorComponent());
+  const [editorFile, setEditorFile] = React.useState(null); // { bytes, name, present } for the generated deck
+  const [fileBusy, setFileBusy] = React.useState(null); // "present" | "edit" | "export"
+  const [fileError, setFileError] = React.useState(null); // null | error code string
   const formRef = React.useRef(null);
   const retryPptxEditor = () => {
     setPptxEditorAttempt((attempt) => attempt + 1);
     setPptxEditorComponent(() => createPptxEditorComponent());
   };
+
+  // Loads the generated .pptx from our storage, then shows it in our own editor (or exports it).
+  const openGenerated = React.useCallback(async (finishedJob, { present = false } = {}) => {
+    if (fileBusy || !finishedJob?.id) return;
+    setFileError(null);
+    setFileBusy(present ? "present" : "edit");
+    try {
+      const file = await fetchPresentationFile(finishedJob.id);
+      setEditorFile({ ...file, present });
+      setPptxEditorOpen(true);
+    } catch (err) {
+      console.warn("Could not load the generated presentation", err?.code, err?.detail);
+      setFileError([err?.code, err?.detail].filter(Boolean).join(": ") || "UNKNOWN");
+    } finally {
+      setFileBusy(null);
+    }
+  }, [fileBusy]);
+
+  const exportGenerated = React.useCallback(async (finishedJob) => {
+    if (fileBusy || !finishedJob?.id) return;
+    setFileError(null);
+    setFileBusy("export");
+    try {
+      const file = await fetchPresentationFile(finishedJob.id);
+      await saveBytes(file.bytes, file.name);
+    } catch (err) {
+      console.warn("Could not export the generated presentation", err?.code, err?.detail);
+      setFileError([err?.code, err?.detail].filter(Boolean).join(": ") || "UNKNOWN");
+    } finally {
+      setFileBusy(null);
+    }
+  }, [fileBusy]);
 
   // After Gamma confirms a finished presentation, remember its link on the project (non-fatal if it fails).
   const saveToProject = React.useCallback(async (job) => {
@@ -174,7 +211,7 @@ export default function PresentationsStudio() {
             {loc({ ar: "رجوع", en: "Back" })}
           </button>
           <div className="flex items-center gap-2">
-            <button type="button" onClick={() => setPptxEditorOpen(true)} data-testid="open-pptx-editor" className="inline-flex items-center gap-1.5 rounded-full border border-primary/20 bg-card px-3 py-2 text-xs font-extrabold text-primary shadow-sm hover:bg-primary/5">
+            <button type="button" onClick={() => { setEditorFile(null); setPptxEditorOpen(true); }} data-testid="open-pptx-editor" className="inline-flex items-center gap-1.5 rounded-full border border-primary/20 bg-card px-3 py-2 text-xs font-extrabold text-primary shadow-sm hover:bg-primary/5">
               <PencilRuler className="h-4 w-4" />
               <span>{t("pptxEditor.title")}</span>
             </button>
@@ -314,7 +351,8 @@ export default function PresentationsStudio() {
 
           <aside aria-label={loc({ ar: "نتيجة التوليد", en: "Generation result" })} className="h-fit rounded-3xl border border-border bg-card p-5 shadow-sm md:p-6 lg:sticky lg:top-6">
             <PresentationResult phase={phase} job={job} error={genError} timedOut={timedOut} loc={loc}
-              onRetry={submit} onRecheck={generation.recheck} />
+              onRetry={submit} onRecheck={generation.recheck}
+              onOpen={openGenerated} onDownload={exportGenerated} fileBusy={fileBusy} fileError={fileError} />
           </aside>
         </div>
 
@@ -324,7 +362,7 @@ export default function PresentationsStudio() {
         <PptxEditorLoadBoundary
           key={pptxEditorAttempt}
           loc={loc}
-          onClose={() => setPptxEditorOpen(false)}
+          onClose={() => { setPptxEditorOpen(false); setEditorFile(null); }}
           onRetry={retryPptxEditor}
         >
           <React.Suspense fallback={
@@ -332,7 +370,7 @@ export default function PresentationsStudio() {
               <div className="rounded-2xl bg-white px-6 py-5 text-sm font-bold text-slate-700 shadow-xl">{loc({ ar: "جاري تحميل محرر العروض…", en: "Loading the presentation editor…" })}</div>
             </div>
           }>
-            <PptxEditorComponent onClose={() => setPptxEditorOpen(false)} />
+            <PptxEditorComponent initialFile={editorFile} onClose={() => { setPptxEditorOpen(false); setEditorFile(null); }} />
           </React.Suspense>
         </PptxEditorLoadBoundary>
       )}

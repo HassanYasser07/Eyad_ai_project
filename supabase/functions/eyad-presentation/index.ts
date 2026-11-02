@@ -37,6 +37,12 @@ const GAMMA_TIMEOUT_MS = 25_000;
 const MAX_ACTIVE_JOBS_PER_USER = 2;
 const ACTIVE_WINDOW_MS = 30 * 60 * 1000;
 const STALE_PENDING_MS = 30 * 60 * 1000;
+const PPTX_BUCKET = "presentation-files";
+const PPTX_MAX_BYTES = 100 * 1024 * 1024;
+const PPTX_FETCH_TIMEOUT_MS = 60_000;
+const PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+const SIGNED_URL_TTL_S = 300;
+const MAX_EXPORT_RECHECKS = 3; // bounded: a completed job never polls Gamma forever
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function json(data: unknown, status = 200) {
@@ -120,6 +126,10 @@ function publicJob(row: any) {
     status: row.status,
     gamma_url: row.gamma_url || null,
     export_url: row.export_url || null,
+    // true once the .pptx has been copied into our own storage and can be opened in the Eyad editor
+    has_pptx: Boolean(row.pptx_path),
+    pptx_error: row.pptx_error || null,
+    title: String(row.settings?.topic || "").slice(0, 80),
     error_code: row.error_code || null,
     error_message: row.error_message || null,
     color_application: meta.colorApplication || null,
@@ -129,6 +139,44 @@ function publicJob(row: any) {
     purpose_source: meta.purposeSource || null,
     created_at: row.created_at,
   };
+}
+
+/**
+ * Copies Gamma's exported .pptx into our private bucket.
+ * Gamma export links are temporary and not meant for browser fetches (no CORS guarantee),
+ * so the editor always reads the file from our own storage via a short-lived signed URL.
+ * Never throws: a failure leaves the job "completed" (Gamma link still works) and is retried on the next status call.
+ */
+async function persistPptx(admin: any, job: any, exportUrl: string | null) {
+  if (!exportUrl || job.pptx_path) return job;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), PPTX_FETCH_TIMEOUT_MS);
+  try {
+    const response = await fetch(exportUrl, { signal: controller.signal });
+    if (!response.ok) throw new Error(`EXPORT_HTTP_${response.status}`);
+    const declared = Number(response.headers.get("content-length") || 0);
+    if (declared > PPTX_MAX_BYTES) throw new Error("EXPORT_TOO_LARGE");
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (bytes.length === 0 || bytes.length > PPTX_MAX_BYTES) throw new Error("EXPORT_BAD_SIZE");
+    // A .pptx is a ZIP: it must start with "PK".
+    if (bytes[0] !== 0x50 || bytes[1] !== 0x4b) throw new Error("EXPORT_NOT_PPTX");
+
+    const path = `${job.owner_id}/${job.id}.pptx`;
+    const { error: uploadError } = await admin.storage.from(PPTX_BUCKET).upload(path, bytes, { contentType: PPTX_MIME, upsert: true });
+    if (uploadError) throw new Error(`STORAGE_UPLOAD_FAILED: ${String((uploadError as any)?.message || "").slice(0, 80)}`);
+
+    const { data: updated } = await admin.from("gamma_presentation_jobs").update({
+      pptx_path: path, pptx_error: null, updated_at: new Date().toISOString(),
+    }).eq("id", job.id).select("*").single();
+    return updated || { ...job, pptx_path: path };
+  } catch (error) {
+    const code = String((error as Error)?.message || "PPTX_PERSIST_FAILED").slice(0, 120);
+    console.error("[eyad-presentation] pptx persist failed", code);
+    await admin.from("gamma_presentation_jobs").update({ pptx_error: code, updated_at: new Date().toISOString() }).eq("id", job.id);
+    return { ...job, pptx_error: code };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 Deno.serve(async (req: Request) => {
@@ -255,7 +303,29 @@ Deno.serve(async (req: Request) => {
     const { data: job } = await admin.from("gamma_presentation_jobs").select("*")
       .eq("id", jobId).eq("owner_id", user.id).maybeSingle();
     if (!job) return json({ error: "JOB_NOT_FOUND" }, 404);
-    if (job.status !== "pending") return json({ ok: true, job: publicJob(job) });
+    if (job.status !== "pending") {
+      if (job.status !== "completed" || job.pptx_path) return json({ ok: true, job: publicJob(job) });
+      let current = job;
+      let exportUrl: string | null = job.export_url || null;
+      // The export link can appear slightly after "completed": ask Gamma again before giving up.
+      const checks = Number(job.gamma_meta?.exportChecks || 0);
+      if (!exportUrl && job.generation_id && checks < MAX_EXPORT_RECHECKS) {
+        await admin.from("gamma_presentation_jobs").update({ gamma_meta: { ...(job.gamma_meta || {}), exportChecks: checks + 1 } }).eq("id", job.id);
+        const again = await gammaFetch(`/generations/${encodeURIComponent(job.generation_id)}`, gammaKey, { method: "GET" });
+        if (again.ok) {
+          exportUrl = normalizeGammaStatus(again.body).exportUrl;
+          if (exportUrl) {
+            const { data: withUrl } = await admin.from("gamma_presentation_jobs").update({ export_url: exportUrl, updated_at: new Date().toISOString() }).eq("id", job.id).select("*").single();
+            current = withUrl || { ...job, export_url: exportUrl };
+          }
+        }
+      }
+      if (!exportUrl) {
+        await admin.from("gamma_presentation_jobs").update({ pptx_error: "NO_EXPORT_URL", updated_at: new Date().toISOString() }).eq("id", job.id);
+        return json({ ok: true, job: publicJob({ ...current, pptx_error: "NO_EXPORT_URL" }) });
+      }
+      return json({ ok: true, job: publicJob(await persistPptx(admin, current, exportUrl)) });
+    }
     if (!job.generation_id) return json({ ok: true, job: publicJob(job) });
 
     const result = await gammaFetch(`/generations/${encodeURIComponent(job.generation_id)}`, gammaKey, { method: "GET" });
@@ -293,7 +363,31 @@ Deno.serve(async (req: Request) => {
       updated_at: new Date().toISOString(),
     }).eq("id", job.id).select("*").single();
 
-    return json({ ok: true, job: publicJob(finished || job) });
+    let final = finished;
+    if (finished && finished.status === "completed") {
+      final = normalized.exportUrl
+        ? await persistPptx(admin, finished, normalized.exportUrl)
+        : { ...finished, pptx_error: "NO_EXPORT_URL" };
+    }
+    return json({ ok: true, job: publicJob(final || finished || job) });
+  }
+
+  /* ------------------------------ download ------------------------------ */
+  if (action === "download") {
+    const jobId = String(body?.job_id || "");
+    if (!UUID.test(jobId)) return json({ error: "INVALID_JOB_ID" }, 400);
+    const { data: job } = await admin.from("gamma_presentation_jobs").select("*")
+      .eq("id", jobId).eq("owner_id", user.id).maybeSingle();
+    if (!job) return json({ error: "JOB_NOT_FOUND" }, 404);
+    if (job.status !== "completed") return json({ error: "JOB_NOT_COMPLETED" }, 409);
+    const ready = job.pptx_path ? job : await persistPptx(admin, job, job.export_url);
+    if (!ready.pptx_path) {
+      const reason = ready.pptx_error || (job.export_url ? "PPTX_PERSIST_FAILED" : "NO_EXPORT_URL");
+      return json({ error: "PPTX_NOT_AVAILABLE", detail: reason, retryable: false }, 404);
+    }
+    const { data: signed, error: signError } = await admin.storage.from(PPTX_BUCKET).createSignedUrl(ready.pptx_path, SIGNED_URL_TTL_S);
+    if (signError || !signed?.signedUrl) return json({ error: "PPTX_SIGN_FAILED", retryable: true }, 500);
+    return json({ ok: true, url: signed.signedUrl, file_name: `${String(ready.settings?.topic || "presentation").replace(/[\\/:*?"<>|\u0000-\u001f]+/g, "-").trim().slice(0, 60) || "presentation"}.pptx` });
   }
 
   return json({ error: "UNKNOWN_ACTION" }, 400);

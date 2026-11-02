@@ -248,6 +248,8 @@ export function buildGammaRequest(input, options = {}) {
     inputText: topic,
     textMode: "generate",
     format: "presentation",
+    // Ask Gamma for a real .pptx so the presentation can be shown/edited/exported inside Eyad's own editor.
+    exportAs: "pptx",
     additionalInstructions,
     textOptions,
     cardOptions: { dimensions: "16x9" },
