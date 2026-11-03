@@ -174,6 +174,7 @@ export default function PptxEditorDialog({ onClose }) {
   const [dragOver, setDragOver] = React.useState(false);
   const [panel, setPanel] = React.useState("arrange");
   const [rightCollapsed, setRightCollapsed] = React.useState(false);
+  const [leftCollapsed, setLeftCollapsed] = React.useState(false);
   // Phone only: the layers sidebar (same drawer pattern as the SVG editor). Desktop shows layers as a tab of the properties panel.
   const [layersOpen, setLayersOpen] = React.useState(false);
   // ----- live preview: a transient overlay on the displayed slide model while a control is being dragged / typed.
@@ -1110,14 +1111,30 @@ export default function PptxEditorDialog({ onClose }) {
                 {ribbonTabs.map((key) => { const TabIcon = RIBBON_ICONS[key]; return <button key={key} type="button" role="tab" aria-selected={activeRibbon === key} className={activeRibbon === key ? "is-active" : ""}
                   onClick={() => openRibbon(key)}>{TabIcon && <TabIcon size={16} aria-hidden="true" />}<span>{t(`pptxEditor.ribbon.${key}`)}</span></button>; })}
               </div>
-              <div className="pe-ribbon" role="toolbar" aria-label={t(`pptxEditor.ribbon.${activeRibbon}`)} data-testid="pptx-ribbon-content">
+              <div key={activeRibbon} className="pe-ribbon" role="toolbar" aria-label={t(`pptxEditor.ribbon.${activeRibbon}`)} data-testid="pptx-ribbon-content">
                 {ribbonContent}
               </div>
             </div>
           )}
 
           <div className="pe-body">
-            {!compact && <aside className="pe-left"><SlidesPanel pkg={pkg} pres={pres} idx={safeIdx} onSelect={slideOps.select} onAdd={slideOps.add} onDuplicate={dupSlide} onDelete={slideOps.del} onDeleteCurrent={requestDeleteCurrentSlide} onMove={slideOps.move} t={t} labels={labels} /></aside>}
+            {!compact && (
+              <aside className={`pe-left ${leftCollapsed ? "is-collapsed" : ""}`}>
+                <PanelShell
+                  icon={SlidesIcon}
+                  title={t("pptxEditor.slides")}
+                  railTitle={t("pptxEditor.slides")}
+                  count={pres?.slides.length}
+                  collapsed={leftCollapsed}
+                  onToggleCollapsed={() => setLeftCollapsed((v) => !v)}
+                  collapseLabel={t("pptxEditor.collapsePanel")}
+                  expandLabel={t("pptxEditor.expandPanel")}
+                  side="start"
+                >
+                  <SlidesPanel pkg={pkg} pres={pres} idx={safeIdx} onSelect={slideOps.select} onAdd={slideOps.add} onDuplicate={dupSlide} onDelete={slideOps.del} onDeleteCurrent={requestDeleteCurrentSlide} onMove={slideOps.move} t={t} labels={labels} />
+                </PanelShell>
+              </aside>
+            )}
             <main className="pe-main" dir="ltr">
               {okModel ? (
                 <Canvas ref={canvasRef} pkg={pkg} model={canvasModel} liveOverrides={canvasLiveOverrides} selection={selection} onSelect={setSelection} onSelectionComplete={activateContextForSelection} onInteractionStart={clearContextSheetTimer} onCommit={commitBounds} onEditText={openText} editingText={textEdit} tableSelection={tableFocus} cellToolbar={cellToolbarNode || selectionToolbarNode} toolbarLabel={cellToolbarNode ? labels.cellToolbar : labels.selectionToolbar} onTableAdd={addTableLine} onTableSelectAll={selectWholeTable} textAutoSizeHeights={textAutoSizeDrafts} onTableCellSelect={selectTableCell} onAutoSizeText={autoSizeTextHeight} onTextCommit={commitInlineText} onTextCancel={cancelInlineText} onCopy={copyNow} onDelete={a.remove} onRotate={() => a.rotate(90)} multi={multi} grid={grid} locked={lockedIds} labels={labels} onZoom={setZoom} compact={compact} onSwipe={compact ? swipeSlide : undefined} canPrev={safeIdx > 0} canNext={!!pres && safeIdx < pres.slides.length - 1} keepInView={hasSheet} />
@@ -1147,7 +1164,9 @@ export default function PptxEditorDialog({ onClose }) {
                   activeTab={panel}
                   onTabChange={setPanel}
                 >
-                  <Inspector tab={panel} sel={sel} model={okModel} a={a} t={t} locked={lockedIds} pkg={pkg} labels={labels} clip={clip} />
+                  <div key={panel} className="pe-panel-swap" data-to={panel}>
+                    <Inspector tab={panel} sel={sel} model={okModel} a={a} t={t} locked={lockedIds} pkg={pkg} labels={labels} clip={clip} />
+                  </div>
                 </PanelShell>
               </aside>
             )}

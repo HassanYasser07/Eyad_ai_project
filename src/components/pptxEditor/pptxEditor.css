@@ -1018,3 +1018,79 @@ with an opacity slider ---- */
 .pe-root.is-compact .pe-sheet .pe-mobile-ribbon.is-panels > .pe-rg .pe-ribbon-group-items { min-height: 0; }
 .pe-root.is-compact .pe-sheet .pe-mobile-ribbon.is-panels > .pe-rg .pe-ribbon-button { flex: 0 0 auto; min-width: 66px; max-width: 92px; min-height: 64px; }
 .pe-root.is-compact .pe-sheet .pe-mobile-ribbon.is-panels > .pe-rg .pe-ribbon-group-items:has(.ek-field, .ek-select-bare, .ek-color-chip, .ek-switch-row, .pe-slider-field, .ek-stepper, .pe-disabled-control) .pe-ribbon-button { min-height: 44px; max-width: none; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   RIBBON TAB TRANSITIONS (desktop) — same card entrance as the phone sheet: when you switch tabs the ribbon remounts
+   (keyed by tab) and its cards rise in one after another; the title art gets a small pop.
+   ═══════════════════════════════════════════════════════════════════════════ */
+@keyframes pe-art-pop { from { opacity: 0; transform: scale(.82) rotate(-4deg); } to { opacity: 1; transform: none; } }
+@keyframes pe-tab-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: no-preference) {
+  .pe-root.is-desktop .pe-ribbon > .pe-tp-group,
+  .pe-root.is-desktop .pe-ribbon > .pe-tp > .pe-tp-group { animation: pe-card-in .38s cubic-bezier(.16, 1, .3, 1) both; }
+  .pe-root.is-desktop .pe-ribbon > .pe-tp-group:nth-child(2), .pe-root.is-desktop .pe-ribbon > .pe-tp > .pe-tp-group:nth-child(2) { animation-delay: .05s; }
+  .pe-root.is-desktop .pe-ribbon > .pe-tp-group:nth-child(3), .pe-root.is-desktop .pe-ribbon > .pe-tp > .pe-tp-group:nth-child(3) { animation-delay: .10s; }
+  .pe-root.is-desktop .pe-ribbon > .pe-tp-group:nth-child(4), .pe-root.is-desktop .pe-ribbon > .pe-tp > .pe-tp-group:nth-child(4) { animation-delay: .15s; }
+  .pe-root.is-desktop .pe-ribbon > .pe-tp-group:nth-child(n+5), .pe-root.is-desktop .pe-ribbon > .pe-tp > .pe-tp-group:nth-child(n+5) { animation-delay: .20s; }
+  .pe-root.is-desktop .pe-ribbon .pe-tp-title-art { animation: pe-art-pop .5s cubic-bezier(.34, 1.56, .64, 1) .08s both; }
+  .pe-root.is-desktop .pe-ribbon-tabs button.is-active { animation: pe-tab-in .25s ease-out both; }
+  .pe-root.is-desktop .pe-ribbon-tabs button.is-active svg { animation: pe-art-pop .4s cubic-bezier(.34, 1.56, .64, 1) both; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SIDEBARS — Slides (start) and Properties (end): collapsible panels with the same motion,
+   plus a slide-and-fade when the Properties panel switches between Arrange and Layers.
+   ═══════════════════════════════════════════════════════════════════════════ */
+@keyframes pe-panel-reveal { from { opacity: 0; transform: translateX(var(--pe-reveal-x, -10px)); } to { opacity: 1; transform: none; } }
+@keyframes pe-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes pe-swap-in { from { opacity: 0; transform: translateX(var(--pe-swap-x, 14px)); } to { opacity: 1; transform: none; } }
+
+/* Slides panel = the same panel shell as Properties */
+.pe-left { display: flex; flex-direction: column; width: 232px; padding: 0; overflow: hidden; transition: width 220ms cubic-bezier(.4, 0, .2, 1); }
+.pe-left.is-collapsed { width: 56px; }
+.pe-left .ek-panel { flex: 1 1 auto; height: 100%; }
+.pe-left .ek-panel-content { padding: 10px 10px 14px; }
+.pe-left .ek-panel-heading, .pe-right .ek-panel-heading { overflow: hidden; }
+.pe-right { overflow: hidden; }
+.pe-right.is-collapsed .ek-panel-heading-actions .ek-count, .pe-left.is-collapsed .ek-panel-heading-actions .ek-count { display: none; }
+/* collapsed rail keeps its vertical layout at every desktop width (the kit switches it to a row below 1000px) */
+.pe-left .ek-panel.is-collapsed .ek-panel-heading, .pe-right .ek-panel.is-collapsed .ek-panel-heading { flex-direction: column; justify-content: center; min-height: 64px; gap: 8px; padding: 8px 4px; }
+.pe-left .ek-panel.is-collapsed .ek-panel-heading > span, .pe-right .ek-panel.is-collapsed .ek-panel-heading > span { flex-direction: column; gap: 0; }
+.pe-left .ek-panel.is-collapsed .ek-panel-heading-label, .pe-right .ek-panel.is-collapsed .ek-panel-heading-label { display: none; }
+.pe-left .ek-panel.is-collapsed .ek-rail-title, .pe-right .ek-panel.is-collapsed .ek-rail-title { display: flex !important; }
+/* RTL: the chevrons point the other way */
+.pe-root[dir="rtl"] .pe-left .ek-panel-toggle svg, .pe-root[dir="rtl"] .pe-right .ek-panel-toggle svg { transform: scaleX(-1); }
+
+.pe-right .pe-panel-swap { --pe-swap-x: 14px; display: flex; flex-direction: column; }
+.pe-right .pe-panel-swap[data-to="arrange"] { --pe-swap-x: -14px; }
+.pe-root[dir="rtl"] .pe-right .pe-panel-swap { --pe-swap-x: -14px; }
+.pe-root[dir="rtl"] .pe-right .pe-panel-swap[data-to="arrange"] { --pe-swap-x: 14px; }
+.pe-root[dir="rtl"] .pe-left .ek-panel-body { --pe-reveal-x: 10px; }
+.pe-right .ek-panel-body { --pe-reveal-x: 10px; }
+.pe-root[dir="rtl"] .pe-right .ek-panel-body { --pe-reveal-x: -10px; }
+
+@media (prefers-reduced-motion: no-preference) {
+  /* expanding: the panel content slides in from its own edge */
+  .pe-left .ek-panel:not(.is-collapsed) .ek-panel-body,
+  .pe-right .ek-panel:not(.is-collapsed) .ek-panel-body { animation: pe-panel-reveal .34s cubic-bezier(.16, 1, .3, 1) .06s both; }
+  .pe-left .ek-panel:not(.is-collapsed) .ek-panel-heading-label,
+  .pe-right .ek-panel:not(.is-collapsed) .ek-panel-heading-label { animation: pe-fade-in .28s ease-out .1s both; }
+  .pe-left .ek-panel.is-collapsed .ek-rail-title,
+  .pe-right .ek-panel.is-collapsed .ek-rail-title { animation: pe-fade-in .3s ease-out .1s both; }
+  /* slide thumbnails rise in one after another */
+  .pe-left .pe-slides-actions, .pe-left .pe-slides li, .pe-left .pe-add-slide { animation: pe-card-in .36s cubic-bezier(.16, 1, .3, 1) both; }
+  .pe-left .pe-slides li:nth-child(2) { animation-delay: .04s; }
+  .pe-left .pe-slides li:nth-child(3) { animation-delay: .08s; }
+  .pe-left .pe-slides li:nth-child(4) { animation-delay: .12s; }
+  .pe-left .pe-slides li:nth-child(5) { animation-delay: .16s; }
+  .pe-left .pe-slides li:nth-child(n+6) { animation-delay: .2s; }
+  /* Arrange <-> Layers: the whole tab content slides + fades, its cards follow one by one */
+  .pe-right .pe-panel-swap { animation: pe-swap-in .3s cubic-bezier(.16, 1, .3, 1) both; }
+  .pe-right .pe-panel-swap .ek-property-section, .pe-right .pe-panel-swap .pe-layer-card { animation: pe-card-in .34s cubic-bezier(.16, 1, .3, 1) both; }
+  .pe-right .pe-panel-swap .ek-property-section:nth-child(2), .pe-right .pe-panel-swap .pe-layer-card:nth-child(2) { animation-delay: .04s; }
+  .pe-right .pe-panel-swap .ek-property-section:nth-child(3), .pe-right .pe-panel-swap .pe-layer-card:nth-child(3) { animation-delay: .08s; }
+  .pe-right .pe-panel-swap .ek-property-section:nth-child(4), .pe-right .pe-panel-swap .pe-layer-card:nth-child(4) { animation-delay: .12s; }
+  .pe-right .pe-panel-swap .ek-property-section:nth-child(n+5), .pe-right .pe-panel-swap .pe-layer-card:nth-child(n+5) { animation-delay: .16s; }
+  .pe-right .ek-panel-tab.is-active { animation: pe-tab-in .25s ease-out both; }
+}
+@media (prefers-reduced-motion: reduce) { .pe-left { transition: none; } }
