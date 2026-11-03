@@ -994,5 +994,27 @@ with an opacity slider ---- */
 .pe-root.is-compact .pe-sheet .pe-mobile-ribbon .pe-ribbon-group { flex: 0 0 auto; max-width: none; box-sizing: border-box; }
 
 /* Every card's title tile (icon + name) is the same square, whatever the label length. */
-.pe-tp-title { box-sizing: border-box; width: 88px; height: 88px; min-width: 88px; align-self: center; padding: 6px; }
-.pe-tp-title em { max-width: 100%; white-space: normal; text-wrap: balance; overflow-wrap: anywhere; }
+.pe-tp-title { box-sizing: border-box; width: 88px; height: 88px; min-width: 88px; align-self: center; padding: 6px 4px; }
+.pe-tp-title em { max-width: 100%; letter-spacing: .015em; white-space: normal; text-wrap: balance; overflow-wrap: anywhere; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   RIBBON CARDS — every tab (Home, Insert, Design, Shapes, Image, View …) uses the same titled card as the Text tab:
+   an illustration tile on the start side, the group's controls beside it.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.pe-rg .pe-ribbon-group-items { display: flex; flex: 0 0 auto; align-items: center; gap: 6px; min-width: 0; min-height: 0; }
+.pe-rg .pe-ribbon-button { min-width: 62px; max-width: 88px; min-height: 60px; background: var(--ek-surface-2); border: 1px solid hsl(var(--border) / .55); border-radius: 10px; }
+.pe-rg .pe-ribbon-button.is-active { color: hsl(var(--primary)); background: hsl(var(--primary) / .1); border-color: hsl(var(--primary) / .3); }
+.pe-rg .pe-ribbon-button.is-danger { color: hsl(0 72% 48%); }
+.pe-rg .pe-ribbon-button:disabled { opacity: .4; cursor: not-allowed; }
+.pe-rg .pe-ribbon-button:focus-visible { outline: 2px solid hsl(var(--primary) / .6); outline-offset: 1px; }
+.pe-rg .pe-ribbon-button > span { font-weight: 650; }
+
+/* phone sheet: all tabs are one swipeable strip of cards (the same strip the Text and Table tabs always used) */
+@media (prefers-reduced-motion: no-preference) {
+  .pe-root.is-compact .pe-sheet .pe-mobile-ribbon.is-panels > .pe-tp-group:nth-child(2) { animation-delay: .04s; }
+  .pe-root.is-compact .pe-sheet .pe-mobile-ribbon.is-panels > .pe-tp-group:nth-child(3) { animation-delay: .08s; }
+  .pe-root.is-compact .pe-sheet .pe-mobile-ribbon.is-panels > .pe-tp-group:nth-child(n+4) { animation-delay: .12s; }
+}
+.pe-root.is-compact .pe-sheet .pe-mobile-ribbon.is-panels > .pe-rg .pe-ribbon-group-items { min-height: 0; }
+.pe-root.is-compact .pe-sheet .pe-mobile-ribbon.is-panels > .pe-rg .pe-ribbon-button { flex: 0 0 auto; min-width: 66px; max-width: 92px; min-height: 64px; }
+.pe-root.is-compact .pe-sheet .pe-mobile-ribbon.is-panels > .pe-rg .pe-ribbon-group-items:has(.ek-field, .ek-select-bare, .ek-color-chip, .ek-switch-row, .pe-slider-field, .ek-stepper, .pe-disabled-control) .pe-ribbon-button { min-height: 44px; max-width: none; }

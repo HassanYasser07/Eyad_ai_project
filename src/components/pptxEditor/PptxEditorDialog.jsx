@@ -15,7 +15,22 @@ import Canvas from "./Canvas.jsx";
 import CellToolbar from "./CellToolbar.jsx";
 import SelectionToolbar from "./SelectionToolbar.jsx";
 import { ensureEditorFonts } from "./fonts.js";
-import { TextFormatGroups, TableStructureGroup, TableScopeGroup, TableDesignGroup } from "./TextPanels.jsx";
+import { TextFormatGroups, TableStructureGroup, TableScopeGroup, TableDesignGroup, TpGroup } from "./TextPanels.jsx";
+import appearanceArt from "@/components/svgEditor/icons/appearance.svg";
+import tableArt from "./icons/table.svg";
+import clipboardArt from "./icons/clipboard.svg";
+import objectsArt from "./icons/objects.svg";
+import slidesArt from "./icons/slides.svg";
+import shapesArt from "./icons/shapes.svg";
+import mediaArt from "./icons/media.svg";
+import slideBackgroundArt from "./icons/slideBackground.svg";
+import quickBackgroundsArt from "./icons/quickBackgrounds.svg";
+import backgroundActionsArt from "./icons/backgroundActions.svg";
+import colorPaletteArt from "./icons/colorPalette.svg";
+import transformArt from "./icons/transform.svg";
+import imageArt from "./icons/image.svg";
+import zoomArt from "./icons/zoom.svg";
+import workspaceArt from "./icons/workspace.svg";
 import SlideView, { collectImagePaths } from "./SlideView.jsx";
 import Inspector from "./Inspector.jsx";
 import PptxLayersPanel from "./PptxLayersPanel.jsx";
@@ -907,42 +922,14 @@ export default function PptxEditorDialog({ onClose }) {
   const disabledField = (disabled, child) => <fieldset disabled={disabled} className={`pe-disabled-control ${disabled ? "is-disabled" : ""}`} aria-disabled={disabled || undefined}>{child}</fieldset>;
   const ribbonTabs = ["home", "insert", "design", "text", "shapes", "image", "table", "view"];
   const RIBBON_ICONS = { home: HomeIcon, insert: InsertIcon, design: DesignIcon, text: TextBoxIcon, shapes: ShapesIcon, image: PictureIcon, table: TableIcon, view: ViewIcon };
-  // Phone ribbon sheet: every group becomes a card in a column; small related groups are stacked two-high so all
-  // columns end up the same height (the CSS stretches them to the tallest card).
-  const mobileRibbonColumns = (content, tab) => {
-    const G = "pptxEditor.ribbon.group.";
-    const stacks = {
-      text: [[`${G}textInsert`, `${G}textColor`], [`${G}font`], [`${G}paragraph`, `${G}transform`]],
-      // Phone order: "Quick background" sits right under "Slide background"; "Transform" right under "Insert shape".
-      design: [[`${G}background`, `${G}backgroundPresets`], [`${G}backgroundActions`, "palette.title"]],
-      shapes: [[`${G}shapeInsert`, `${G}transform`], ["pptxEditor.section.appearance"]],
-      image: [[`${G}media`, `${G}transform`], ["pptxEditor.section.appearance", "pptxEditor.section.image"]],
-      table: [[`${G}tables`, "pptxEditor.tableSelectionScope"], [`${G}font`], [`${G}textColor`, `${G}paragraph`], [`${G}tableDesign`]],
-    }[tab] || [];
-    const kids = React.Children.toArray(content?.props?.children ?? content);
-    const stackOf = new Map();
-    for (const keys of stacks) {
-      const items = keys.map((key) => kids.find((k) => React.isValidElement(k) && k.props?.title === t(key))).filter(Boolean);
-      if (items.length > 1) items.forEach((item) => stackOf.set(item, items));
-    }
-    const done = new Set();
-    const cols = [];
-    for (const kid of kids) {
-      if (done.has(kid)) continue;
-      const items = stackOf.get(kid) || [kid];
-      items.forEach((item) => done.add(item));
-      cols.push(<div key={`col-${cols.length}`} className={`pe-ribbon-col${items.length > 1 ? " is-stack" : ""}`}>{items}</div>);
-    }
-    return cols;
-  };
   const ribbonContent = (() => {
     if (activeRibbon === "home") return <>
-      <RibbonGroup title={t("pptxEditor.ribbon.group.clipboard")}>
+      <RibbonGroup art={clipboardArt} title={t("pptxEditor.ribbon.group.clipboard")}>
         <RibbonButton icon={Scissors} label={t("pptxEditor.cut")} onClick={cutNow} disabled={!ids.length} />
         <RibbonButton icon={ClipboardCopy} label={t("pptxEditor.copy")} onClick={copyNow} disabled={!ids.length} />
         <RibbonButton icon={ClipboardPaste} label={t("pptxEditor.paste")} onClick={pasteNow} disabled={!clipboardReady} />
       </RibbonGroup>
-      <RibbonGroup title={t("pptxEditor.ribbon.group.objects")}>
+      <RibbonGroup art={objectsArt} title={t("pptxEditor.ribbon.group.objects")}>
         <RibbonButton icon={Type} label={t("pptxEditor.addText")} onClick={insertText} testId="pptx-add-text" />
         <RibbonButton icon={ImagePlus} label={t("pptxEditor.addImage")} onClick={insertImage} testId="pptx-add-image" />
         <RibbonButton icon={Copy} label={t("pptxEditor.duplicate")} onClick={a.duplicate} disabled={!ids.length || sel.every((e) => lockedIds.has(e.id) || e.readOnlyGeometry)} testId="pptx-duplicate" />
@@ -950,24 +937,24 @@ export default function PptxEditorDialog({ onClose }) {
       </RibbonGroup>
     </>;
     if (activeRibbon === "insert") return <>
-      <RibbonGroup title={t("pptxEditor.ribbon.group.slides")}><RibbonButton icon={LayoutGrid} label={t("pptxEditor.addSlide")} onClick={slideOps.add} /></RibbonGroup>
-      <RibbonGroup title={t("pptxEditor.ribbon.group.tables")}><RibbonButton icon={Table2} label={t("pptxEditor.insertTable")} onClick={() => { setTableInsertConfig({ rows: 3, cols: 3 }); setSheet("insertTable"); }} testId="pptx-insert-table" /></RibbonGroup>
-      <RibbonGroup title={t("pptxEditor.ribbon.group.shapes")}>
+      <RibbonGroup art={slidesArt} title={t("pptxEditor.ribbon.group.slides")}><RibbonButton icon={LayoutGrid} label={t("pptxEditor.addSlide")} onClick={slideOps.add} /></RibbonGroup>
+      <RibbonGroup art={tableArt} title={t("pptxEditor.ribbon.group.tables")}><RibbonButton icon={Table2} label={t("pptxEditor.insertTable")} onClick={() => { setTableInsertConfig({ rows: 3, cols: 3 }); setSheet("insertTable"); }} testId="pptx-insert-table" /></RibbonGroup>
+      <RibbonGroup art={shapesArt} title={t("pptxEditor.ribbon.group.shapes")}>
         <RibbonButton icon={Shapes} label={t("pptxEditor.allShapes")} onClick={() => { setShapeQuery(""); setSheet("insertShape"); }} testId="pptx-all-shapes" />
         <RibbonButton icon={Square} label={t("pptxEditor.shape.rect")} onClick={() => insertShape("rect")} testId="pptx-add-rect" />
         <RibbonButton icon={Circle} label={t("pptxEditor.shape.ellipse")} onClick={() => insertShape("ellipse")} testId="pptx-add-ellipse" />
         <RibbonButton icon={Minus} label={t("pptxEditor.shape.line")} onClick={() => insertShape("line")} testId="pptx-add-line" />
       </RibbonGroup>
-      <RibbonGroup title={t("pptxEditor.ribbon.group.media")}><RibbonButton icon={Type} label={t("pptxEditor.addText")} onClick={insertText} /><RibbonButton icon={ImagePlus} label={t("pptxEditor.addImage")} onClick={insertImage} /></RibbonGroup>
+      <RibbonGroup art={mediaArt} title={t("pptxEditor.ribbon.group.media")}><RibbonButton icon={Type} label={t("pptxEditor.addText")} onClick={insertText} /><RibbonButton icon={ImagePlus} label={t("pptxEditor.addImage")} onClick={insertImage} /></RibbonGroup>
     </>;
     if (activeRibbon === "design") return <>
-      <RibbonGroup title={t("pptxEditor.ribbon.group.background")}>
+      <RibbonGroup art={slideBackgroundArt} title={t("pptxEditor.ribbon.group.background")}>
         <div className="pe-design-background-color"><ColorField label={t("pptxEditor.backgroundColor")} value={okModel?.background?.type === "solid" ? okModel.background.hex : null} themeColors={ribbonColors} testId="pptx-ribbon-background" customColorLabel={t("pptxEditor.customColor")}
           onLive={(hex) => a.live.background(hex)} onChange={setBackgroundColor} onNone={resetBackground} /></div>
         <div className="pe-scope-card pe-background-scope"><SwitchRow label={t("pptxEditor.applyBackgroundAllNow")} title={t("pptxEditor.backgroundAllHint")} checked={allSlidesBackground}
           disabled={okModel?.background?.type !== "solid" && !allSlidesBackground} testId="pptx-apply-background-all" onCheckedChange={(checked) => toggleAllSlidesBackground(checked)} /></div>
       </RibbonGroup>
-      <RibbonGroup title={t("pptxEditor.ribbon.group.backgroundPresets")}>
+      <RibbonGroup art={quickBackgroundsArt} title={t("pptxEditor.ribbon.group.backgroundPresets")}>
         <div className="pe-background-presets">
           {[
             ["paper", "F8FAFC"], ["warm", "FEF3C7"], ["sky", "DBEAFE"],
@@ -978,11 +965,11 @@ export default function PptxEditorDialog({ onClose }) {
           </button>)}
         </div>
       </RibbonGroup>
-      <RibbonGroup title={t("pptxEditor.ribbon.group.backgroundActions")}>
+      <RibbonGroup art={backgroundActionsArt} title={t("pptxEditor.ribbon.group.backgroundActions")}>
         <RibbonButton icon={Palette} label={t("pptxEditor.backgroundResetAction")} onClick={resetBackground} />
         <RibbonButton icon={RotateCcw} label={t("pptxEditor.backgroundResetAllNow")} onClick={() => a.background(null, true)} />
       </RibbonGroup>
-      <RibbonGroup title={t("palette.title")}>
+      <RibbonGroup art={colorPaletteArt} title={t("palette.title")}>
         <div className="pe-palette-control-stack">
           <button type="button" className="pe-palette-open-button" onClick={() => setSheet("palettes")} data-testid="pptx-open-palettes" aria-label={t("palette.open")}>
             <span className="pe-palette-circle" aria-hidden="true">{PRESENTATION_PALETTES.find((item) => item.id === selectedPaletteId)?.colors.slice(0, 5).map((color) => <i key={color} style={{ background: color }} />)}</span>
@@ -1008,40 +995,40 @@ export default function PptxEditorDialog({ onClose }) {
         ]} />;
     }
     if (activeRibbon === "shapes") return <>
-      <RibbonGroup title={t("pptxEditor.ribbon.group.shapeInsert")}>
+      <RibbonGroup art={shapesArt} title={t("pptxEditor.ribbon.group.shapeInsert")}>
         <RibbonButton icon={Shapes} label={t("pptxEditor.allShapes")} onClick={() => { setShapeQuery(""); setSheet("insertShape"); }} testId="pptx-all-shapes-context" />
         <RibbonButton icon={Square} label={t("pptxEditor.shape.rect")} onClick={() => insertShape("rect")} />
         <RibbonButton icon={Circle} label={t("pptxEditor.shape.ellipse")} onClick={() => insertShape("ellipse")} />
         <RibbonButton icon={Minus} label={t("pptxEditor.shape.line")} onClick={() => insertShape("line")} />
         <RibbonButton icon={Trash2} label={t("pptxEditor.delete")} danger onClick={a.remove} disabled={!canShapeEdit || shapeDisabled} />
       </RibbonGroup>
-      <RibbonGroup title={t("pptxEditor.section.appearance")}>
+      <RibbonGroup art={appearanceArt} title={t("pptxEditor.section.appearance")}>
         {disabledField(!canShapeFill || shapeDisabled, <ColorField label={t("pptxEditor.fill")} value={selectedEl?.fill?.type === "solid" ? selectedEl.fill.hex : null} themeColors={ribbonColors} customColorLabel={t("pptxEditor.customColor")} testId="pptx-ribbon-fill" onLive={(hex) => a.live.shape({ fill: { hex } })} onChange={(hex) => a.shape({ fill: { hex, alpha: selectedEl?.fill?.alpha ?? (selectedEl?.fill?.type === "gradient" ? selectedEl.fill.stops?.[0]?.alpha : 1) ?? 1 } })} onNone={() => a.shape({ fill: { none: true } })} />)}
         {disabledField(!canShapeLine || shapeDisabled, <ColorField label={t("pptxEditor.line")} value={selectedEl?.line && !selectedEl.line.none ? selectedEl.line.hex : null} themeColors={ribbonColors} customColorLabel={t("pptxEditor.customColor")} testId="pptx-ribbon-line" onLive={(hex) => a.live.shape({ line: { hex } })} onChange={(hex) => a.shape({ line: { hex, w: selectedEl?.line?.w || 12700, alpha: selectedEl?.line?.alpha ?? 1 } })} onNone={() => a.shape({ line: { none: true } })} />)}
         {disabledField(!canShapeLine || shapeDisabled, <NumberField label={t("pptxEditor.width")} suffix="pt" value={(selectedEl?.line?.w ?? 12700) / 12700} min={0} max={50} step={0.5} onLive={(v) => a.live.shape({ line: v === 0 ? { none: true } : { w: v * 12700 } })} onLiveCancel={a.live.cancel} onCommit={(v) => a.shape({ line: v === 0 ? { none: true } : { w: v * 12700, hex: selectedEl?.line?.hex || "000000", alpha: selectedEl?.line?.alpha ?? 1 } })} />)}
         {disabledField(!canShapeLine || shapeDisabled, <SelectField label={t("pptxEditor.lineStyle")} value={selectedEl?.line?.dash || "solid"} onChange={(dash) => a.shape({ line: { dash } })} testId="pptx-line-style" options={[["solid","solid"],["dash","dash"],["dot","dot"],["dashDot","dashDot"],["lgDash","longDash"],["lgDashDot","longDashDot"],["lgDashDotDot","longDashDotDot"],["sysDash","systemDash"],["sysDot","systemDot"],["sysDashDot","systemDashDot"],["sysDashDotDot","systemDashDotDot"]].map(([value,key]) => ({ value, label: t(`pptxEditor.lineStyle.${key}`) }))} />)}
         {disabledField(shapeDisabled || !(canShapeFill || canShapeLine), <SliderField label={t("pptxEditor.opacity")} value={Math.round(selectedOpacity * 100)} onLive={(v) => a.live.opacity(v / 100)} onLiveCancel={a.live.cancel} onCommit={(v) => a.opacity(v / 100)} testId="pptx-opacity" />)}
       </RibbonGroup>
-      <RibbonGroup title={t("pptxEditor.ribbon.group.transform")}>
+      <RibbonGroup art={transformArt} title={t("pptxEditor.ribbon.group.transform")}>
         <RibbonButton icon={FlipHorizontal2} label={t("pptxEditor.flipH")} onClick={a.flipH} disabled={flipDisabled} />
         <RibbonButton icon={FlipVertical2} label={t("pptxEditor.flipV")} onClick={a.flipV} disabled={flipDisabled} />
         <RibbonButton icon={Copy} label={t("pptxEditor.duplicate")} onClick={a.duplicate} disabled={!canShapeEdit || shapeDisabled} />
       </RibbonGroup>
     </>;
     if (activeRibbon === "image") return <>
-      <RibbonGroup title={t("pptxEditor.ribbon.group.media")}>
+      <RibbonGroup art={mediaArt} title={t("pptxEditor.ribbon.group.media")}>
         <RibbonButton icon={ImagePlus} label={t("pptxEditor.replaceImage")} onClick={a.replaceImage} disabled={!canEditImageAlt} />
         <RibbonButton icon={Copy} label={t("pptxEditor.duplicate")} onClick={a.duplicate} disabled={imageDisabled} />
         <RibbonButton icon={Trash2} label={t("pptxEditor.delete")} onClick={a.remove} disabled={imageDisabled} danger />
       </RibbonGroup>
-      <RibbonGroup title={t("pptxEditor.ribbon.group.transform")}>
+      <RibbonGroup art={transformArt} title={t("pptxEditor.ribbon.group.transform")}>
         <RibbonButton icon={FlipHorizontal2} label={t("pptxEditor.flipH")} onClick={a.flipH} disabled={flipDisabled} />
         <RibbonButton icon={FlipVertical2} label={t("pptxEditor.flipV")} onClick={a.flipV} disabled={flipDisabled} />
       </RibbonGroup>
-      <RibbonGroup title={t("pptxEditor.section.appearance")}>
+      <RibbonGroup art={appearanceArt} title={t("pptxEditor.section.appearance")}>
         {disabledField(imageDisabled, <SliderField label={t("pptxEditor.opacity")} value={Math.round(selectedOpacity * 100)} onLive={(v) => a.live.opacity(v / 100)} onLiveCancel={a.live.cancel} onCommit={(v) => a.opacity(v / 100)} testId="pptx-image-opacity" />)}
       </RibbonGroup>
-      <RibbonGroup title={t("pptxEditor.section.image")}>
+      <RibbonGroup art={imageArt} title={t("pptxEditor.section.image")}>
         {disabledField(!canEditImageAlt, <label className="ek-field pe-alt-text-field"><span>{t("pptxEditor.altText")}</span><div className="ek-number-input-wrap"><input value={altTextDraft} onChange={(e) => setAltTextDraft(e.target.value)} onBlur={() => { if (selectedEl?.kind === "image" && altTextDraft !== (selectedEl.alt || "")) a.alt(altTextDraft); }} onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }} /></div></label>)}
       </RibbonGroup>
     </>;
@@ -1073,13 +1060,13 @@ export default function PptxEditorDialog({ onClose }) {
       </React.Fragment>;
     }
     if (activeRibbon === "view") return <>
-      <RibbonGroup title={t("pptxEditor.ribbon.group.zoom")}>
+      <RibbonGroup art={zoomArt} title={t("pptxEditor.ribbon.group.zoom")}>
         <RibbonButton icon={ZoomOut} label={t("pptxEditor.zoomOut")} onClick={() => canvasRef.current?.zoomBy(0.8)} />
         <RibbonButton icon={ZoomIn} label={t("pptxEditor.zoomIn")} onClick={() => canvasRef.current?.zoomBy(1.25)} />
         <RibbonButton icon={Maximize} label={t("pptxEditor.fitScreen")} onClick={() => canvasRef.current?.fit()} testId="pptx-fit" />
         <RibbonButton icon={Play} label={t("pptxEditor.present")} onClick={() => setPresenting(true)} testId="pptx-present" />
       </RibbonGroup>
-      <RibbonGroup title={t("pptxEditor.ribbon.group.workspace")}>
+      <RibbonGroup art={workspaceArt} title={t("pptxEditor.ribbon.group.workspace")}>
         <RibbonButton icon={Grid3x3} label={t("pptxEditor.grid")} active={grid.show} onClick={() => setGrid((g) => ({ ...g, show: !g.show }))} testId="pptx-grid" />
         <RibbonButton icon={Magnet} label={t("pptxEditor.snapGrid")} active={grid.snap} onClick={() => setGrid((g) => ({ ...g, snap: !g.snap }))} />
         <RibbonButton icon={Layers} label={t("pptxEditor.tab.layers")} onClick={() => { if (compact) { setSheet(null); toggleLayers(); } else { setPanel("layers"); setRightCollapsed(false); } }} active={compact && layersOpen} />
@@ -1223,7 +1210,7 @@ export default function PptxEditorDialog({ onClose }) {
 
           {compact && shownSheet === "ribbon" && activeRibbon !== "home" && (
             <BottomSheet key={activeRibbon} closing={sheetClosing} closingBottom={chrome.bottom} title={t(`pptxEditor.ribbon.${activeRibbon}`)} onClose={() => setSheet(null)} testId="pptx-mobile-ribbon" tall>
-              <div className={`pe-mobile-ribbon ${activeRibbon === "text" || activeRibbon === "table" ? "is-panels" : ""}`}>{activeRibbon === "text" || activeRibbon === "table" ? ribbonContent : mobileRibbonColumns(ribbonContent, activeRibbon)}</div>
+              <div className="pe-mobile-ribbon is-panels">{ribbonContent}</div>
             </BottomSheet>
           )}
           {shownSheet === "insertShape" && (
@@ -1307,8 +1294,9 @@ const SHAPES = [
   ["flowChartDocument", FileText, "document", "flow"],
 ];
 
-function RibbonGroup({ title, children }) {
-  return <div className="pe-ribbon-group"><div className="pe-ribbon-group-items">{children}</div><span className="pe-ribbon-group-title">{title}</span></div>;
+/** Ribbon card: the same titled tile (illustration + name) as the Text tab's cards, with the group's controls beside it. */
+function RibbonGroup({ title, art, children }) {
+  return <TpGroup title={title} art={art} className="pe-rg"><div className="pe-ribbon-group-items">{children}</div></TpGroup>;
 }
 
 function RibbonButton({ icon: Icon, label, onClick, disabled = false, active, danger = false, testId }) {
