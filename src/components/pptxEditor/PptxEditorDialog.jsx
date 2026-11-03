@@ -186,6 +186,8 @@ export default function PptxEditorDialog({ onClose }) {
   );
   // Ids whose text was just formatted; their frames are re-fitted once the new formatting is rendered.
   const pendingFitRef = React.useRef(null);
+  const lastFormatFitRef = React.useRef(null);
+  const livePreviewIdsRef = React.useRef(null);
   const clearLive = React.useCallback(() => {
     setLiveOverrides(null);
     livePending.current = null;
@@ -636,6 +638,7 @@ export default function PptxEditorDialog({ onClose }) {
   // Keep every text frame hugging its text through formatting changes. While a control is being dragged the fitted
   // frame is previewed (no document writes); once the change is committed the fit is folded into the same undo step.
   React.useLayoutEffect(() => {
+    livePreviewIdsRef.current = live?.fit && live.ids?.length ? live.ids : null;
     if (!live?.fit || !live.ids?.length) { setLiveFit(null); return; }
     const changes = canvasRef.current?.fitContent?.(live.ids) || [];
     setLiveFit(changes.length ? new Map(changes.map((c) => [c.id, c])) : null);
@@ -644,10 +647,27 @@ export default function PptxEditorDialog({ onClose }) {
     const pending = pendingFitRef.current;
     if (!pending || !pkg || pending.version !== pkg.version) return;
     pendingFitRef.current = null;
+    lastFormatFitRef.current = { ids: pending.ids, version: pkg.version };
     const changes = canvasRef.current?.fitContent?.(pending.ids) || [];
     if (!changes.length) return;
-    try { pkg.amend("Format text", () => setBounds(pkg, path, changes, "Format text")); } catch { /* the formatting itself is already applied */ }
+    try { pkg.amend("Format text", () => setBounds(pkg, path, changes, "Format text")); lastFormatFitRef.current = { ids: pending.ids, version: pkg.version }; } catch { /* the formatting itself is already applied */ }
   }, [pkg?.version, okModel, pkg, path]);
+  // A freshly picked web font reaches the page after the first measurement: once it has loaded, fit the frames again
+  // (folded into the same undo step) so they match the final glyph metrics. Skipped if anything else was edited meanwhile.
+  React.useEffect(() => {
+    if (!pkg || typeof document === "undefined" || !document.fonts?.addEventListener) return undefined;
+    const onFontsLoaded = () => {
+      const live2 = livePreviewIdsRef.current;
+      if (live2?.length) { const changes = canvasRef.current?.fitContent?.(live2) || []; setLiveFit(changes.length ? new Map(changes.map((c) => [c.id, c])) : null); return; }
+      const last = lastFormatFitRef.current;
+      if (!last || last.version !== pkg.version) return;
+      const changes = canvasRef.current?.fitContent?.(last.ids) || [];
+      if (!changes.length) return;
+      try { pkg.amend("Format text", () => setBounds(pkg, path, changes, "Format text")); lastFormatFitRef.current = { ids: last.ids, version: pkg.version }; } catch { /* keep the formatting */ }
+    };
+    document.fonts.addEventListener("loadingdone", onFontsLoaded);
+    return () => document.fonts.removeEventListener("loadingdone", onFontsLoaded);
+  }, [pkg, path]);
   const commitBounds = (changes, label) => run(() => setBounds(pkg, path, fitBounds(changes), label));
   const autoSizeTextHeight = React.useCallback((id, suggestedHeight, isEditing = false) => {
     const element = okModel?.elements.find((item) => item.id === id);

@@ -983,3 +983,16 @@ with an opacity slider ---- */
 .pe-slides-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 6px; margin-bottom: 12px; background: hsl(var(--secondary) / .22); border: 1px solid hsl(var(--border) / .4); border-radius: 14px; }
 .pe-slides-actions .ek-action { flex-direction: column; justify-content: center; min-height: 48px; padding: 5px 1px; gap: 3px; font-size: 9.5px !important; line-height: 1.1; text-align: center; }
 .pe-slides-actions .ek-action span { max-width: 100%; overflow-wrap: anywhere; white-space: normal; text-align: center; }
+
+/* "Edit text" is the first button of the phone clipboard card (text selected only); the card keeps its height, rows share it */
+.pe-inspector .ek-action.is-accent { color: hsl(var(--primary)); font-weight: 700; }
+.pe-root.is-compact .pe-sheet .pe-inspector .pe-clip-card.is-stacked .ek-action-grid { grid-auto-rows: minmax(0, 1fr); }
+.pe-root.is-compact .pe-sheet .pe-inspector .pe-clip-card.is-stacked .ek-action { min-height: 0; }
+
+/* Phone ribbon cards (Insert Shapes, Transform, Appearance...): a card is as wide as its content, so nothing sticks out
+   of it; the sheet itself scrolls sideways between cards. */
+.pe-root.is-compact .pe-sheet .pe-mobile-ribbon .pe-ribbon-group { flex: 0 0 auto; max-width: none; box-sizing: border-box; }
+
+/* Every card's title tile (icon + name) is the same square, whatever the label length. */
+.pe-tp-title { box-sizing: border-box; width: 88px; height: 88px; min-width: 88px; align-self: center; padding: 6px; }
+.pe-tp-title em { max-width: 100%; white-space: normal; text-wrap: balance; overflow-wrap: anywhere; }

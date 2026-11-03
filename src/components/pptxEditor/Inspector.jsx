@@ -33,11 +33,16 @@ export default function Inspector({ tab = "arrange", section = "all", sel = [], 
 const toStoredRotation = (v) => ((Math.round(v) % 360) + 360) % 360;
 
 /** Cut / Copy / Paste. Phone sheet: three buttons stacked in a column; desktop sidebar: one row like the other action cards. */
-function ClipboardCard({ clip, t, stacked }) {
+function ClipboardCard({ clip, t, stacked, onEditText, editDisabled }) {
   if (!clip) return null;
   return (
     <SubCard className={`pe-clip-card ${stacked ? "is-stacked" : ""}`} title={stacked ? undefined : t("pptxEditor.ribbon.group.clipboard")}>
       <ActionGrid cols={3} label={t("pptxEditor.ribbon.group.clipboard")} className="pe-clip-grid">
+        {onEditText && (
+          <button type="button" className="ek-action is-accent" onClick={onEditText} disabled={editDisabled} data-testid="pptx-edit-text">
+            <Pencil size={14} strokeWidth={1.7} aria-hidden="true" /><span>{t("pptxEditor.editText")}</span>
+          </button>
+        )}
         <QuickAction icon={Scissors} label={t("pptxEditor.cut")} onClick={clip.cut} disabled={!clip.hasSelection} testId="pptx-clip-cut" />
         <QuickAction icon={ClipboardCopy} label={t("pptxEditor.copy")} onClick={clip.copy} disabled={!clip.hasSelection} testId="pptx-clip-copy" />
         <QuickAction icon={ClipboardPaste} label={t("pptxEditor.paste")} onClick={clip.paste} disabled={!clip.canPaste} testId="pptx-clip-paste" />
@@ -84,17 +89,9 @@ function ArrangePanel({ section, sel, model, a, t, locked, clip }) {
     <div className={`pe-inspector pe-inspector-${section}`} data-testid={testId}>
       {showArrange && (
         <PropertySection icon={SlidersHorizontal} title={t("pptxEditor.section.arrange")} className="pe-section-arrange" testId="pptx-section-arrange">
-          <ClipboardCard clip={clip} t={t} stacked={section === "arrange"} />
+          <ClipboardCard clip={clip} t={t} stacked={section === "arrange"} onEditText={canEditText ? a.editText : undefined} editDisabled={ro} />
 
           {multi && <span className="ek-note-chip">{t("pptxEditor.multiSelected", { n: sel.length })}</span>}
-
-          {canEditText && (
-            <SubCard className="ek-edit-text-card pe-edit-text-card">
-              <button type="button" className="ek-pro-action" onClick={a.editText} disabled={ro} data-testid="pptx-edit-text">
-                <Pencil size={26} strokeWidth={1.6} aria-hidden="true" /><span>{t("pptxEditor.editText")}</span>
-              </button>
-            </SubCard>
-          )}
 
           {/* precise move, then (directly underneath) duplicate / group / flip / delete */}
           <div className="ek-arrange-stack">

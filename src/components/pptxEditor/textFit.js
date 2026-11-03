@@ -44,6 +44,40 @@ export function measureTextFrameHeight(root, id, widthEmu) {
   }
 }
 
+/**
+ * Natural size of a text frame that does not wrap (wrap="none"): the widest line decides the width,
+ * so letter spacing / size / font changes must widen or narrow the frame itself.
+ * @returns {{w:number,h:number}|null} EMU
+ */
+export function measureNoWrapFrame(root, id) {
+  if (!root || typeof document === "undefined") return null;
+  const esc2 = (typeof CSS !== "undefined" && CSS.escape) ? CSS.escape(String(id)) : String(id).replace(/["\\]/g, "\\$&");
+  const host = root.querySelector(`.pptx-el[data-id="${esc2}"]`);
+  const box = host && [...host.children].find((c) => c.classList?.contains("pptx-text"));
+  if (!box) return null;
+  const probe = box.cloneNode(true);
+  probe.classList.remove("is-inline-editing");
+  probe.querySelectorAll("[contenteditable]").forEach((n) => n.removeAttribute("contenteditable"));
+  Object.assign(probe.style, {
+    position: "absolute", inset: "auto", left: "0px", top: "0px", right: "auto", bottom: "auto",
+    width: "max-content", height: "auto", visibility: "hidden", pointerEvents: "none",
+  });
+  host.appendChild(probe);
+  try {
+    const content = probe.querySelector(".pptx-text-content");
+    if (!content) return null;
+    const css = window.getComputedStyle(probe);
+    const padY = (Number.parseFloat(css.paddingTop) || 0) + (Number.parseFloat(css.paddingBottom) || 0);
+    const padX = (Number.parseFloat(css.paddingLeft) || 0) + (Number.parseFloat(css.paddingRight) || 0);
+    const natH = Math.max(content.scrollHeight, content.offsetHeight);
+    const natW = Math.max(content.scrollWidth, content.offsetWidth);
+    if (!Number.isFinite(natH) || natH <= 0 || !Number.isFinite(natW) || natW <= 0) return null;
+    return { w: Math.ceil((natW + padX + 1) * EMU_PER_PX), h: Math.ceil((natH + padY + 1) * EMU_PER_PX) };
+  } finally {
+    probe.remove();
+  }
+}
+
 /** Elements whose frame is derived from their text (not tables, groups, pictures, lines, empty boxes). */
 export function isTextFitElement(el) {
   if (!el || el.kind === "table" || el.kind === "group" || el.kind === "image" || el.kind === "chart") return false;
@@ -136,8 +170,8 @@ const FIT_TOLERANCE = 2 * EMU_PER_PX;
  * (letter spacing, line spacing, size, font, wrapping...). Only height (and, for centred / bottom anchored
  * text boxes, the matching y so the text stays where it was) is touched; x, width, rotation and every other
  * element stay as they are.
- *  - plain text boxes follow their text in both directions (same rule as typing)
- *  - shapes / placeholders only grow when their text no longer fits
+ *  - text without a visible box follows its text in both directions (same rule as typing)
+ *  - filled / outlined shapes only grow when their text no longer fits
  *  - tables grow rows that no longer fit their text
  * @returns {Array<object>} changes shaped like setBounds input ({id,x,y,w,h,rot,flipH,flipV,tableGrid?})
  */
@@ -154,21 +188,39 @@ export function fitContentChanges(root, model, ids) {
       continue;
     }
     if (!isTextFitElement(el)) continue;
-    const need = measureTextFrameHeight(root, id, el.w);
+    // Text with no visible box of its own (text boxes, placeholders, outline-less / fill-less shapes) is "hugged" by its
+    // frame in both directions. A filled or outlined shape keeps its look and only grows when the text no longer fits.
+    const visibleBox = (el.fill && el.fill.type && el.fill.type !== "none") || (el.line && !el.line.none && (el.line.w ?? 1) > 0 && el.line.hex);
+    const follows = el.kind === "text" || (el.kind === "shape" && !visibleBox);
+    const noWrap = el.text?.body?.wrap === "none";
+    const natural = noWrap ? measureNoWrapFrame(root, id) : null;
+    const need = noWrap ? natural?.h : measureTextFrameHeight(root, id, el.w);
     if (need == null) continue;
-    const follows = el.kind === "text" && !el.ph;
     const limit = Math.max(1, (model.size?.h || el.y + el.h) - el.y);
     let h = follows ? need : Math.max(el.h, need);
     h = Math.min(Math.max(limit, 1), Math.ceil(h));
-    if (!follows && h <= el.h) continue;
-    if (Math.abs(h - el.h) <= FIT_TOLERANCE) continue;
+    // Width of a non-wrapping frame follows its longest line; the text keeps its alignment edge in place.
+    let w = el.w, x = el.x;
+    if (natural && !el.rot) {
+      const maxW = Math.max(1, (model.size?.w || el.x + el.w) - el.x);
+      const nextW = Math.min(maxW, Math.ceil(follows ? natural.w : Math.max(el.w, natural.w)));
+      if (Math.abs(nextW - el.w) > FIT_TOLERANCE) {
+        const algn = el.text?.paragraphs?.[0]?.algn;
+        x = algn === "ctr" ? Math.round(el.x + (el.w - nextW) / 2) : algn === "r" ? Math.round(el.x + el.w - nextW) : el.x;
+        w = nextW;
+      }
+    }
+    if (!follows && h <= el.h && w === el.w) continue;
+    if (!follows && h <= el.h) h = el.h;
+    if (Math.abs(h - el.h) <= FIT_TOLERANCE && w === el.w) continue;
+    if (Math.abs(h - el.h) <= FIT_TOLERANCE) h = el.h;
     const anchor = el.text?.body?.anchor;
     let y = el.y;
     if (follows && !el.rot && (anchor === "ctr" || anchor === "b")) {
       const delta = el.h - h;
       y = Math.round(el.y + (anchor === "ctr" ? delta / 2 : delta));
     }
-    out.push({ id, ...b, y, h });
+    out.push({ id, ...b, x, y, w, h });
   }
   return out;
 }

@@ -11,6 +11,11 @@ import { PPTX_FONTS, fontSelectOptions } from "./fonts.js";
 import typographyArt from "@/components/svgEditor/icons/typography.svg";
 import colorsArt from "@/components/svgEditor/icons/colors.svg";
 import appearanceArt from "@/components/svgEditor/icons/appearance.svg";
+import paragraphArt from "./icons/paragraph.svg";
+import actionsArt from "./icons/actions.svg";
+import tableScopeArt from "./icons/tableSelectionScope.svg";
+import tableDesignArt from "./icons/tableDesign.svg";
+import tableArt from "./icons/table.svg";
 
 /*
  * Text + table formatting panels for the presentation editor.
@@ -138,7 +143,7 @@ export function TextFormatGroups({
     <div className="pe-tp" data-testid={testIds.root}>
       {/* ACTIONS — first card, on the phone strip and in the desktop ribbon */}
       {actions?.length > 0 && (
-        <TpGroup id="actions" title={t("pptxEditor.tp.actions")} icon={actionsIcon || Type}>
+        <TpGroup id="actions" title={t("pptxEditor.tp.actions")} art={actionsArt}>
           <TpActionGrid cols={Math.min(3, Math.ceil(actions.length / 2))}>
             {actions.map((a) => <TpAction key={a.key} {...a} />)}
           </TpActionGrid>
@@ -174,7 +179,7 @@ export function TextFormatGroups({
       </TpGroup>
 
       {/* PARAGRAPH — [ align · vertical anchor · bullets ]  [ line height · super / subscript ] */}
-      <TpGroup idle={off} id="paragraph" title={t("pptxEditor.ribbon.group.paragraph")} icon={AlignJustify}>
+      <TpGroup idle={off} id="paragraph" title={t("pptxEditor.ribbon.group.paragraph")} art={paragraphArt}>
         <TpStack>
           <TpRow><Segmented label={t("pptxEditor.alignLeft")} items={alignItems} /></TpRow>
           <TpRow>
@@ -230,7 +235,7 @@ export function TextFormatGroups({
 /** Table structure card: insert table, add / delete the focused row and column. */
 export function TableStructureGroup({ t, actions }) {
   return (
-    <TpGroup id="table" title={t("pptxEditor.ribbon.group.tables")} icon={Table2}>
+    <TpGroup id="table" title={t("pptxEditor.ribbon.group.tables")} art={tableArt}>
       <TpActionGrid cols={3}>{actions.map((a) => <TpAction key={a.key} {...a} />)}</TpActionGrid>
     </TpGroup>
   );
@@ -240,7 +245,7 @@ export function TableStructureGroup({ t, actions }) {
 export function TableScopeGroup({ t, scope, onScope, disabled, hint, testId }) {
   const options = ["cell", "row", "column", "table"].map((value) => ({ value, label: t(`pptxEditor.tableScope.${value}`) }));
   return (
-    <TpGroup id="scope" title={t("pptxEditor.tableSelectionScope")} icon={Table2}>
+    <TpGroup id="scope" title={t("pptxEditor.tableSelectionScope")} art={tableScopeArt}>
       <TpStack>
         <TpRow><SelectField bare compact className="pe-tp-font" label={t("pptxEditor.tableApplyTo")} value={scope} options={options} disabled={disabled} onChange={onScope} testId={testId} /></TpRow>
         <TpRow><span className="pe-tp-hint">{hint}</span></TpRow>
@@ -256,7 +261,7 @@ export function TableDesignGroup({ t, table, disabled, onOptions }) {
     ["lastCol", "pptxEditor.tableLastColumn"], ["lastRow", "pptxEditor.tableLastRow"], ["bandCol", "pptxEditor.tableBandedColumns"],
   ];
   return (
-    <TpGroup id="design" title={t("pptxEditor.ribbon.group.tableDesign")} icon={Table2}>
+    <TpGroup id="design" title={t("pptxEditor.ribbon.group.tableDesign")} art={tableDesignArt}>
       <div className="pe-tp-switches">
         {items.map(([key, label]) => <SwitchRow key={key} label={t(label)} checked={!!table?.[key]} disabled={disabled} onCheckedChange={(checked) => onOptions({ [key]: checked })} />)}
       </div>
