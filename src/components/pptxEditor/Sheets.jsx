@@ -1,5 +1,7 @@
 import React from "react";
-import { X, Plus, Copy, Trash2, ChevronUp, ChevronDown, Check } from "lucide-react";
+import { Plus, Copy, Trash2, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Check, Type } from "lucide-react";
+import { EditorSheet, QuickAction } from "@/components/editorKit";
+import { useI18n } from "@/i18n/I18nContext";
 import SlideView, { collectImagePaths } from "./SlideView.jsx";
 import { useMediaUrls } from "./useMediaUrls.js";
 import { readSlide } from "./engine/slideModel.js";
@@ -29,15 +31,9 @@ export function useVisualViewport(enabled = true) {
   return vp;
 }
 
-export function BottomSheet({ title, onClose, children, testId, tall = false, footer }) {
-  return (
-    <div className={`pe-sheet ${tall ? "is-tall" : ""}`} role="dialog" aria-label={title} data-testid={testId}>
-      <div className="pe-sheet-grab" aria-hidden="true" />
-      <div className="pe-sheet-head"><strong>{title}</strong><IconButton icon={X} label="Close" onClick={onClose} testId={`${testId}-close`} /></div>
-      <div className="pe-sheet-body">{children}</div>
-      {footer && <div className="pe-sheet-foot">{footer}</div>}
-    </div>
-  );
+export function BottomSheet({ title, onClose, children, testId, tall = false, footer, closing = false, closingBottom = 0 }) {
+  const { t } = useI18n();
+  return <EditorSheet title={title} onClose={onClose} testId={testId} tall={tall} footer={footer} closing={closing} closingBottom={closingBottom} closeLabel={t("pptxEditor.close")}>{children}</EditorSheet>;
 }
 
 /** Dedicated text-editing mode: native <textarea> (reliable with mobile keyboards), committed explicitly. */
@@ -56,6 +52,40 @@ export function TextSheet({ initial, title, hint, onDone, onCancel, t, rtl }) {
       <textarea ref={ref} className="pe-textarea" dir={rtl ? "rtl" : "auto"} value={value} rows={5} placeholder={hint} onChange={(e) => setValue(e.target.value)} aria-label={title} data-testid="pptx-textarea" />
       <p className="pe-note">{t("pptxEditor.textHint")}</p>
     </BottomSheet>
+  );
+}
+
+/**
+ * Phone text editing: a full screen of its own (same layout as the SVG editor's text composer) instead of typing
+ * inside the slide, so the software keyboard never covers or pushes the canvas. Desktop keeps editing in place.
+ * Commits the lines explicitly with "Done"; the back button leaves the text untouched.
+ * `viewport` ({ h, top }) is the visual viewport, so the screen shrinks above the keyboard.
+ */
+export function MobileTextScreen({ title, initial, placeholder, onDone, onCancel, t, viewport }) {
+  const [value, setValue] = React.useState(initial);
+  const ref = React.useRef(null);
+  React.useEffect(() => { const el = ref.current; if (el) { el.focus({ preventScroll: true }); el.setSelectionRange(el.value.length, el.value.length); } }, []);
+  const changed = value !== initial;
+  const style = viewport?.h ? { top: viewport.top || 0, bottom: "auto", height: viewport.h } : undefined;
+  return (
+    <div className="pe-mobile-text" role="dialog" aria-modal="true" aria-label={title} data-testid="pptx-mobile-text" style={style}
+      onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); onCancel(); } }}>
+      <header className="pe-mobile-text-header">
+        <button type="button" className="pe-mobile-text-back" onClick={onCancel} aria-label={t("svgEditor.backToTabs")} data-testid="pptx-mobile-text-back"><ChevronLeft size={20} aria-hidden="true" /></button>
+        <strong>{title}</strong>
+        <span />
+      </header>
+      <div className="pe-mobile-text-body">
+        <div className="pe-mobile-text-card">
+          <Type size={22} aria-hidden="true" />
+          <textarea ref={ref} dir="auto" value={value} placeholder={placeholder} aria-label={title} data-testid="pptx-mobile-textarea"
+            onChange={(e) => setValue(e.target.value)} />
+          <small>{value.length}</small>
+        </div>
+        <p className="pe-mobile-text-hint">{t("pptxEditor.textHint")}</p>
+        <button type="button" className="pe-mobile-text-confirm" onClick={() => onDone(value.split("\n"))} disabled={!changed} data-testid="pptx-mobile-text-done"><Check size={18} aria-hidden="true" />{t("pptxEditor.done")}</button>
+      </div>
+    </div>
   );
 }
 
@@ -86,11 +116,17 @@ export function Thumb({ pkg, pres, slide, width, labels }) {
   );
 }
 
-export function SlidesPanel({ pkg, pres, idx, onSelect, onAdd, onDuplicate, onDelete, onMove, t, width = 168, grid = false, labels }) {
+export function SlidesPanel({ pkg, pres, idx, onSelect, onAdd, onDuplicate, onDelete, onDeleteCurrent, onMove, t, width = 168, grid = false, labels }) {
   const dragFrom = React.useRef(null);
   const [over, setOver] = React.useState(null);
   return (
     <div className={`pe-slides ${grid ? "is-grid" : ""}`} data-testid="pptx-slides">
+      {/* Same slide actions as the phone Slides sheet; they always apply to the current slide. */}
+      <div className="pe-slides-actions" role="group" aria-label={t("pptxEditor.slideStrip")}>
+        <QuickAction icon={Plus} label={t("pptxEditor.addSlide")} onClick={onAdd} testId="pptx-slide-bar-add" />
+        <QuickAction icon={Copy} label={t("pptxEditor.duplicateSlide")} onClick={() => onDuplicate(idx)} testId="pptx-slide-bar-dup" />
+        <QuickAction icon={Trash2} label={t("pptxEditor.deleteSlide")} danger onClick={() => (onDeleteCurrent ? onDeleteCurrent() : onDelete(idx))} disabled={pres.slides.length < 2} testId="pptx-slide-bar-del" />
+      </div>
       <ol>
         {pres.slides.map((s, i) => (
           <li key={s.id} className={`${i === idx ? "is-active" : ""} ${over === i ? "is-over" : ""}`}
@@ -115,6 +151,51 @@ export function SlidesPanel({ pkg, pres, idx, onSelect, onAdd, onDuplicate, onDe
         ))}
       </ol>
       <button type="button" className="pe-add-slide" onClick={onAdd} data-testid="pptx-add-slide"><Plus size={16} aria-hidden="true" />{t("pptxEditor.addSlide")}</button>
+    </div>
+  );
+}
+
+/**
+ * Phone "Slides" sheet: every slide in ONE horizontally scrolling row, with the slide actions right above it.
+ * Actions always apply to the current slide (the highlighted one). Tapping a thumbnail makes it current; the row
+ * keeps the current slide centred, so adding / duplicating / moving / deleting never leaves it off-screen.
+ */
+export function SlidesStrip({ pkg, pres, idx, onSelect, onAdd, onDuplicate, onDelete, onMove, t, width = 124, labels }) {
+  const listRef = React.useRef(null);
+  const count = pres.slides.length;
+  const first = idx <= 0, last = idx >= count - 1;
+  React.useEffect(() => {
+    const list = listRef.current;
+    const item = list?.children?.[idx];
+    if (!list || !item) return;
+    const left = item.offsetLeft - (list.clientWidth - item.offsetWidth) / 2;
+    const reduce = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    list.scrollTo({ left: Math.max(0, left), behavior: reduce ? "auto" : "smooth" });
+  }, [idx, count]);
+  return (
+    <div className="pe-strip" dir="ltr" data-testid="pptx-slides">
+      <div className="pe-strip-actions" role="group" aria-label={t("pptxEditor.slideStrip")}>
+        <QuickAction icon={Plus} label={t("pptxEditor.addSlide")} onClick={onAdd} testId="pptx-slide-add" />
+        <QuickAction icon={Copy} label={t("pptxEditor.duplicateSlide")} onClick={() => onDuplicate(idx)} testId="pptx-slide-dup" />
+        <QuickAction icon={ChevronLeft} label={t("pptxEditor.moveSlideEarlier")} onClick={() => onMove(idx, idx - 1)} disabled={first} testId="pptx-slide-up" />
+        <QuickAction icon={ChevronRight} label={t("pptxEditor.moveSlideLater")} onClick={() => onMove(idx, idx + 1)} disabled={last} testId="pptx-slide-down" />
+        <QuickAction icon={Trash2} label={t("pptxEditor.deleteSlide")} danger onClick={() => onDelete(idx)} disabled={count < 2} testId="pptx-slide-del" />
+      </div>
+      <ol className="pe-strip-list" ref={listRef} aria-label={t("pptxEditor.slides")}>
+        {pres.slides.map((s, i) => (
+          <li key={s.id} className={i === idx ? "is-active" : ""}>
+            <button type="button" className="pe-thumb-btn" onClick={() => onSelect(i)} aria-label={t("pptxEditor.goToSlide", { n: i + 1 })} aria-current={i === idx} data-testid={`pptx-thumb-${i}`}>
+              <span className="pe-thumb-n">{i + 1}</span>
+              <Thumb pkg={pkg} pres={pres} slide={s} width={width} labels={labels} />
+            </button>
+          </li>
+        ))}
+        <li className="pe-strip-add-item">
+          <button type="button" className="pe-strip-add" onClick={onAdd} aria-label={t("pptxEditor.addSlide")} data-testid="pptx-add-slide">
+            <Plus size={20} strokeWidth={1.7} aria-hidden="true" /><span>{t("pptxEditor.addSlide")}</span>
+          </button>
+        </li>
+      </ol>
     </div>
   );
 }

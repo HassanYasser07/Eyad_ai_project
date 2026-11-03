@@ -1,101 +1,74 @@
 import React from "react";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Slider } from "@/components/ui/slider";
-import { Pipette } from "lucide-react";
+import {
+  KitIconButton, ColorPopoverField, NumberField as KitNumberField, RangeControl, SelectField as KitSelectField,
+  PropertySection, hexToCss, cssToHex,
+} from "@/components/editorKit";
 
-export function IconButton({ icon: Icon, label, onClick, active, disabled, danger, text, size = 18, testId }) {
+/*
+ * Presentation-editor control adapters. The names and props below are what the rest of the editor
+ * already imports; each one is a thin layer over the shared editor kit, so this editor and the SVG
+ * editor render the same controls. Colours in the PPTX model are "RRGGBB" (no #); the kit uses "#rrggbb".
+ */
+
+export function IconButton({ icon, label, onClick, active, disabled, danger, text, size = 18, testId }) {
+  // `pe-btn` stays on the element so the chrome rules that target it (slide nav, present mode…) keep working.
+  return <KitIconButton icon={icon} label={label} onClick={onClick} active={active} disabled={disabled} danger={danger} text={text} size={size} testId={testId} className="pe-btn" />;
+}
+
+export function ColorField({ label, value, onChange, onLive, onNone, themeColors = [], noneLabel, testId, customColorLabel = "Choose any color", icon, disabled = false, themeLabel }) {
   return (
-    <button type="button" className={`pe-btn ${active ? "is-active" : ""} ${danger ? "is-danger" : ""} ${text ? "has-text" : ""}`} onClick={onClick} disabled={disabled} title={label} aria-label={label} aria-pressed={active === undefined ? undefined : !!active} data-testid={testId}>
-      {Icon && <Icon size={size} aria-hidden="true" />}
-      {text && <span>{label}</span>}
-    </button>
+    <ColorPopoverField
+      label={label}
+      value={value ? hexToCss(value) : null}
+      onChange={(css) => onChange(cssToHex(css))}
+      onLive={onLive ? (css) => onLive(cssToHex(css)) : undefined}
+      onNone={onNone}
+      noneLabel={noneLabel}
+      themeColors={themeColors.map((c) => hexToCss(c))}
+      themeLabel={themeLabel}
+      customColorLabel={customColorLabel}
+      testId={testId}
+      icon={icon}
+      disabled={disabled}
+    />
   );
 }
 
-const PRESETS = ["000000", "FFFFFF", "475569", "94A3B8", "DC2626", "EA580C", "F59E0B", "16A34A", "0D9488", "2563EB", "7C3AED", "DB2777"];
-const HEX = /^[0-9A-Fa-f]{6}$/;
+/** Numeric field (commit on blur / Enter, ArrowUp/Down step, clamped). */
+export const NumberField = KitNumberField;
 
-export function ColorField({ label, value, onChange, onNone, themeColors = [], noneLabel, testId, customColorLabel = "Choose any color" }) {
-  const [open, setOpen] = React.useState(false);
-  const [hex, setHex] = React.useState(value || "");
-  const pickerRef = React.useRef(null);
-  React.useEffect(() => setHex(value || ""), [value]);
-  const palette = [...new Set([...themeColors, ...PRESETS].map((c) => c.toUpperCase()))];
-  const pick = (c) => { onChange(c); setHex(c); setOpen(false); };
+/** Wave slider. Commit-on-release only: the presentation engine records one undo step per gesture. */
+export function SliderField({ label, value, onCommit, onLive, onLiveCancel, min = 0, max = 100, step = 1, suffix = "%", testId, layout = "editable", disabled = false, icon, snapBack = false, integer = true, decimals, inputTestId }) {
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button type="button" className="pe-color" aria-label={label} title={label} data-testid={testId}>
-          <span className="pe-swatch" style={{ background: value ? `#${value}` : "transparent" }} data-none={!value} />
-          <span className="pe-color-label">{label}</span>
-        </button>
-      </PopoverTrigger>
-      <PopoverContent className="pe-pop" align="start" onOpenAutoFocus={(e) => e.preventDefault()}>
-        <div className="pe-palette">
-          {palette.map((c) => <button key={c} type="button" className="pe-chip" style={{ background: `#${c}` }} aria-label={`#${c}`} onClick={() => pick(c)} />)}
-        </div>
-        <button type="button" className="pe-custom-color-button" onClick={() => pickerRef.current?.click()}>
-          <Pipette size={16} aria-hidden="true" />
-          <span>{customColorLabel}</span>
-          <span className="pe-custom-color-preview" style={{ background: value ? `#${value}` : "transparent" }} aria-hidden="true" />
-        </button>
-        <input ref={pickerRef} type="color" className="pe-colorinput pe-colorinput-native" aria-label={customColorLabel} value={`#${HEX.test(hex) ? hex : "000000"}`} onChange={(e) => { const next = e.target.value.slice(1).toUpperCase(); setHex(next); onChange(next); }} />
-        <label className="pe-hex-row"><span>HEX</span><input className="pe-input" value={hex} maxLength={6} aria-label="Hex" onChange={(e) => setHex(e.target.value.replace(/[^0-9a-f]/gi, ""))} onKeyDown={(e) => { if (e.key === "Enter" && HEX.test(hex)) pick(hex.toUpperCase()); }} onBlur={() => HEX.test(hex) && hex.toUpperCase() !== value && onChange(hex.toUpperCase())} /></label>
-        {onNone && <button type="button" className="pe-link" onClick={() => { onNone(); setOpen(false); }}>{noneLabel}</button>}
-      </PopoverContent>
-    </Popover>
-  );
-}
-
-export function NumberField({ label, value, onCommit, step = 1, min = -9999, max = 9999, suffix, decimals = 1, testId, disabled = false }) {
-  const fmt = (v) => (Number.isFinite(v) ? String(Number(v.toFixed(decimals))) : "");
-  const [text, setText] = React.useState(fmt(value));
-  React.useEffect(() => setText(fmt(value)), [value]);  
-  const commit = (raw) => {
-    const n = Number(String(raw).replace(",", "."));
-    if (!Number.isFinite(n)) { setText(fmt(value)); return; }
-    const v = Math.min(max, Math.max(min, n));
-    setText(fmt(v));
-    if (v !== value) onCommit(v);
-  };
-  return (
-    <label className={`pe-num ${disabled ? "is-disabled" : ""}`}>
-      <span>{label}</span>
-      <input inputMode="decimal" value={text} data-testid={testId} aria-label={label} disabled={disabled}
-        onChange={(e) => setText(e.target.value)} onBlur={(e) => commit(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") e.currentTarget.blur();
-          else if (e.key === "ArrowUp" || e.key === "ArrowDown") { e.preventDefault(); const base = Number(text) || 0; commit(base + (e.key === "ArrowUp" ? step : -step)); }
-        }} />
-      {suffix && <em>{suffix}</em>}
-    </label>
-  );
-}
-
-export function SliderField({ label, value, onCommit, min = 0, max = 100, suffix = "%", testId }) {
-  const [v, setV] = React.useState(value);
-  React.useEffect(() => setV(value), [value]);
-  return (
-    <div className="pe-slider" data-testid={testId}>
-      <span>{label}</span>
-      <Slider variant="wave" className="pe-wave-slider-root" min={min} max={max} step={1} value={[v]} aria-label={label} onValueChange={([x]) => setV(x)} onValueCommit={([x]) => onCommit(x)} />
-      <em>{Math.round(v)}{suffix}</em>
+    <div className="pe-slider-field" data-testid={testId}>
+      <RangeControl
+        label={label}
+        value={value}
+        min={min}
+        max={max}
+        step={step}
+        suffix={suffix}
+        compact={layout === "compact"}
+        editable={layout !== "plain"}
+        integer={integer}
+        decimals={decimals}
+        inputTestId={inputTestId}
+        snapBack={snapBack}
+        disabled={disabled}
+        icon={icon}
+        onCommit={onCommit}
+        onLive={onLive}
+        onLiveCancel={onLiveCancel}
+      />
     </div>
   );
 }
 
-/** A compact select control styled to match the editor's numeric-field card. */
-export function SelectField({ label, value, options, onChange, testId, disabled = false }) {
-  return (
-    <label className={`pe-num pe-select-field ${disabled ? "is-disabled" : ""}`}>
-      <span>{label}</span>
-      <select className="pe-num-select" value={value} aria-label={label} data-testid={testId} disabled={disabled} onChange={(event) => onChange(event.target.value)}>
-        {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-      </select>
-    </label>
-  );
+/** Styled select. `options`: [{ value, label }] (or groups with `options`). */
+export const SelectField = KitSelectField;
+
+export function Section({ title, icon, children }) {
+  return <PropertySection icon={icon} title={title}>{children}</PropertySection>;
 }
 
-export function Section({ title, children }) {
-  return <section className="pe-section"><h3>{title}</h3><div className="pe-section-body">{children}</div></section>;
-}
+export { SwitchRow, Segmented, Stepper, Divider } from "@/components/editorKit";

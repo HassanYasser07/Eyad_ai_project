@@ -47,6 +47,7 @@ import {
   rotateBackground,
   removeBackground,
 } from "@/components/svgEditor/svgDocument";
+import "@/components/editorKit/editorKit.css";
 import "@/components/svgEditor/svgEditor.css";
 
 const MOBILE_QUERY = "(max-width: 660px)";

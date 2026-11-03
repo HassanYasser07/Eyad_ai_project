@@ -1,13 +1,20 @@
 import React from "react";
 import { EMU_PER_PX } from "./engine/slideModel.js";
 import { NEW_SHAPE_FONT_PT, newCellFontPt } from "./engine/defaults.js";
+import { fontGeneric } from "./fonts.js";
 
 const px = (emu) => emu / EMU_PER_PX;
 const ptToPx = (pt) => (pt * 4) / 3;
 const rgba = (c, extra = 1) => (c ? `rgba(${parseInt(c.hex.slice(0, 2), 16)},${parseInt(c.hex.slice(2, 4), 16)},${parseInt(c.hex.slice(4, 6), 16)},${(c.alpha ?? 1) * extra})` : "transparent");
 const DASH = { dash: "6 3", sysDash: "3 1", dot: "1.5 2.5", sysDot: "1 1", lgDash: "10 4", dashDot: "6 3 1.5 3" };
 const SERIF = /georgia|times|garamond|cambria|palatino|book|serif|minion|baskerville|didot/i, MONO = /courier|consolas|mono|menlo|lucida console/i;
-const font = (f) => { const name = String(f || "Calibri").replace(/["\\;]/g, ""); return `"${name}", ${MONO.test(name) ? "ui-monospace, monospace" : SERIF.test(name) && !/sans/i.test(name) ? "Georgia, serif" : "Calibri, Arial, sans-serif"}`; };
+const GENERIC_STACK = { monospace: "ui-monospace, monospace", serif: "Georgia, serif", cursive: "cursive", "sans-serif": "Calibri, Arial, sans-serif" };
+const font = (f) => {
+  const name = String(f || "Calibri").replace(/["\\;]/g, "");
+  // Fonts shared with the SVG editor carry their own generic family; anything else is guessed from the name.
+  const generic = GENERIC_STACK[fontGeneric(name)];
+  return `"${name}", ${generic || (MONO.test(name) ? "ui-monospace, monospace" : SERIF.test(name) && !/sans/i.test(name) ? "Georgia, serif" : "Calibri, Arial, sans-serif")}`;
+};
 
 export function collectImagePaths(model) {
   const out = new Set();
@@ -223,7 +230,7 @@ export function TextBody({ text, hint, cellMode = false, newCell = false, emptyP
             {p.runs.map((r, j) => {
               const s = r.style;
               const visibleText = String(r.text ?? "").replace(/[\u200B\uFEFF]/g, "");
-              return <span key={j} style={{ fontFamily: font(s.font), fontSize: ptToPx(s.size) * renderScale, fontWeight: s.bold ? 700 : 400, fontStyle: s.italic ? "italic" : "normal", textDecoration: [s.underline && "underline", s.strike && "line-through"].filter(Boolean).join(" ") || "none", color: rgba(s.color), backgroundColor: s.highlight ? rgba(s.highlight) : undefined, verticalAlign: s.baseline > 0 ? "super" : s.baseline < 0 ? "sub" : "baseline" }}>{visibleText}</span>;
+              return <span key={j} style={{ fontFamily: font(s.font), fontSize: ptToPx(s.size) * renderScale, fontWeight: s.bold ? 700 : 400, fontStyle: s.italic ? "italic" : "normal", textDecoration: [s.underline && "underline", s.strike && "line-through"].filter(Boolean).join(" ") || "none", color: rgba(s.color), backgroundColor: s.highlight ? rgba(s.highlight) : undefined, verticalAlign: s.baseline > 0 ? "super" : s.baseline < 0 ? "sub" : "baseline", letterSpacing: s.spacing ? `${ptToPx(s.spacing) * renderScale}px` : undefined, ...(s.outline ? { WebkitTextStroke: `${Math.max(0.25, ptToPx(s.outline.w) * renderScale)}px #${s.outline.hex}`, paintOrder: "stroke fill" } : null) }}>{visibleText}</span>;
             })}
             {/* An actual line break gives empty editable paragraphs a caret target;
                 it is not persisted as text and avoids zero-width placeholder characters. */}
