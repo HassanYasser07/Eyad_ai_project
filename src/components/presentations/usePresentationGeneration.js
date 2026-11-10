@@ -51,7 +51,7 @@ export function usePresentationGeneration({ onCompleted } = {}) {
     }
   }, [finish]);
 
-  const start = React.useCallback(async ({ settings, projectId }) => {
+  const start = React.useCallback(async ({ settings, projectId, templateId = null }) => {
     if (inFlight.current) return false;
     inFlight.current = true;
     setError(null);
@@ -60,7 +60,7 @@ export function usePresentationGeneration({ onCompleted } = {}) {
     setPhase("starting");
     if (!requestIdRef.current) requestIdRef.current = crypto.randomUUID();
     try {
-      const created = await startPresentation({ settings, requestId: requestIdRef.current, projectId });
+      const created = await startPresentation({ settings, requestId: requestIdRef.current, projectId, templateId });
       requestIdRef.current = null;
       setJob(created);
       if (created.status === "pending") await poll(created.id);
