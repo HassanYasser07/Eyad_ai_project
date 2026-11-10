@@ -1,10 +1,17 @@
 /**
  * Pure logic (no network, no Deno APIs) that converts the Eyad presentation form
- * into a request body for Gamma's Generate API: POST /v1.0/generations.
+ * into a request body for Gamma's Generate API.
  *
- * Only parameters documented by Gamma are produced:
- *   inputText, textMode, format, themeId, numCards, cardSplit,
- *   additionalInstructions, textOptions{tone, audience, language}, cardOptions{dimensions}
+ * The form now has exactly these inputs (see src/pages/PresentationsStudio.jsx):
+ *   topic text, optional attached file (its extracted text), detail level ("Standard" menu),
+ *   pages, language, and an optional template picked from the Supabase templates gallery.
+ *
+ * Two Gamma endpoints are produced:
+ *   POST /v1.0/generations                -> normal generation
+ *       inputText, textMode, format, themeId, numCards, cardSplit,
+ *       additionalInstructions, textOptions{amount, language}, cardOptions{dimensions}
+ *   POST /v1.0/generations/from-template  -> when the chosen template has a Gamma template (gammaId)
+ *       gammaId, prompt, themeId
  * Source: https://developers.gamma.app/docs/generate-api-parameters-explained
  *
  * Kept as .mjs so the same file is used by the Edge Function (Deno) and by the
@@ -12,21 +19,20 @@
  */
 
 export const GAMMA_LIMITS = {
-  inputTextMax: 100000, // Gamma: ~100k tokens; the form is far smaller
+  inputTextMax: 100000, // Gamma: ~100k tokens; we cap characters far below that
   additionalInstructionsMax: 5000, // Gamma: 1-5000 chars
-  toneMax: 500,
-  audienceMax: 500,
 };
 
 export const FORM_LIMITS = {
-  topicMax: 6000,
-  customAudienceMax: 300,
-  otherLanguageMax: 60,
-  userInstructionsMax: 2000,
+  topicMax: 50000,
+  fileTextMax: 50000,
+  fileNameMax: 200,
 };
 
-export const SLIDE_COUNTS = [5, 10, 15, 20];
-const HEX = /^#[0-9A-Fa-f]{6}$/;
+export const SLIDE_COUNTS = [5, 10, 15, 20, 25, 30];
+// UI "Standard" menu -> Gamma textOptions.amount
+export const DETAIL_LEVELS = { brief: "brief", standard: "medium", detailed: "detailed", extensive: "extensive" };
+export const DEFAULT_DETAIL = "standard";
 
 /* ------------------------------ language ------------------------------ */
 
@@ -88,57 +94,32 @@ export function resolveLanguageCode(input) {
   return null;
 }
 
-/* --------------------------- purpose / audience --------------------------- */
 
-const PURPOSE_META = {
-  educational: { label: "educational", tone: "clear, educational, engaging", audience: "students" },
-  business_proposal: { label: "business proposal", tone: "professional, persuasive, confident", audience: "executives and decision makers" },
-  business_report: { label: "business report", tone: "professional, analytical, concise", audience: "executives and senior managers" },
-  pitch_deck: { label: "investor pitch deck", tone: "persuasive, confident, inspiring", audience: "investors" },
-  marketing: { label: "marketing presentation", tone: "energetic, persuasive, creative", audience: "general audience and potential customers" },
-  training: { label: "training session", tone: "practical, friendly, instructive", audience: "professionals and trainees" },
-  research: { label: "academic / scientific research presentation", tone: "academic, precise, objective", audience: "academics and specialists" },
-  other: { label: "general presentation", tone: "professional, clear", audience: "general audience" },
-};
+/* ------------------------- automatic language detection ------------------------- */
 
-const AUDIENCE_LABELS = {
-  students: "students",
-  beginners: "beginners with no prior knowledge",
-  professionals: "professionals and specialists",
-  executives: "executives and senior managers",
-  investors: "investors",
-  general: "general audience",
-};
-
-// Ordered: the first matching rule wins. Arabic has no \b, so plain substrings are used.
-const PURPOSE_RULES = [
-  ["pitch_deck", /مستثمر|استثمار|تمويل|جولة تمويل|investor|pitch|funding|seed round|series [abc]\b|fundrais/i],
-  ["training", /تدريب|ورشة عمل|ورشه عمل|دورة|workshop|training|onboarding|bootcamp/i],
-  ["research", /بحث علمي|دراسة|أكاديمي|اكاديمي|رسالة ماجستير|رسالة دكتوراه|thesis|research|academic|literature review/i],
-  ["marketing", /تسويق|حملة|إعلان|اعلان|علامة تجارية|marketing|campaign|go-to-market|advertis|brand awareness/i],
-  ["business_report", /تقرير|ربع سنوي|نتائج الاعمال|نتائج الأعمال|report|quarterly|annual review|kpi|performance review/i],
-  ["business_proposal", /مقترح|خطة عمل|عرض سعر|دراسة جدوى|proposal|business plan|feasibility/i],
-  ["educational", /شرح|تعليم|درس|مقدمة في|تعريف ب|مبتدئ|learn|tutorial|lesson|introduction to|explain|educat/i],
+const SCRIPT_RULES = [
+  ["ar", /[؀-ۿݐ-ݿ]/g],
+  ["he", /[֐-׿]/g],
+  ["ru", /[Ѐ-ӿ]/g],
+  ["ko", /[가-힯]/g],
+  ["ja", /[぀-ヿ]/g],
+  ["zh-cn", /[一-鿿]/g],
+  ["th", /[฀-๿]/g],
+  ["hi", /[ऀ-ॿ]/g],
 ];
 
-/** Deterministic purpose inference from the topic text. Returns a purpose key or null. */
-export function inferPurpose(topic) {
-  const text = String(topic || "");
-  for (const [purpose, pattern] of PURPOSE_RULES) {
-    if (pattern.test(text)) return purpose;
+/** Language key for the dominant non-Latin script of `text`, or null (Latin / unknown). */
+export function detectLanguageCode(text) {
+  const sample = String(text || "").slice(0, 4000);
+  const letters = sample.replace(/[\s\d\p{P}\p{S}]/gu, "");
+  if (!letters.length) return null;
+  let best = null;
+  let bestCount = 0;
+  for (const [code, pattern] of SCRIPT_RULES) {
+    const count = (sample.match(pattern) || []).length;
+    if (count > bestCount) { best = code; bestCount = count; }
   }
-  return null;
-}
-
-/* ------------------------------ color notes ------------------------------ */
-
-function colorGuidance(colorPackage) {
-  const [primary, secondary, accent, background] = colorPackage.colors.map((c) => c.toUpperCase());
-  return (
-    `Color palette (use consistently across the whole deck): primary/dark ${primary}, secondary ${secondary}, ` +
-    `accent ${accent}, light background ${background}. Use these colors for backgrounds, headings, shapes and charts, ` +
-    `and keep text readable against them.`
-  );
+  return bestCount / letters.length >= 0.3 ? best : null;
 }
 
 /* ------------------------------- builder ------------------------------- */
@@ -147,36 +128,36 @@ function asString(value) {
   return typeof value === "string" ? value : value == null ? "" : String(value);
 }
 
+/** The text sent to Gamma: the topic, then the attached file's text (clearly delimited). */
+export function composeInputText({ topic, fileText, fileName }) {
+  const parts = [];
+  if (topic) parts.push(topic);
+  if (fileText) parts.push(`--- Source material from the attached file${fileName ? ` "${fileName}"` : ""} ---\n${fileText}`);
+  return parts.join("\n\n").slice(0, GAMMA_LIMITS.inputTextMax);
+}
+
 /*
- * input:   topic, purpose, audience, customAudience, slideCount, language, otherLanguage,
- *          colorPackage (id, name, colors[4]), additionalInstructions
- * options: themeIds - optional map of color-package id -> Gamma themeId (server secret)
- * returns: { ok: true, request, meta } or { ok: false, errors } keyed by form field
+ * input:   topic, fileText?, fileName?, detail, slideCount, language
+ * options: template - optional row loaded server-side from presentation_templates:
+ *            { gamma_template_id?, gamma_theme_id?, style_prompt?, slide_count? }
+ * returns: { ok: true, endpoint, request, meta } or { ok: false, errors } keyed by form field
  */
 export function buildGammaRequest(input, options = {}) {
   const errors = {};
   const topic = asString(input?.topic).trim();
-  const purposeInput = asString(input?.purpose).trim();
-  const audienceInput = asString(input?.audience).trim();
-  const customAudience = asString(input?.customAudience).trim();
+  const fileText = asString(input?.fileText).trim();
+  const fileName = asString(input?.fileName).replace(/[\r\n]+/g, " ").trim();
+  const detailInput = asString(input?.detail || DEFAULT_DETAIL).trim();
   const slideCountInput = asString(input?.slideCount || "auto").trim();
-  const languageInput = asString(input?.language).trim();
-  const otherLanguage = asString(input?.otherLanguage).trim();
-  const userInstructions = asString(input?.additionalInstructions).trim();
-  const colorPackage = input?.colorPackage;
+  const languageInput = asString(input?.language || "auto").trim();
+  const template = options?.template || null;
 
-  if (!topic) errors.topic = "REQUIRED";
-  else if (topic.length > FORM_LIMITS.topicMax) errors.topic = "TOO_LONG";
+  if (!topic && !fileText) errors.topic = "REQUIRED";
+  if (topic.length > FORM_LIMITS.topicMax) errors.topic = "TOO_LONG";
+  if (fileText.length > FORM_LIMITS.fileTextMax) errors.file = "TOO_LONG";
+  if (fileName.length > FORM_LIMITS.fileNameMax) errors.file = "INVALID";
 
-  if (!purposeInput) errors.purpose = "REQUIRED";
-  else if (purposeInput !== "auto" && !PURPOSE_META[purposeInput]) errors.purpose = "INVALID";
-
-  if (!audienceInput) errors.audience = "REQUIRED";
-  else if (audienceInput !== "auto" && audienceInput !== "custom" && !AUDIENCE_LABELS[audienceInput]) errors.audience = "INVALID";
-  if (audienceInput === "custom") {
-    if (!customAudience) errors.customAudience = "REQUIRED";
-    else if (customAudience.length > FORM_LIMITS.customAudienceMax) errors.customAudience = "TOO_LONG";
-  }
+  if (!Object.prototype.hasOwnProperty.call(DETAIL_LEVELS, detailInput)) errors.detail = "INVALID";
 
   let numCards = null;
   if (slideCountInput !== "auto") {
@@ -186,102 +167,73 @@ export function buildGammaRequest(input, options = {}) {
   }
 
   let languageCode = null;
-  if (!languageInput) errors.language = "REQUIRED";
-  else if (languageInput === "other") {
-    if (!otherLanguage) errors.otherLanguage = "REQUIRED";
-    else if (otherLanguage.length > FORM_LIMITS.otherLanguageMax) errors.otherLanguage = "TOO_LONG";
-    else {
-      languageCode = resolveLanguageCode(otherLanguage);
-      if (!languageCode) errors.otherLanguage = "UNSUPPORTED_LANGUAGE";
-    }
+  let languageSource = "user";
+  if (languageInput === "auto") {
+    languageCode = detectLanguageCode(`${topic}\n${fileText}`);
+    languageSource = languageCode ? "detected" : "same-as-input";
   } else {
     languageCode = resolveLanguageCode(languageInput);
     if (!languageCode) errors.language = "UNSUPPORTED_LANGUAGE";
   }
 
-  if (userInstructions.length > FORM_LIMITS.userInstructionsMax) errors.additionalInstructions = "TOO_LONG";
-
-  const validPackage =
-    colorPackage &&
-    typeof colorPackage.id === "string" && /^[a-z0-9-]{1,40}$/.test(colorPackage.id) &&
-    Array.isArray(colorPackage.colors) && colorPackage.colors.length === 4 &&
-    colorPackage.colors.every((c) => typeof c === "string" && HEX.test(c));
-  if (!validPackage) errors.colorPackage = "INVALID";
-
   if (Object.keys(errors).length) return { ok: false, errors };
 
-  /* ---- purpose / audience resolution ---- */
-  let purpose = purposeInput;
-  let purposeSource = "user";
-  if (purposeInput === "auto") {
-    const inferred = inferPurpose(topic);
-    purpose = inferred;
-    purposeSource = inferred ? "inferred-from-topic" : "delegated-to-gamma";
+  const inputText = composeInputText({ topic, fileText, fileName });
+  const languageNote = languageCode
+    ? `Write the whole presentation in ${GAMMA_LANGUAGES[languageCode]}.`
+    : "Write the whole presentation in the same language as the user's input text.";
+  const stylePrompt = asString(template?.style_prompt).trim();
+  const themeId = asString(template?.gamma_theme_id).trim();
+  const gammaTemplateId = asString(template?.gamma_template_id).trim();
+
+  const meta = {
+    detail: detailInput,
+    languageCode,
+    languageSource,
+    slideCount: numCards || "auto",
+    // "auto" is not a Gamma value: numCards is omitted and Gamma applies its own default (10).
+    slideCountNote: numCards ? "explicit" : gammaTemplateId ? "template" : "gamma-default",
+    hasFile: Boolean(fileText),
+    templateId: template?.id || null,
+    templateMode: gammaTemplateId ? "gamma-template" : template ? "theme-or-style" : "none",
+    themeIdUsed: themeId || null,
+  };
+
+  /* ---- template with a Gamma template: create-from-template endpoint ---- */
+  if (gammaTemplateId) {
+    const hints = [languageNote];
+    if (numCards) hints.push(`Aim for about ${numCards} slides.`);
+    hints.push(`Level of detail: ${detailInput}.`);
+    if (stylePrompt) hints.push(stylePrompt);
+    const prompt = `${inputText}\n\n${hints.join(" ")}`.slice(0, GAMMA_LIMITS.inputTextMax);
+    const request = { gammaId: gammaTemplateId, prompt };
+    if (themeId) request.themeId = themeId;
+    return { ok: true, endpoint: "/generations/from-template", request, meta };
   }
-  const purposeMeta = purpose ? PURPOSE_META[purpose] : null;
 
-  let audienceText = null;
-  let audienceSource = "user";
-  if (audienceInput === "custom") audienceText = customAudience;
-  else if (audienceInput === "auto") {
-    if (purposeMeta) { audienceText = purposeMeta.audience; audienceSource = "inferred-from-purpose"; }
-    else audienceSource = "delegated-to-gamma";
-  } else audienceText = AUDIENCE_LABELS[audienceInput];
-
-  /* ---- Gamma request ---- */
-  const themeId = options?.themeIds && typeof options.themeIds[colorPackage.id] === "string"
-    ? options.themeIds[colorPackage.id].trim()
-    : "";
-
-  const instructionParts = [];
-  if (purposeMeta) instructionParts.push(`Presentation purpose: ${purposeMeta.label}. Structure the deck accordingly.`);
-  else instructionParts.push("Infer the most suitable purpose and audience for this presentation from its topic, and structure the deck accordingly.");
-  if (!themeId) instructionParts.push(colorGuidance(colorPackage));
-  if (userInstructions) instructionParts.push(`Additional requirements from the user:\n${userInstructions}`);
-  const additionalInstructions = instructionParts.join("\n\n").slice(0, GAMMA_LIMITS.additionalInstructionsMax);
-
-  const textOptions = { language: languageCode };
-  if (purposeMeta) textOptions.tone = purposeMeta.tone.slice(0, GAMMA_LIMITS.toneMax);
-  if (audienceText) textOptions.audience = audienceText.slice(0, GAMMA_LIMITS.audienceMax);
+  /* ---- normal generation ---- */
+  const instructionParts = [languageNote];
+  if (stylePrompt) instructionParts.push(`Design direction: ${stylePrompt}`);
+  const textOptions = { amount: DETAIL_LEVELS[detailInput] };
+  if (languageCode) textOptions.language = languageCode;
 
   const request = {
-    inputText: topic,
+    inputText,
     textMode: "generate",
     format: "presentation",
-    // Ask Gamma for a real .pptx so the presentation can be shown/edited/exported inside Eyad's own editor.
-    exportAs: "pptx",
-    additionalInstructions,
+    additionalInstructions: instructionParts.join("\n\n").slice(0, GAMMA_LIMITS.additionalInstructionsMax),
     textOptions,
     cardOptions: { dimensions: "16x9" },
   };
   if (numCards) { request.numCards = numCards; request.cardSplit = "auto"; }
   if (themeId) request.themeId = themeId;
-
-  return {
-    ok: true,
-    request,
-    meta: {
-      purpose: purpose || "auto",
-      purposeSource,
-      audienceSource,
-      languageCode,
-      slideCount: numCards || "auto",
-      // "auto" is not a Gamma value: numCards is omitted and Gamma applies its own default (10).
-      slideCountNote: numCards ? "explicit" : "gamma-default",
-      colorPackageId: colorPackage.id,
-      colorApplication: themeId ? "theme" : "instructions",
-      themeIdUsed: themeId || null,
-    },
-  };
+  return { ok: true, endpoint: "/generations", request, meta };
 }
 
-/** Same request, without the themeId (used for a single retry if Gamma rejects the theme). */
-export function withoutTheme(request, colorPackage) {
+/** Same request without the themeId (used for a single retry if Gamma rejects the theme). */
+export function withoutTheme(request) {
   const next = { ...request };
   delete next.themeId;
-  const note = colorGuidance(colorPackage);
-  const base = String(next.additionalInstructions || "");
-  next.additionalInstructions = (base.includes(note) ? base : `${base}\n\n${note}`).trim().slice(0, GAMMA_LIMITS.additionalInstructionsMax);
   return next;
 }
 
