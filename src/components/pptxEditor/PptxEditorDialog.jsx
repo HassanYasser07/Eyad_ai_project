@@ -716,6 +716,27 @@ export default function PptxEditorDialog({ onClose, initialFile = null, onSaved 
     if (!changes.length) return;
     try { pkg.amend("Format text", () => setBounds(pkg, path, changes, "Format text")); lastFormatFitRef.current = { ids: pending.ids, version: pkg.version }; } catch { /* the formatting itself is already applied */ }
   }, [pkg?.version, okModel, pkg, path]);
+  // Generated decks (wrap="none" text) ship frames sized for the generator's font, so the selection border is often much
+  // larger than the text. Hug those frames once per slide, silently: no undo step and no "unsaved changes" flag.
+  const huggedSlidesRef = React.useRef(new WeakMap());
+  React.useLayoutEffect(() => {
+    if (!pkg || !path || !okModel || okModel.path !== path) return;
+    let done = huggedSlidesRef.current.get(pkg);
+    if (!done) { done = new Set(); huggedSlidesRef.current.set(pkg, done); }
+    if (done.has(path)) return;
+    done.add(path);
+    const ids = okModel.elements.filter((e) => !e.hidden && !e.readOnlyGeometry && e.text?.body?.wrap === "none" && e.text && !e.text.isEmpty).map((e) => e.id);
+    if (!ids.length) return;
+    const changes = (canvasRef.current?.fitContent?.(ids) || []).map((c) => ({ ...c, keepWrap: true }));
+    if (!changes.length) return;
+    const wasDirty = pkg.isDirty, depth = pkg.undoStack.length;
+    try {
+      setBounds(pkg, path, changes, "Fit text");
+      if (pkg.undoStack.length > depth) pkg.undoStack.length = depth;
+      if (!wasDirty) pkg.savedVersion = pkg.version;
+      force();
+    } catch { /* the frames simply keep the size stored in the file */ }
+  }, [pkg, path, okModel]);
   // A freshly picked web font reaches the page after the first measurement: once it has loaded, fit the frames again
   // (folded into the same undo step) so they match the final glyph metrics. Skipped if anything else was edited meanwhile.
   React.useEffect(() => {

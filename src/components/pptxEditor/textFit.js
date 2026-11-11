@@ -28,6 +28,8 @@ export function measureTextFrameHeight(root, id, widthEmu) {
   Object.assign(probe.style, {
     position: "absolute", inset: "auto", left: "0px", top: "0px", right: "auto", bottom: "auto",
     width: `${widthEmu / EMU_PER_PX}px`, height: "auto", visibility: "hidden", pointerEvents: "none",
+    // wrap="none" frames are drawn with white-space:pre; a resized frame wraps, so measure it as wrapping.
+    whiteSpace: "pre-wrap",
   });
   host.appendChild(probe);
   try {

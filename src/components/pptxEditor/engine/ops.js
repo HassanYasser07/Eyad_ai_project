@@ -103,8 +103,13 @@ export function setBounds(pkg, slidePath, changes, label = "Move") {
       // injecting normAutofit here caused ordinary titles/body text to shrink
       // after a user narrowed a box, instead of wrapping and growing its frame.
       const prev = node.localName === "graphicFrame" ? readBoundsFromNode(node) : null;
+      const before = ch.wrapSquare === undefined && !ch.keepWrap ? readBoundsFromNode(node) : null;
       writeBounds(doc, node, ch);
       if (prev) syncTableGrid(node, prev, ch);
+      // A resized text frame must really wrap in PowerPoint too: wrap="none" would let the text spill out of the new width.
+      const bodyPr = path(node, "txBody", "bodyPr");
+      const widthChanged = before ? Math.abs(ch.w - before.w) > 9525 : !!ch.wrapSquare;
+      if (bodyPr && !ch.keepWrap && widthChanged && (ch.wrapSquare || bodyPr.getAttribute("wrap") === "none")) bodyPr.setAttribute("wrap", "square");
     }
   });
 }

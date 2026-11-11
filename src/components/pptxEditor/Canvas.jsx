@@ -207,7 +207,9 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
       const el = R.current.model.elements.find((x) => x.id === c.id);
       if (!el || (c.w === el.w && c.h === el.h) || c.tableGrid) return c; // moves/rotates and pre-fitted drafts pass through
       const fit = fitOf(c.id, c.w, c.h);
-      return fit && (fit.h > c.h || fit.tableGrid) ? { ...c, ...fit } : c;
+      const out = fit && (fit.h > c.h || fit.tableGrid) ? { ...c, ...fit } : c;
+      // Narrowing/widening a wrap="none" text frame turns it into a normal wrapping frame (see setBounds).
+      return el.text?.body?.wrap === "none" && Math.abs(c.w - el.w) > EMU_PER_PX && !c.keepWrap ? { ...out, wrapSquare: true } : out;
     }),
     // Frames re-fitted to their current (already rendered) text, e.g. after letter / line spacing, size or font changes.
     fitContent: (ids) => fitContentChanges(stageRef.current, R.current.model, ids),
