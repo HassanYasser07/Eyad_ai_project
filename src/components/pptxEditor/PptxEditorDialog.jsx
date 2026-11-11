@@ -5,7 +5,7 @@ import {
   ZoomIn, ZoomOut, Maximize, Grid3x3, Magnet, ChevronLeft, ChevronRight, LayoutGrid, MousePointerSquareDashed, RotateCcw, AlertTriangle, SquareDashedMousePointer, Move3d, Info, RectangleHorizontal, Loader2,
   Home, ClipboardCopy, ClipboardPaste, Scissors, FlipHorizontal2, FlipVertical2, AlignStartVertical, AlignCenterVertical, AlignEndVertical,
   Search, Bold, Italic, Underline,
-  Play, List, Strikethrough, Table2, Type as TextIcon, Image as ImageIcon, Save,
+  Play, List, Strikethrough, Table2, Type as TextIcon, Image as ImageIcon, Save, LogIn,
 } from "lucide-react";
 import { useI18n } from "@/i18n/I18nContext";
 import { PptxPackage, PptxError, readPresentation, readSlide, setSlideBackground, setPresentationBackground, capturePresentationBackgrounds, restorePresentationBackgrounds, captureSlidePaletteState, restoreSlidePaletteStates, setBounds, deleteElements, duplicateElements, reorderElements, moveElementToLayer, setElementsHidden, groupElements, ungroupElement, setText, setTextProps, setShapeStyle, setOpacity, addTextBox, addShape, addTable, addPicture, replacePicture, setAltText, tableRows, tableCols, setTableOptions, setTableRangeTextProps, setTableRangeCellFill, copyElements, pasteElements, addSlide, duplicateSlide, deleteSlide, moveSlide, listLayouts, hasSections, computeAlign, computeDistribute, rotatedBox, unionBox, applySlidePalette } from "./engine/index.js";
@@ -126,6 +126,9 @@ function useSwipeNav({ onPrev, onNext, canPrev, canNext }) {
  *   projectId/versionId link the open deck to a saved version in Projects (Save can then replace it or add a new one).
  * onSaved(result): called after a successful save to Projects -> { projectId, version }.
  */
+const RESUME_KEY = "eyad_pptx_resume";
+const LOGIN_ERROR_CODES = new Set(["AUTH_LOGIN_REQUIRED", "ACCOUNT_REQUIRED", "INVALID_SESSION"]);
+
 export default function PptxEditorDialog({ onClose, initialFile = null, onSaved = null }) {
   const { t, loc, direction } = useI18n();
   const compact = useCompact();
@@ -179,6 +182,8 @@ export default function PptxEditorDialog({ onClose, initialFile = null, onSaved 
   // Link to Projects: which saved version this deck came from / was last saved as (null = not in Projects yet).
   const [link, setLink] = React.useState(() => ({ projectId: initialFile?.projectId || null, versionId: initialFile?.versionId || null, versionNo: initialFile?.versionNo ?? null }));
   const [saveDialog, setSaveDialog] = React.useState(null); // { intent: "save" | "exit" }
+  const [loginDialog, setLoginDialog] = React.useState(false); // saving needs a signed-in account
+  const leavingRef = React.useRef(false); // true while we hand the user off to /login (skip the "leave site?" prompt)
   const [report, setReport] = React.useState(null);
   const [draft, setDraft] = React.useState(null);
   const [dragOver, setDragOver] = React.useState(false);
@@ -397,7 +402,21 @@ export default function PptxEditorDialog({ onClose, initialFile = null, onSaved 
     }
   }, [okModel, compact, textEdit, clearContextSheetTimer]);
   React.useEffect(() => { if (!feedback) return undefined; const id = setTimeout(() => setFeedback(null), feedback.kind === "error" ? 7000 : 3500); return () => clearTimeout(id); }, [feedback]);
-  React.useEffect(() => { loadDraft().then((d) => d && d.bytes && setDraft(d)); }, []);
+  React.useEffect(() => {
+    loadDraft().then(async (d) => {
+      // Coming back from /login after a save attempt: reopen the deck with the same edits and the same project link.
+      let resume = null;
+      try { resume = JSON.parse(sessionStorage.getItem(RESUME_KEY) || "null"); sessionStorage.removeItem(RESUME_KEY); } catch { /* ignore */ }
+      if (!d || !d.bytes) return;
+      const fresh = resume && Date.now() - (resume.at || 0) < 30 * 60 * 1000 && resume.path === window.location.pathname + window.location.search;
+      if (fresh) {
+        if (resume.link) setLink(resume.link);
+        await openBytes(d.bytes, d.name, d.original, { fromDraft: true });
+        setFeedback({ kind: "ok", text: t("pptxEditor.loginRestored") });
+      } else setDraft(d);
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   React.useEffect(() => () => { if (pkgRef.current) disposeMediaUrls(pkgRef.current); }, []);
   const pkgRef = React.useRef(null);
   pkgRef.current = pkg;
@@ -463,7 +482,7 @@ export default function PptxEditorDialog({ onClose, initialFile = null, onSaved 
   }, [pkg, pkg?.version, flushDraft]);
   React.useEffect(() => {
     const hide = () => { if (document.visibilityState === "hidden") flushDraft(); };
-    const warn = (e) => { if (pkgRef.current?.isDirty) { e.preventDefault(); e.returnValue = ""; } };
+    const warn = (e) => { if (!leavingRef.current && pkgRef.current?.isDirty) { e.preventDefault(); e.returnValue = ""; } };
     document.addEventListener("visibilitychange", hide); window.addEventListener("pagehide", flushDraft); window.addEventListener("beforeunload", warn);
     return () => { document.removeEventListener("visibilitychange", hide); window.removeEventListener("pagehide", flushDraft); window.removeEventListener("beforeunload", warn); };
   }, [flushDraft]);
@@ -501,6 +520,16 @@ export default function PptxEditorDialog({ onClose, initialFile = null, onSaved 
     else { clearDraft(); onClose(); }
   };
   const askSave = () => { if (pkg?.isDirty && !busy) setSaveDialog({ intent: "save" }); };
+  // Park the edits in the local draft, remember where we were, sign in, and come back to the same deck.
+  const goLogin = async () => {
+    setLoginDialog(false);
+    setBusy(t("pptxEditor.saving"));
+    await flushDraft();
+    const path = window.location.pathname + window.location.search;
+    try { sessionStorage.setItem(RESUME_KEY, JSON.stringify({ path, link, at: Date.now() })); } catch { /* ignore */ }
+    leavingRef.current = true;
+    window.location.href = "/login?returnTo=" + encodeURIComponent(path);
+  };
   const discardAndClose = async () => { setSaveDialog(null); await clearDraft(); onClose(); };
   const persistToProject = async (mode, { closeAfter = false } = {}) => {
     setSaveDialog(null);
@@ -518,6 +547,7 @@ export default function PptxEditorDialog({ onClose, initialFile = null, onSaved 
       if (closeAfter) onClose();
     } catch (err) {
       // The deck stays open and unsaved so nothing is lost; the user can retry or export.
+      if (err instanceof PresentationError && LOGIN_ERROR_CODES.has(err.code)) { setLoginDialog(true); return; }
       const text = err instanceof PresentationError ? presentationErrorMessage(err.code, loc) : t("pptxEditor.err.generic");
       setFeedback({ kind: "error", text: `${t("pptxEditor.saveFailed")} ${text}`.trim() });
     } finally { setBusy(null); }
@@ -964,7 +994,7 @@ export default function PptxEditorDialog({ onClose, initialFile = null, onSaved 
       else if (mod && e.key === "-") act(() => canvasRef.current?.zoomBy(0.8));
       else if ((e.key === "Delete" || e.key === "Backspace") && ids.length) act(a.remove);
       else if (e.key === "Enter" && ids.length === 1) act(() => openText(ids[0]));
-      else if (e.key === "Escape") act(() => { if (saveDialog) setSaveDialog(null); else if (confirm) setConfirm(null); else if (layersOpen) setLayersOpen(false); else if (sheet) setSheet(null); else if (ids.length) setSelection([]); });
+      else if (e.key === "Escape") act(() => { if (loginDialog) setLoginDialog(false); else if (saveDialog) setSaveDialog(null); else if (confirm) setConfirm(null); else if (layersOpen) setLayersOpen(false); else if (sheet) setSheet(null); else if (ids.length) setSelection([]); });
       else if (e.key === "PageDown") act(() => setIdx((i) => Math.min(pres.slides.length - 1, i + 1)));
       else if (e.key === "PageUp") act(() => setIdx((i) => Math.max(0, i - 1)));
       else if (e.key.startsWith("Arrow") && ids.length) {
@@ -1381,6 +1411,19 @@ export default function PptxEditorDialog({ onClose, initialFile = null, onSaved 
                   {link.versionId && <button type="button" className="pe-btn-secondary" onClick={() => persistToProject("replace", { closeAfter: saveDialog.intent === "exit" })} data-testid="pptx-save-replace">{t("pptxEditor.saveReplace", { n: link.versionNo })}</button>}
                   {saveDialog.intent === "exit" && <button type="button" className="pe-btn-danger" onClick={discardAndClose} data-testid="pptx-save-discard">{t("pptxEditor.saveDiscard")}</button>}
                   <button type="button" className="pe-btn-secondary" onClick={() => setSaveDialog(null)} data-testid="pptx-save-cancel">{t(saveDialog.intent === "exit" ? "pptxEditor.keepEditing" : "pptxEditor.cancel")}</button>
+                </div>
+              </div>
+            </div>
+          )}
+          {loginDialog && (
+            <div className="pe-modal" role="alertdialog" aria-modal="true" aria-labelledby="pe-login-title" data-testid="pptx-login-dialog">
+              <div className="pe-modal-card pe-login-card">
+                <div className="pe-login-icon" aria-hidden="true"><LogIn size={26} /></div>
+                <h3 id="pe-login-title" className="pe-modal-title">{t("pptxEditor.loginDialog.title")}</h3>
+                <p>{t("pptxEditor.loginDialog.text")}</p>
+                <div className="pe-save-options">
+                  <button type="button" className="pe-btn-primary" onClick={goLogin} data-testid="pptx-login-go">{t("pptxEditor.loginDialog.confirm")}</button>
+                  <button type="button" className="pe-btn-secondary" onClick={() => setLoginDialog(false)} data-testid="pptx-login-later">{t("pptxEditor.loginDialog.later")}</button>
                 </div>
               </div>
             </div>

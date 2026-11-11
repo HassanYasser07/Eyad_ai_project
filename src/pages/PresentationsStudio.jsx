@@ -69,7 +69,8 @@ export default function PresentationsStudio() {
   const [file, setFile] = React.useState(null); // { name, size, text, truncated } extracted from "Add File"
   const [template, setTemplate] = React.useState(null); // row picked in the gallery
   const [errors, setErrors] = React.useState({});
-  const [pptxEditorOpen, setPptxEditorOpen] = React.useState(false);
+  // Returning from /login after a save attempt: reopen the editor so it can restore the deck from its local draft.
+  const [pptxEditorOpen, setPptxEditorOpen] = React.useState(() => { try { return !!sessionStorage.getItem("eyad_pptx_resume"); } catch { return false; } });
   const [editorFile, setEditorFile] = React.useState(null); // { bytes, name } handed to the editor (a template's .pptx)
   const [openingTemplateId, setOpeningTemplateId] = React.useState(null);
   const [templateError, setTemplateError] = React.useState("");

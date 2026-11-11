@@ -1100,3 +1100,6 @@ with an opacity slider ---- */
 .pe-save-options { display: flex; flex-direction: column; gap: 8px; }
 .pe-save-options button { width: 100%; justify-content: center; }
 .pe-btn-save { margin-inline-end: 6px; }
+
+.pe-login-card { text-align: center; }
+.pe-login-icon { width: 56px; height: 56px; margin: 0 auto 12px; display: grid; place-items: center; border-radius: 50%; background: hsl(var(--primary) / .12); color: hsl(var(--primary)); }
