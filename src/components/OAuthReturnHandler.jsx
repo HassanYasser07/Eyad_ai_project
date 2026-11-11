@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useLocation } from "react-router-dom";
 import { useAuth } from "@/lib/AuthContext";
+import { startNativeAuthListener } from "@/lib/nativeAuth";
 
 /**
  * After Google sign-in Supabase lands the user on the site root. The intro animation there can navigate to /home
@@ -12,6 +13,8 @@ import { useAuth } from "@/lib/AuthContext";
 export default function OAuthReturnHandler() {
   const { user } = useAuth();
   const { pathname } = useLocation();
+
+  useEffect(() => { startNativeAuthListener(); }, []);
 
   useEffect(() => {
     if (!user || user.is_anonymous || pathname === "/login") return;
