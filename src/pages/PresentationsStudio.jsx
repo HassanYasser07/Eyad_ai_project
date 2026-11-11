@@ -15,6 +15,8 @@ import {
   DEFAULT_PRESENTATION_SETTINGS, DETAIL_OPTIONS, PRESENTATION_LANGUAGES, SLIDE_COUNT_OPTIONS,
 } from "@/config/presentationOptions";
 import { fetchTemplatePptx } from "@/services/templateService";
+import { fetchPresentationFile } from "@/services/presentationService";
+import { errorMessage as presentationErrorMessage } from "@/components/presentations/presentationMessages";
 import { buildSettingsPayload, validatePresentationSettings } from "@/config/presentationValidation";
 // Separate, lazily loaded editing environment; it does not touch the generation workflow below.
 const createPptxEditorComponent = () => React.lazy(() => import("@/components/pptxEditor/PptxEditorDialog"));
@@ -71,6 +73,8 @@ export default function PresentationsStudio() {
   const [editorFile, setEditorFile] = React.useState(null); // { bytes, name } handed to the editor (a template's .pptx)
   const [openingTemplateId, setOpeningTemplateId] = React.useState(null);
   const [templateError, setTemplateError] = React.useState("");
+  const [openingResult, setOpeningResult] = React.useState(false);
+  const [resultOpenError, setResultOpenError] = React.useState("");
   const [pptxEditorAttempt, setPptxEditorAttempt] = React.useState(0);
   const [PptxEditorComponent, setPptxEditorComponent] = React.useState(() => createPptxEditorComponent());
   const formRef = React.useRef(null);
@@ -138,6 +142,22 @@ export default function PresentationsStudio() {
   };
 
   const closeEditor = () => { setPptxEditorOpen(false); setEditorFile(null); };
+
+  // The deck that was just generated is already saved in the project: open that stored .pptx in the editor.
+  const openGeneratedInEditor = async () => {
+    if (!job?.project_id || openingResult) return;
+    setOpeningResult(true);
+    setResultOpenError("");
+    try {
+      const opened = await fetchPresentationFile(job.project_id, job.version_id || null);
+      setEditorFile({ bytes: opened.bytes, name: opened.name, projectId: job.project_id, versionId: opened.version?.id || job.version_id || null, versionNo: opened.version?.version_no ?? job.version_no ?? null });
+      setPptxEditorOpen(true);
+    } catch (err) {
+      setResultOpenError(presentationErrorMessage(err.code, loc, err.detail));
+    } finally {
+      setOpeningResult(false);
+    }
+  };
 
   // A template with a .pptx opens straight in the editor; one without a file is attached to the prompt as before.
   const pickTemplate = async (picked) => {
@@ -207,7 +227,8 @@ export default function PresentationsStudio() {
           {phase !== "idle" && (
             <aside aria-label={loc({ ar: "نتيجة التوليد", en: "Generation result" })} className="mt-6 rounded-3xl border border-border bg-card p-5 shadow-sm md:p-6">
               <PresentationResult phase={phase} job={job} error={genError} timedOut={timedOut} loc={loc}
-                onRetry={submit} onRecheck={generation.recheck} />
+                onRetry={submit} onRecheck={generation.recheck}
+                onOpenEditor={openGeneratedInEditor} openingEditor={openingResult} openError={resultOpenError} />
             </aside>
           )}
         </div>

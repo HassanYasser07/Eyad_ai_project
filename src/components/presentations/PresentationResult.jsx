@@ -1,9 +1,10 @@
 import React from "react";
-import { AlertTriangle, CheckCircle2, ExternalLink, Loader2, Presentation, RefreshCw } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ExternalLink, FolderOpen, Loader2, PencilRuler, Presentation, RefreshCw } from "lucide-react";
+import { Link } from "react-router-dom";
 import { errorMessage } from "./presentationMessages";
 
 /** Result panel: shows the real state reported by the backend (never a simulated one). */
-export default function PresentationResult({ phase, job, error, timedOut, onRetry, onRecheck, loc }) {
+export default function PresentationResult({ phase, job, error, timedOut, onRetry, onRecheck, onOpenEditor = null, openingEditor = false, openError = "", loc }) {
   if (phase === "idle") {
     return (
       <div className="grid min-h-64 place-items-center text-center text-muted-foreground">
@@ -34,14 +35,40 @@ export default function PresentationResult({ phase, job, error, timedOut, onRetr
           <CheckCircle2 className="mt-0.5 h-6 w-6 shrink-0 text-emerald-500" aria-hidden="true" />
           <div>
             <h2 className="text-lg font-black text-foreground">{loc({ ar: "تم إنشاء العرض التقديمي", en: "Your presentation is ready" })}</h2>
-            <p className="mt-1 text-sm text-muted-foreground">{loc({ ar: "أنشأته Gamma وهو متاح الآن للفتح والتعديل.", en: "Gamma created it and it is ready to open and edit." })}</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {job.pptx_ready && job.project_id
+                ? loc({ ar: "تم حفظه في مشاريعك وهو جاهز للفتح والتعديل في المحرر.", en: "It is saved in your projects and ready to open and edit in the editor." })
+                : loc({ ar: "أنشأته Gamma وهو متاح الآن للفتح.", en: "Gamma created it and it is ready to open." })}
+            </p>
           </div>
         </div>
-        <a href={job.gamma_url} target="_blank" rel="noopener noreferrer" data-testid="open-presentation"
-          className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-primary px-5 text-sm font-bold text-primary-foreground shadow hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background">
-          <ExternalLink className="h-4 w-4" aria-hidden="true" />
-          {loc({ ar: "فتح العرض التقديمي", en: "Open presentation" })}
-        </a>
+        <div className="flex flex-wrap items-center gap-3">
+          {job.pptx_ready && job.project_id && onOpenEditor && (
+            <button type="button" onClick={onOpenEditor} disabled={openingEditor} data-testid="open-in-editor"
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-primary px-5 text-sm font-bold text-primary-foreground shadow hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:opacity-70">
+              {openingEditor ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <PencilRuler className="h-4 w-4" aria-hidden="true" />}
+              {loc({ ar: "فتح في المحرر", en: "Open in editor" })}
+            </button>
+          )}
+          {job.project_id && (
+            <Link to={`/chat?project=${encodeURIComponent(job.project_id)}`} data-testid="open-presentation-project"
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-border bg-card px-4 text-sm font-bold text-foreground hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              <FolderOpen className="h-4 w-4" aria-hidden="true" />
+              {loc({ ar: "فتح المشروع", en: "Open project" })}
+            </Link>
+          )}
+          <a href={job.gamma_url} target="_blank" rel="noopener noreferrer" data-testid="open-presentation"
+            className={job.pptx_ready && job.project_id
+              ? "inline-flex items-center gap-1.5 text-sm font-bold text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+              : "inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-primary px-5 text-sm font-bold text-primary-foreground shadow hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"}>
+            <ExternalLink className="h-4 w-4" aria-hidden="true" />
+            {loc({ ar: "فتح في Gamma", en: "Open in Gamma" })}
+          </a>
+        </div>
+        {!job.pptx_ready && job.project_id && (
+          <p role="alert" className="text-xs leading-6 text-amber-700">{loc({ ar: "تعذر حفظ ملف العرض في مشروعك الآن. افتح المشروع لإعادة المحاولة.", en: "The presentation file could not be saved to your project yet. Open the project to retry." })}</p>
+        )}
+        {openError && <p role="alert" className="text-xs leading-6 text-destructive">{openError}</p>}
         {job.export_url && (
           <a href={job.export_url} target="_blank" rel="noopener noreferrer" className="ms-3 text-sm font-bold text-primary underline-offset-4 hover:underline">
             {loc({ ar: "تنزيل الملف", en: "Download file" })}

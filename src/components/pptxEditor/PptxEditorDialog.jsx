@@ -5,12 +5,14 @@ import {
   ZoomIn, ZoomOut, Maximize, Grid3x3, Magnet, ChevronLeft, ChevronRight, LayoutGrid, MousePointerSquareDashed, RotateCcw, AlertTriangle, SquareDashedMousePointer, Move3d, Info, RectangleHorizontal, Loader2,
   Home, ClipboardCopy, ClipboardPaste, Scissors, FlipHorizontal2, FlipVertical2, AlignStartVertical, AlignCenterVertical, AlignEndVertical,
   Search, Bold, Italic, Underline,
-  Play, List, Strikethrough, Table2, Type as TextIcon, Image as ImageIcon,
+  Play, List, Strikethrough, Table2, Type as TextIcon, Image as ImageIcon, Save,
 } from "lucide-react";
 import { useI18n } from "@/i18n/I18nContext";
 import { PptxPackage, PptxError, readPresentation, readSlide, setSlideBackground, setPresentationBackground, capturePresentationBackgrounds, restorePresentationBackgrounds, captureSlidePaletteState, restoreSlidePaletteStates, setBounds, deleteElements, duplicateElements, reorderElements, moveElementToLayer, setElementsHidden, groupElements, ungroupElement, setText, setTextProps, setShapeStyle, setOpacity, addTextBox, addShape, addTable, addPicture, replacePicture, setAltText, tableRows, tableCols, setTableOptions, setTableRangeTextProps, setTableRangeCellFill, copyElements, pasteElements, addSlide, duplicateSlide, deleteSlide, moveSlide, listLayouts, hasSections, computeAlign, computeDistribute, rotatedBox, unionBox, applySlidePalette } from "./engine/index.js";
 import { checkPptxFile, readFile, saveBytes, pickFile, PPTX_ACCEPT, IMAGE_ACCEPT, safeName, saveDraft, loadDraft, clearDraft, imageInfo } from "./fileIO.js";
 import { disposeMediaUrls, useMediaUrls } from "./useMediaUrls.js";
+import { PresentationError, savePresentationVersion } from "@/services/presentationService";
+import { errorMessage as presentationErrorMessage } from "@/components/presentations/presentationMessages";
 import Canvas from "./Canvas.jsx";
 import CellToolbar from "./CellToolbar.jsx";
 import SelectionToolbar from "./SelectionToolbar.jsx";
@@ -119,8 +121,13 @@ function useSwipeNav({ onPrev, onNext, canPrev, canNext }) {
   return { handlers, dx, settling, consumeClick };
 }
 
-export default function PptxEditorDialog({ onClose, initialFile = null }) {
-  const { t, direction } = useI18n();
+/**
+ * initialFile: { bytes, name, present?, projectId?, versionId?, versionNo? }
+ *   projectId/versionId link the open deck to a saved version in Projects (Save can then replace it or add a new one).
+ * onSaved(result): called after a successful save to Projects -> { projectId, version }.
+ */
+export default function PptxEditorDialog({ onClose, initialFile = null, onSaved = null }) {
+  const { t, loc, direction } = useI18n();
   const compact = useCompact();
   const vp = useVisualViewport(compact);
   const rootRef = React.useRef(null);
@@ -169,6 +176,9 @@ export default function PptxEditorDialog({ onClose, initialFile = null }) {
   // Set when "Add slide" was pressed inside the slides sheet, so the layout picker returns there afterwards.
   const slidesReturnRef = React.useRef(false);
   const [confirm, setConfirm] = React.useState(null);
+  // Link to Projects: which saved version this deck came from / was last saved as (null = not in Projects yet).
+  const [link, setLink] = React.useState(() => ({ projectId: initialFile?.projectId || null, versionId: initialFile?.versionId || null, versionNo: initialFile?.versionNo ?? null }));
+  const [saveDialog, setSaveDialog] = React.useState(null); // { intent: "save" | "exit" }
   const [report, setReport] = React.useState(null);
   const [draft, setDraft] = React.useState(null);
   const [dragOver, setDragOver] = React.useState(false);
@@ -458,9 +468,32 @@ export default function PptxEditorDialog({ onClose, initialFile = null }) {
     return () => { document.removeEventListener("visibilitychange", hide); window.removeEventListener("pagehide", flushDraft); window.removeEventListener("beforeunload", warn); };
   }, [flushDraft]);
 
+  // Leaving with unsaved edits asks: new version / replace the saved one / don't save.
   const requestClose = () => {
-    if (pkg?.isDirty) setConfirm({ text: t("pptxEditor.discardConfirm"), yes: t("pptxEditor.discard"), run: async () => { await clearDraft(); onClose(); } });
+    if (pkg?.isDirty) setSaveDialog({ intent: "exit" });
     else { clearDraft(); onClose(); }
+  };
+  const askSave = () => { if (pkg && !busy) setSaveDialog({ intent: "save" }); };
+  const discardAndClose = async () => { setSaveDialog(null); await clearDraft(); onClose(); };
+  const persistToProject = async (mode, { closeAfter = false } = {}) => {
+    setSaveDialog(null);
+    setBusy(t("pptxEditor.saving"));
+    try {
+      const bytes = await pkg.exportBytes();
+      const result = await savePresentationVersion({
+        projectId: link.projectId, mode, replaceVersionId: mode === "replace" ? link.versionId : null,
+        fileName: `${safeName(fileName)}.pptx`, bytes,
+      });
+      pkg.markSaved(); clearDraft();
+      setLink({ projectId: result.projectId, versionId: result.version.id, versionNo: result.version.version_no });
+      try { onSaved?.(result); } catch { /* host callback must not break saving */ }
+      setFeedback({ kind: "ok", text: t("pptxEditor.saved", { n: result.version.version_no }) });
+      if (closeAfter) onClose();
+    } catch (err) {
+      // The deck stays open and unsaved so nothing is lost; the user can retry or export.
+      const text = err instanceof PresentationError ? presentationErrorMessage(err.code, loc) : t("pptxEditor.err.generic");
+      setFeedback({ kind: "error", text: `${t("pptxEditor.saveFailed")} ${text}`.trim() });
+    } finally { setBusy(null); }
   };
 
   // ----- actions -----
@@ -868,7 +901,7 @@ export default function PptxEditorDialog({ onClose, initialFile = null }) {
       const act = (fn) => { e.preventDefault(); fn(); };
       if (mod && k === "z") act(e.shiftKey ? redo : undo);
       else if (mod && k === "y") act(redo);
-      else if (mod && k === "s") act(exportNow);
+      else if (mod && k === "s") act(askSave);
       else if (mod && k === "a") act(() => setSelection(okModel.elements.filter((x) => !x.hidden).map((x) => x.id)));
       else if (mod && k === "d" && ids.length) act(a.duplicate);
       else if (mod && k === "c" && ids.length) act(copyNow);
@@ -883,7 +916,7 @@ export default function PptxEditorDialog({ onClose, initialFile = null }) {
       else if (mod && e.key === "-") act(() => canvasRef.current?.zoomBy(0.8));
       else if ((e.key === "Delete" || e.key === "Backspace") && ids.length) act(a.remove);
       else if (e.key === "Enter" && ids.length === 1) act(() => openText(ids[0]));
-      else if (e.key === "Escape") act(() => { if (confirm) setConfirm(null); else if (layersOpen) setLayersOpen(false); else if (sheet) setSheet(null); else if (ids.length) setSelection([]); });
+      else if (e.key === "Escape") act(() => { if (saveDialog) setSaveDialog(null); else if (confirm) setConfirm(null); else if (layersOpen) setLayersOpen(false); else if (sheet) setSheet(null); else if (ids.length) setSelection([]); });
       else if (e.key === "PageDown") act(() => setIdx((i) => Math.min(pres.slides.length - 1, i + 1)));
       else if (e.key === "PageUp") act(() => setIdx((i) => Math.max(0, i - 1)));
       else if (e.key.startsWith("Arrow") && ids.length) {
@@ -1116,6 +1149,7 @@ export default function PptxEditorDialog({ onClose, initialFile = null }) {
               <IconButton icon={Info} label={t("pptxEditor.report")} onClick={() => setSheet("report")} active={report?.warnings.length > 0} testId="pptx-report" /></>}
             <span className="pe-grow" />
             <IconButton icon={Play} label={t("pptxEditor.present")} onClick={() => setPresenting(true)} testId="pptx-present" />
+            <button type="button" className="pe-btn-secondary pe-btn-save" onClick={askSave} disabled={!!busy} data-testid="pptx-save"><Save size={16} aria-hidden="true" /><span>{t("pptxEditor.save")}</span></button>
             <button type="button" className="pe-btn-primary" onClick={exportNow} disabled={!!busy} data-testid="pptx-export">{busy ? <Loader2 className="pe-spin" size={16} aria-hidden="true" /> : <Download size={16} aria-hidden="true" />}<span>{t("pptxEditor.export")}</span></button>
             {compact && <IconButton icon={MoreHorizontal} label={t("pptxEditor.more")} onClick={() => setSheet("more")} testId="pptx-more" />}
           </header>
@@ -1273,6 +1307,7 @@ export default function PptxEditorDialog({ onClose, initialFile = null }) {
           {shownSheet === "more" && (
             <BottomSheet closing={sheetClosing} closingBottom={chrome.bottom} title={t("pptxEditor.more")} onClose={() => setSheet(null)} testId="pptx-more-sheet">
               <ul className="pe-list">
+                <li><button type="button" onClick={() => { setSheet(null); askSave(); }}><Save size={16} aria-hidden="true" />{t("pptxEditor.save")}</button></li>
                 <li><button type="button" onClick={() => { setSheet(null); exportNow(); }}><Download size={16} aria-hidden="true" />{t("pptxEditor.export")}</button></li>
                 <li><button type="button" onClick={() => { setGrid((g) => ({ ...g, show: !g.show })); }}><Grid3x3 size={16} aria-hidden="true" />{t("pptxEditor.grid")} {grid.show ? "✓" : ""}</button></li>
                 <li><button type="button" onClick={() => canvasRef.current?.fit()}><Maximize size={16} aria-hidden="true" />{t("pptxEditor.fitScreen")}</button></li>
@@ -1288,6 +1323,20 @@ export default function PptxEditorDialog({ onClose, initialFile = null }) {
           )}
           {shownSheet === "report" && report && <ReportSheet report={report} t={t} onClose={() => setSheet(null)} closing={sheetClosing} closingBottom={chrome.bottom} />}
           {presenting && pres && <PresentationPreview pkg={pkg} pres={pres} idx={safeIdx} onClose={() => setPresenting(false)} onSelect={(i) => { const next = Math.max(0, Math.min(pres.slides.length - 1, i)); if (next !== safeIdx) setPreviewHiddenIds(new Set()); setIdx(next); }} previewHiddenIds={previewHiddenIds} t={t} labels={labels} />}
+          {saveDialog && (
+            <div className="pe-modal" role="alertdialog" aria-modal="true" aria-labelledby="pe-save-title" data-testid="pptx-save-dialog">
+              <div className="pe-modal-card">
+                <h3 id="pe-save-title" className="pe-modal-title">{t(saveDialog.intent === "exit" ? "pptxEditor.saveDialog.exitTitle" : "pptxEditor.saveDialog.title")}</h3>
+                <p>{t(link.versionId ? "pptxEditor.saveDialog.textLinked" : "pptxEditor.saveDialog.textNew", { n: link.versionNo })}</p>
+                <div className="pe-save-options">
+                  <button type="button" className="pe-btn-primary" onClick={() => persistToProject("new", { closeAfter: saveDialog.intent === "exit" })} data-testid="pptx-save-new">{t("pptxEditor.saveNew")}</button>
+                  {link.versionId && <button type="button" className="pe-btn-secondary" onClick={() => persistToProject("replace", { closeAfter: saveDialog.intent === "exit" })} data-testid="pptx-save-replace">{t("pptxEditor.saveReplace", { n: link.versionNo })}</button>}
+                  {saveDialog.intent === "exit" && <button type="button" className="pe-btn-danger" onClick={discardAndClose} data-testid="pptx-save-discard">{t("pptxEditor.saveDiscard")}</button>}
+                  <button type="button" className="pe-btn-secondary" onClick={() => setSaveDialog(null)} data-testid="pptx-save-cancel">{t(saveDialog.intent === "exit" ? "pptxEditor.keepEditing" : "pptxEditor.cancel")}</button>
+                </div>
+              </div>
+            </div>
+          )}
           {confirm && (
             <div className="pe-modal" role="alertdialog" aria-modal="true" data-testid="pptx-confirm">
               <div className="pe-modal-card"><p>{confirm.text}</p>

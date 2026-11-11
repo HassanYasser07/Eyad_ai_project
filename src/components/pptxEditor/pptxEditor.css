@@ -267,8 +267,8 @@ drag-to-resize strips,
 .pe-ribbon-shell,
 .pe-root.is-compact .pe-ribbon-shell { display: none; }
 .pe-title { max-width: 34vw; }
-.pe-top .pe-btn-primary span { display: none; }
-.pe-top .pe-btn-primary { min-width: 44px; padding: 0 10px; }
+.pe-top .pe-btn-primary span, .pe-top .pe-btn-save span { display: none; }
+.pe-top .pe-btn-primary, .pe-top .pe-btn-save { min-width: 44px; padding: 0 10px; }
 }
 /* short-height touch screens (phones in landscape): reclaim vertical space for the canvas */
 @media (max-height: 520px) and (pointer: coarse) {
@@ -1094,3 +1094,9 @@ with an opacity slider ---- */
   .pe-right .ek-panel-tab.is-active { animation: pe-tab-in .25s ease-out both; }
 }
 @media (prefers-reduced-motion: reduce) { .pe-left { transition: none; } }
+
+/* Save to Projects dialog (save / exit with unsaved edits) */
+.pe-modal-title { margin: 0 0 8px; font-size: 16px; font-weight: 800; }
+.pe-save-options { display: flex; flex-direction: column; gap: 8px; }
+.pe-save-options button { width: 100%; justify-content: center; }
+.pe-btn-save { margin-inline-end: 6px; }

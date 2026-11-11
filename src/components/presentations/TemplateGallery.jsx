@@ -1,4 +1,3 @@
-
 import React from "react";
 import { Check, Layers, Loader2, Presentation, RefreshCw } from "lucide-react";
 import { fetchTemplateGallery } from "@/services/templateService";
@@ -14,14 +13,15 @@ function placeholderStyle(template) {
   return { backgroundImage: `linear-gradient(135deg, ${a}, ${b || a})` };
 }
 
-/** Display only the slide count number. */
-function slidesLabel(n) {
-  return String(n);
+/** Arabic count noun: 1 شريحة، 2 شريحتان، 3-10 شرائح، 11+ شريحة. */
+function slidesLabel(n, loc) {
+  const ar = n === 1 ? "شريحة واحدة" : n === 2 ? "شريحتان" : n <= 10 ? `${n} شرائح` : `${n} شريحة`;
+  return loc({ ar, en: `${n} ${n === 1 ? "slide" : "slides"}` });
 }
 
 function TemplateCard({ template, selected, opening, disabled, onSelect, loc }) {
   const title = loc({ ar: template.title_ar, en: template.title_en });
-  const [deckCount, setDeckCount] = React.useState(0);
+  const [deckCount, setDeckCount] = React.useState(0); // real slide count read from the .pptx (preferred over the DB value)
   const slideCount = deckCount || template.slide_count || 0;
   const placeholder = (
     <span className="grid h-full w-full place-items-center bg-gradient-to-br from-muted to-accent" style={placeholderStyle(template)} aria-hidden="true">
@@ -45,7 +45,7 @@ function TemplateCard({ template, selected, opening, disabled, onSelect, loc }) 
           {slideCount > 0 && (
             <span data-testid="template-slide-count" className="absolute bottom-2 end-2 inline-flex items-center gap-1.5 rounded-full bg-black/65 py-1 ps-2 pe-2.5 text-[11px] font-bold leading-none text-white shadow-sm ring-1 ring-white/15 backdrop-blur-sm">
               <Layers className="h-3 w-3" aria-hidden="true" />
-              <span>{slidesLabel(slideCount)}</span>
+              <span>{slidesLabel(slideCount, loc)}</span>
             </span>
           )}
           {opening && (
