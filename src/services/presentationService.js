@@ -11,7 +11,6 @@ const REQUEST_TIMEOUT_MS = 45000;
 export const POLL_INTERVAL_MS = 5000; // Gamma recommends polling every ~5 seconds
 export const POLL_MAX_MS = 10 * 60 * 1000;
 const MAX_CONSECUTIVE_POLL_ERRORS = 4;
-const MAX_EXTRA_FILE_POLLS = 6;
 
 export class PresentationError extends Error {
   constructor(code, { fields = null, detail = "", retryable = false, status = 0, jobId = null } = {}) {
@@ -75,34 +74,14 @@ async function callFunction(payload, { signal } = {}) {
 }
 
 /** Starts a real Gamma generation. Resolves with the pending job (never with a fake result). */
-export async function startPresentation({ settings, requestId, projectId = null }) {
-  const body = await callFunction({ action: "start", request_id: requestId, project_id: projectId, settings });
+export async function startPresentation({ settings, requestId, projectId = null, templateId = null }) {
+  const body = await callFunction({ action: "start", request_id: requestId, project_id: projectId, template_id: templateId, settings });
   return body.job;
 }
 
 export async function getPresentationStatus(jobId, { signal } = {}) {
   const body = await callFunction({ action: "status", job_id: jobId }, { signal });
   return body.job;
-}
-
-/**
- * Downloads the finished .pptx of a completed job so it can be opened in Eyad's own editor.
- * The Edge Function hands back a short-lived signed URL to our private storage (never Gamma's link).
- * Resolves with { bytes: Uint8Array, name }.
- */
-export async function fetchPresentationFile(jobId, { signal } = {}) {
-  const meta = await callFunction({ action: "download", job_id: jobId }, { signal });
-  let response;
-  try {
-    response = await fetch(meta.url, { signal });
-  } catch (error) {
-    if (signal?.aborted) throw new PresentationError("ABORTED");
-    throw new PresentationError("NETWORK_ERROR", { retryable: true });
-  }
-  if (!response.ok) throw new PresentationError("PPTX_DOWNLOAD_FAILED", { retryable: true, status: response.status });
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  if (bytes.length < 4 || bytes[0] !== 0x50 || bytes[1] !== 0x4b) throw new PresentationError("PPTX_DOWNLOAD_FAILED");
-  return { bytes, name: meta.file_name || "presentation.pptx" };
 }
 
 const sleep = (ms, signal) => new Promise((resolve, reject) => {
@@ -119,19 +98,12 @@ export async function waitForPresentation(jobId, { onUpdate, signal, intervalMs 
   const startedAt = Date.now();
   let consecutiveErrors = 0;
   let lastJob = { id: jobId, status: "pending" };
-  let extraPolls = 0; // completed, but the .pptx is not stored yet: give the export a few more tries
   for (;;) {
     try {
       lastJob = await getPresentationStatus(jobId, { signal });
       consecutiveErrors = 0;
-      if (lastJob.status === "failed") { onUpdate?.(lastJob); return lastJob; }
-      if (lastJob.status === "completed") {
-        const filePending = !lastJob.has_pptx && (!lastJob.pptx_error || lastJob.pptx_error === "NO_EXPORT_URL");
-        if (!filePending || extraPolls >= MAX_EXTRA_FILE_POLLS) { onUpdate?.(lastJob); return lastJob; }
-        extraPolls += 1;
-      } else {
-        onUpdate?.(lastJob);
-      }
+      onUpdate?.(lastJob);
+      if (lastJob.status === "completed" || lastJob.status === "failed") return lastJob;
     } catch (error) {
       if (error.code === "ABORTED") throw error;
       if (!error.retryable) throw error;
@@ -141,4 +113,69 @@ export async function waitForPresentation(jobId, { onUpdate, signal, intervalMs 
     if (Date.now() - startedAt >= maxMs) return { ...lastJob, status: "pending", timedOut: true };
     await sleep(intervalMs, signal);
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* Projects <-> presentations: saved versions of a deck                */
+/* ------------------------------------------------------------------ */
+// Files live in the PRIVATE `presentation-files` bucket. The browser only ever sees short-lived
+// Signed URLs created by the Edge Function after it checked that the project belongs to the user.
+const PRESENTATION_BUCKET = "presentation-files";
+const PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+const MAX_PPTX_BYTES = 100 * 1024 * 1024;
+
+const VERSION_COLUMNS = "id, project_id, version_no, source, label, file_name, size_bytes, created_at, updated_at";
+
+/** All saved versions of a project's presentation, newest first (owner-only via RLS). */
+export async function listPresentationVersions(projectId) {
+  if (!projectId) return [];
+  const { data, error } = await supabase.from("presentation_versions").select(VERSION_COLUMNS)
+    .eq("project_id", projectId).order("version_no", { ascending: false });
+  if (error) throw new PresentationError("VERSIONS_LOAD_FAILED", { detail: error.message });
+  return data || [];
+}
+
+/**
+ * Downloads one saved version (the latest saved one when `versionId` is omitted) and resolves with
+ * `{ bytes, name, version }`, ready for the editor's `initialFile`.
+ */
+export async function fetchPresentationFile(projectId, versionId = null) {
+  const body = await callFunction({ action: "download", project_id: projectId, version_id: versionId });
+  let response;
+  try {
+    response = await fetch(body.url);
+  } catch {
+    throw new PresentationError("NETWORK_ERROR", { retryable: true });
+  }
+  if (!response.ok) throw new PresentationError("FILE_UNAVAILABLE", { status: response.status, retryable: true });
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  if (bytes.length === 0 || bytes.length > MAX_PPTX_BYTES || bytes[0] !== 0x50 || bytes[1] !== 0x4b) {
+    throw new PresentationError("FILE_INVALID");
+  }
+  return { bytes, name: body.version?.file_name || "presentation.pptx", version: body.version };
+}
+
+/**
+ * Saves edited bytes to Projects.
+ *  mode "new"     -> a new version (v+1) is created, older ones stay available
+ *  mode "replace" -> `replaceVersionId` keeps its number but now points at the new file
+ * Without a `projectId` (a deck that is not in Projects yet) a new presentations project is created.
+ * Flow: save_init (Signed UPLOAD URL) -> upload straight to the private bucket -> save_commit.
+ */
+export async function savePresentationVersion({ projectId = null, mode = "new", replaceVersionId = null, fileName, bytes }) {
+  const init = await callFunction({
+    action: "save_init", project_id: projectId, mode, replace_version_id: replaceVersionId,
+    file_name: fileName, size: bytes.length,
+  });
+
+  const blob = new Blob([bytes], { type: PPTX_MIME });
+  const { error: uploadError } = await supabase.storage.from(PRESENTATION_BUCKET)
+    .uploadToSignedUrl(init.path, init.token, blob, { contentType: PPTX_MIME });
+  if (uploadError) throw new PresentationError("UPLOAD_FAILED", { detail: uploadError.message, retryable: true });
+
+  const done = await callFunction({
+    action: "save_commit", project_id: init.project_id, version_id: init.version_id, mode,
+    replace_version_id: replaceVersionId, file_name: fileName, new_project: init.new_project,
+  });
+  return { projectId: done.project_id, version: done.version };
 }

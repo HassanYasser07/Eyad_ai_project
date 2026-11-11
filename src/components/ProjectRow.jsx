@@ -7,11 +7,16 @@ import { Link } from "react-router-dom";
 import StatusPill from "@/components/StatusPill";
 import { useI18n } from "@/i18n/I18nContext";
 import { getStudioIcon } from "@/studios/studioIcons";
+import FirstSlideThumbnail from "@/components/presentations/FirstSlideThumbnail";
+import { fetchPresentationFile } from "@/services/presentationService";
 import moment from "moment";
 
 export default function ProjectRow({ project, studio }) {
   const { loc, t, language } = useI18n();
   const Icon = studio ? getStudioIcon(studio.icon) : null;
+  // Presentations projects show the first slide of their last saved .pptx (same renderer as the editor, no stored image).
+  const presentation = project.studioType === "presentations" ? project.data?.presentation : null;
+  const thumbVersionId = presentation?.latest_version_id || null;
 
   return (
     <Link
@@ -19,12 +24,26 @@ export default function ProjectRow({ project, studio }) {
       className="flex items-center gap-3 p-3 rounded-xl hover:bg-highlight-mist/60 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
       aria-label={language === "ar" ? `فتح مشروع ${project.title} في محادثة إياد` : `Open ${project.title} in EYAD chat`}
     >
-      <div
-        className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
-        style={studio ? { backgroundColor: `${studio.accent}14` } : {}}
-      >
-        {Icon && <Icon className="w-4 h-4" style={{ color: studio.accent }} />}
-      </div>
+      {thumbVersionId ? (
+        <div className="relative w-16 aspect-video rounded-md overflow-hidden border border-border bg-white shrink-0" data-testid="project-presentation-thumb">
+          <FirstSlideThumbnail
+            load={() => fetchPresentationFile(project.id, thumbVersionId)}
+            reloadKey={`${thumbVersionId}:${presentation?.updated_at || ""}`}
+            fallback={Icon ? (
+              <span className="grid h-full w-full place-items-center" style={studio ? { backgroundColor: `${studio.accent}14` } : {}}>
+                <Icon className="w-4 h-4" style={{ color: studio?.accent }} />
+              </span>
+            ) : null}
+          />
+        </div>
+      ) : (
+        <div
+          className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
+          style={studio ? { backgroundColor: `${studio.accent}14` } : {}}
+        >
+          {Icon && <Icon className="w-4 h-4" style={{ color: studio.accent }} />}
+        </div>
+      )}
       <div className="min-w-0 flex-1">
         <p className="text-sm font-semibold text-foreground truncate">{project.title}</p>
         <p className="text-xs text-muted-foreground truncate">

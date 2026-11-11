@@ -11,6 +11,7 @@ import { projectService } from "@/services/projectService";
 import { assetService } from "@/services/assetService";
 import { saveBrandIdentity } from "@/services/brandService";
 import { getProjectContext } from "@/services/projectContextService";
+import PresentationProjectCard from "@/components/presentations/PresentationProjectCard";
 
 import { appConfig } from "@/config/app.config";
 import { useAuth } from "@/lib/AuthContext";
@@ -1592,6 +1593,15 @@ export default function Chat() {
       )}
 
       <main className="eyad-chat-page__body">
+        {/* A project that holds a presentation shows its card first; clicking it opens the PPTX editor on the last saved version. */}
+        {requestedProjectId && projectContext?.project?.project_data?.presentation && (
+          <PresentationProjectCard
+            key={requestedProjectId}
+            projectId={requestedProjectId}
+            presentation={projectContext.project.project_data.presentation}
+            onChanged={() => { getProjectContext(requestedProjectId).then(setProjectContext).catch(() => {}); }}
+          />
+        )}
         {/* Durable jobs are intentionally invisible in the chat UI. */}
         {projectLoading ? (
           <div className="eyad-chat-page__welcome">

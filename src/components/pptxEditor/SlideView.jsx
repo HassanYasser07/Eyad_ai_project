@@ -436,6 +436,8 @@ export default function SlideView({ model, urls, overrides, geometryDrafts, hint
     const previewEl = el.kind === "table" && ov.tableGrid && el.table
       ? { ...el, ...ov, table: { ...el.table, cols: ov.tableGrid.cols, rows: el.table.rows.map((r, i) => ({ ...r, h: ov.tableGrid.rows[i] ?? r.h })) } }
       : { ...el, ...ov };
+    // A non-wrapping text frame (wrap="none") re-flows as soon as its width is dragged; the commit then writes wrap="square".
+    if (el.text?.body?.wrap === "none" && Math.abs((ov.w ?? el.w) - el.w) > EMU_PER_PX) previewEl.text = { ...el.text, body: { ...el.text.body, wrap: "square" } };
     if (el.kind === "table") previewEl.dragging = true; // own compositor layer while it is being dragged
     return <MemoElement key={el.id} el={previewEl} urls={urls} hints={hints} idPrefix={idPrefix} labels={labels} editingText={editingText} tableSelection={tableSelection} onTableCellSelect={st.onTableCellSelect} onAutoSizeText={suspendAutoSize ? null : st.onAutoSizeText} onEditText={st.onEditText} onTextCommit={st.onTextCommit} onTextCancel={st.onTextCancel} />;
   };

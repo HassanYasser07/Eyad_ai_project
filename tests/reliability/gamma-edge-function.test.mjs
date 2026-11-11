@@ -35,8 +35,9 @@ function teardown() {
   Object.assign(console, originalConsole);
 }
 
-const colorPackage = { id: "ocean-blue", name: "Ocean Blue", colors: ["#16324F", "#245C73", "#64B6AC", "#F4F7F5"] };
-const settings = (o = {}) => ({ topic: "Solar energy for schools", purpose: "educational", audience: "students", customAudience: "", slideCount: "10", language: "ar", otherLanguage: "", additionalInstructions: "Use real examples", colorPackage, ...o });
+const TEMPLATE_ID = "44444444-4444-4444-8444-444444444444";
+const GAMMA_TEMPLATE_ID = "55555555-5555-4555-8555-555555555555";
+const settings = (o = {}) => ({ topic: "Solar energy for schools", detail: "standard", slideCount: "10", language: "ar", ...o });
 
 async function call(body, token = "tok-user") {
   const headers = { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) };
@@ -51,7 +52,7 @@ test("start -> poll -> completed: real Gamma request, real result link, key stay
     const created = await start();
     assert.equal(created.status, 200);
     assert.equal(created.json.job.status, "pending");
-    assert.equal(created.json.job.color_application, "instructions");
+    assert.equal(created.json.job.template_mode, "none");
 
     const post = fakeGamma.calls.find((c) => c.method === "POST");
     assert.equal(post.url, "https://public-api.gamma.app/v1.0/generations");
@@ -59,9 +60,8 @@ test("start -> poll -> completed: real Gamma request, real result link, key stay
     assert.equal(post.body.inputText, "Solar energy for schools");
     assert.equal(post.body.numCards, 10);
     assert.equal(post.body.textOptions.language, "ar");
+    assert.equal(post.body.textOptions.amount, "medium");
     assert.equal(post.body.format, "presentation");
-    assert.match(post.body.additionalInstructions, /Use real examples/);
-    assert.match(post.body.additionalInstructions, /#16324F/i);
 
     const jobId = created.json.job.id;
     const first = await call({ action: "status", job_id: jobId });
@@ -73,37 +73,91 @@ test("start -> poll -> completed: real Gamma request, real result link, key stay
     assert.equal(done.json.job.gamma_url, "https://gamma.app/docs/real-deck");
     assert.equal(backend.tables.gamma_presentation_jobs[0].status, "completed");
 
-    // Terminal jobs are served from the database. The only exception: a completed job whose .pptx export
-    // link is missing re-asks Gamma a bounded number of times (MAX_EXPORT_RECHECKS = 3), then stops.
-    for (let i = 0; i < 3; i += 1) await call({ action: "status", job_id: jobId });
+    // Terminal jobs are served from the database without calling Gamma again.
     const gammaGets = fakeGamma.calls.filter((c) => c.method === "GET").length;
-    for (let i = 0; i < 3; i += 1) await call({ action: "status", job_id: jobId });
+    await call({ action: "status", job_id: jobId });
     assert.equal(fakeGamma.calls.filter((c) => c.method === "GET").length, gammaGets);
 
     // The secret never reaches a response or a log line.
     assert.ok(![created.text, first.text, done.text, ...logged].some((s) => s.includes(SECRET)));
     // Saved settings include every user choice.
     const saved = backend.tables.gamma_presentation_jobs[0].settings;
-    assert.equal(saved.purpose, "educational"); assert.equal(saved.language, "ar"); assert.equal(saved.slideCount, "10"); assert.equal(saved.colorPackage.id, "ocean-blue");
+    assert.equal(saved.detail, "standard"); assert.equal(saved.language, "ar"); assert.equal(saved.slideCount, "10"); assert.equal(saved.templateId, null);
   } finally { teardown(); }
 });
 
-test("a configured Gamma theme is applied via themeId; a rejected theme retries once with palette guidance", async () => {
-  const { fakeGamma } = await setup({ envOverrides: { GAMMA_THEME_IDS: JSON.stringify({ "ocean-blue": "theme_ocean" }) } });
+test("an attached file is sent to Gamma as source text, but only its name and size are stored", async () => {
+  const { backend, fakeGamma } = await setup();
   try {
-    const ok = await start({ request_id: "req-theme-ok-1" });
-    assert.equal(ok.json.job.color_application, "theme");
-    assert.equal(fakeGamma.calls.find((c) => c.method === "POST").body.themeId, "theme_ocean");
+    const res = await start({ settings: settings({ fileName: "notes.docx", fileText: "UNIQUE-FILE-BODY about panels" }) });
+    assert.equal(res.status, 200);
+    const post = fakeGamma.calls.find((c) => c.method === "POST");
+    assert.match(post.body.inputText, /UNIQUE-FILE-BODY about panels/);
+    assert.match(post.body.inputText, /notes\.docx/);
+    const saved = backend.tables.gamma_presentation_jobs[0].settings;
+    assert.equal(saved.fileName, "notes.docx");
+    assert.equal(saved.fileChars, "UNIQUE-FILE-BODY about panels".length);
+    assert.ok(!JSON.stringify(saved).includes("UNIQUE-FILE-BODY"));
   } finally { teardown(); }
+});
 
-  const rejected = await setup({ gamma: { rejectThemeOnce: true }, envOverrides: { GAMMA_THEME_IDS: JSON.stringify({ "ocean-blue": "bad_theme" }) } });
+test("Language Auto detects Arabic text; Pages Auto sends no numCards", async () => {
+  const { fakeGamma } = await setup();
   try {
-    const res = await start({ request_id: "req-theme-bad-1" });
+    await start({ settings: settings({ topic: "مقدمة في الطاقة الشمسية", language: "auto", slideCount: "auto" }) });
+    const post = fakeGamma.calls.find((c) => c.method === "POST");
+    assert.equal(post.body.textOptions.language, "ar");
+    assert.equal("numCards" in post.body, false);
+  } finally { teardown(); }
+});
+
+test("a template with a Gamma template id calls from-template; ids come from the database, never the browser", async () => {
+  const { backend, fakeGamma } = await setup();
+  backend.tables.presentation_templates.push({ id: TEMPLATE_ID, is_active: true, gamma_template_id: GAMMA_TEMPLATE_ID, gamma_theme_id: "theme_t", style_prompt: "bold", title_en: "T" });
+  try {
+    const res = await start({ template_id: TEMPLATE_ID, settings: { ...settings(), gamma_template_id: "EVIL", gammaId: "EVIL" } });
+    assert.equal(res.status, 200);
+    assert.equal(res.json.job.template_mode, "gamma-template");
+    const post = fakeGamma.calls.find((c) => c.method === "POST");
+    assert.equal(post.url, "https://public-api.gamma.app/v1.0/generations/from-template");
+    assert.equal(post.body.gammaId, GAMMA_TEMPLATE_ID);
+    assert.equal(post.body.themeId, "theme_t");
+    assert.match(post.body.prompt, /Solar energy for schools/);
+    assert.ok(!JSON.stringify(post.body).includes("EVIL"));
+    assert.equal(backend.tables.gamma_presentation_jobs[0].settings.templateId, TEMPLATE_ID);
+  } finally { teardown(); }
+});
+
+test("a style-only template applies its design direction; unknown, inactive or malformed templates are rejected before Gamma", async () => {
+  const { backend, fakeGamma } = await setup();
+  backend.tables.presentation_templates.push(
+    { id: TEMPLATE_ID, is_active: true, style_prompt: "Template style: dark navy." },
+    { id: "66666666-6666-4666-8666-666666666666", is_active: false, style_prompt: "hidden" },
+  );
+  try {
+    const ok = await start({ template_id: TEMPLATE_ID });
+    assert.equal(ok.status, 200);
+    const post = fakeGamma.calls.find((c) => c.method === "POST");
+    assert.equal(post.url, "https://public-api.gamma.app/v1.0/generations");
+    assert.match(post.body.additionalInstructions, /dark navy/);
+    const before = fakeGamma.calls.length;
+    assert.equal((await start({ request_id: "req-missing-tpl-1", template_id: "77777777-7777-4777-8777-777777777777" })).json.error, "TEMPLATE_NOT_FOUND");
+    assert.equal((await start({ request_id: "req-inactive-tpl-1", template_id: "66666666-6666-4666-8666-666666666666" })).json.error, "TEMPLATE_NOT_FOUND");
+    assert.equal((await start({ request_id: "req-badid-tpl-0001", template_id: "not-a-uuid" })).json.error, "INVALID_TEMPLATE_ID");
+    assert.equal(fakeGamma.calls.length, before);
+  } finally { teardown(); }
+});
+
+test("a rejected template theme retries once without it", async () => {
+  const rejected = await setup({ gamma: { rejectThemeOnce: true } });
+  rejected.backend.tables.presentation_templates.push({ id: TEMPLATE_ID, is_active: true, gamma_theme_id: "bad_theme" });
+  try {
+    const res = await start({ template_id: TEMPLATE_ID });
     assert.equal(res.status, 200);
     const posts = rejected.fakeGamma.calls.filter((c) => c.method === "POST");
     assert.equal(posts.length, 2);
+    assert.equal(posts[0].body.themeId, "bad_theme");
     assert.equal("themeId" in posts[1].body, false);
-    assert.equal(res.json.job.color_application, "instructions");
     assert.equal(res.json.job.theme_rejected, true);
   } finally { teardown(); }
 });
@@ -148,11 +202,12 @@ test("users cannot read each other's jobs", async () => {
 test("invalid form data is rejected with per-field codes and no Gamma call", async () => {
   const { fakeGamma } = await setup();
   try {
-    const res = await start({ settings: settings({ topic: "", language: "other", otherLanguage: "Klingon" }) });
+    const res = await start({ settings: settings({ topic: "", language: "klingon", slideCount: "7" }) });
     assert.equal(res.status, 400);
     assert.equal(res.json.error, "VALIDATION_FAILED");
     assert.equal(res.json.fields.topic, "REQUIRED");
-    assert.equal(res.json.fields.otherLanguage, "UNSUPPORTED_LANGUAGE");
+    assert.equal(res.json.fields.language, "UNSUPPORTED_LANGUAGE");
+    assert.equal(res.json.fields.slideCount, "INVALID");
     assert.equal(fakeGamma.calls.length, 0);
   } finally { teardown(); }
 });

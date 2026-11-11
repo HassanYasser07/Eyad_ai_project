@@ -1,24 +1,22 @@
 import React from "react";
-import { ArrowLeft, ArrowRight, ChevronDown, Loader2, PencilRuler, Presentation, Sparkles, Wand2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, PencilRuler, Presentation } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useI18n } from "@/i18n/I18nContext";
 import { useAuth } from "@/lib/AuthContext";
 import { projectService } from "@/services/projectService";
 import { getBrandIdentity } from "@/services/brandService";
 import StudioNextActions from "@/components/studios/StudioNextActions";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import OptionCardGroup from "@/components/presentations/OptionCardGroup";
-import ColorPackagePicker from "@/components/presentations/ColorPackagePicker";
+import PromptComposer from "@/components/presentations/PromptComposer";
+import TemplateGallery from "@/components/presentations/TemplateGallery";
 import PresentationResult from "@/components/presentations/PresentationResult";
 import { usePresentationGeneration } from "@/components/presentations/usePresentationGeneration";
-import { fetchPresentationFile } from "@/services/presentationService";
-import { saveBytes } from "@/components/pptxEditor/fileIO";
 import { fieldMessage } from "@/components/presentations/presentationMessages";
 import {
-  DEFAULT_PRESENTATION_SETTINGS, LIMITS, PRESENTATION_AUDIENCES, PRESENTATION_LANGUAGES,
-  PRESENTATION_PURPOSES, SLIDE_COUNT_OPTIONS, TOPIC_EXAMPLES,
+  DEFAULT_PRESENTATION_SETTINGS, DETAIL_OPTIONS, PRESENTATION_LANGUAGES, SLIDE_COUNT_OPTIONS,
 } from "@/config/presentationOptions";
-import { DEFAULT_COLOR_PACKAGE_ID } from "@/config/presentationColorPackages";
+import { fetchTemplatePptx } from "@/services/templateService";
+import { fetchPresentationFile } from "@/services/presentationService";
+import { errorMessage as presentationErrorMessage } from "@/components/presentations/presentationMessages";
 import { buildSettingsPayload, validatePresentationSettings } from "@/config/presentationValidation";
 // Separate, lazily loaded editing environment; it does not touch the generation workflow below.
 const createPptxEditorComponent = () => React.lazy(() => import("@/components/pptxEditor/PptxEditorDialog"));
@@ -59,24 +57,6 @@ class PptxEditorLoadBoundary extends React.Component {
   }
 }
 
-const inputClass = "w-full rounded-xl border bg-card px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-60";
-
-function Field({ id, label, required = false, group = false, hint, error, children }) {
-  const Label = group ? "span" : "label";
-  return (
-    <div className="space-y-2">
-      <div className="flex items-baseline justify-between gap-2">
-        <Label {...(group ? {} : { htmlFor: id })} id={`${id}-label`} className="text-sm font-black text-foreground">
-          {label}{required && <span className="ms-1 text-destructive" aria-hidden="true">*</span>}
-        </Label>
-        {hint && <span className="text-xs text-muted-foreground">{hint}</span>}
-      </div>
-      {children}
-      {error && <p id={`${id}-error`} role="alert" className="text-xs font-bold text-destructive">{error}</p>}
-    </div>
-  );
-}
-
 export default function PresentationsStudio() {
   const { t, loc, direction } = useI18n();
   const { isAnonymous, requireAccount } = useAuth();
@@ -85,52 +65,24 @@ export default function PresentationsStudio() {
   const projectId = params.get("project");
   const [brand, setBrand] = React.useState(null);
   const [profile, setProfile] = React.useState(null);
-  const [settings, setSettings] = React.useState({ ...DEFAULT_PRESENTATION_SETTINGS, colorPackageId: DEFAULT_COLOR_PACKAGE_ID });
+  const [settings, setSettings] = React.useState({ ...DEFAULT_PRESENTATION_SETTINGS });
+  const [file, setFile] = React.useState(null); // { name, size, text, truncated } extracted from "Add File"
+  const [template, setTemplate] = React.useState(null); // row picked in the gallery
   const [errors, setErrors] = React.useState({});
-  const [extrasOpen, setExtrasOpen] = React.useState(false);
-  const [pptxEditorOpen, setPptxEditorOpen] = React.useState(false);
+  // Returning from /login after a save attempt: reopen the editor so it can restore the deck from its local draft.
+  const [pptxEditorOpen, setPptxEditorOpen] = React.useState(() => { try { return !!sessionStorage.getItem("eyad_pptx_resume"); } catch { return false; } });
+  const [editorFile, setEditorFile] = React.useState(null); // { bytes, name } handed to the editor (a template's .pptx)
+  const [openingTemplateId, setOpeningTemplateId] = React.useState(null);
+  const [templateError, setTemplateError] = React.useState("");
+  const [openingResult, setOpeningResult] = React.useState(false);
+  const [resultOpenError, setResultOpenError] = React.useState("");
   const [pptxEditorAttempt, setPptxEditorAttempt] = React.useState(0);
   const [PptxEditorComponent, setPptxEditorComponent] = React.useState(() => createPptxEditorComponent());
-  const [editorFile, setEditorFile] = React.useState(null); // { bytes, name, present } for the generated deck
-  const [fileBusy, setFileBusy] = React.useState(null); // "present" | "edit" | "export"
-  const [fileError, setFileError] = React.useState(null); // null | error code string
   const formRef = React.useRef(null);
   const retryPptxEditor = () => {
     setPptxEditorAttempt((attempt) => attempt + 1);
     setPptxEditorComponent(() => createPptxEditorComponent());
   };
-
-  // Loads the generated .pptx from our storage, then shows it in our own editor (or exports it).
-  const openGenerated = React.useCallback(async (finishedJob, { present = false } = {}) => {
-    if (fileBusy || !finishedJob?.id) return;
-    setFileError(null);
-    setFileBusy(present ? "present" : "edit");
-    try {
-      const file = await fetchPresentationFile(finishedJob.id);
-      setEditorFile({ ...file, present });
-      setPptxEditorOpen(true);
-    } catch (err) {
-      console.warn("Could not load the generated presentation", err?.code, err?.detail);
-      setFileError([err?.code, err?.detail].filter(Boolean).join(": ") || "UNKNOWN");
-    } finally {
-      setFileBusy(null);
-    }
-  }, [fileBusy]);
-
-  const exportGenerated = React.useCallback(async (finishedJob) => {
-    if (fileBusy || !finishedJob?.id) return;
-    setFileError(null);
-    setFileBusy("export");
-    try {
-      const file = await fetchPresentationFile(finishedJob.id);
-      await saveBytes(file.bytes, file.name);
-    } catch (err) {
-      console.warn("Could not export the generated presentation", err?.code, err?.detail);
-      setFileError([err?.code, err?.detail].filter(Boolean).join(": ") || "UNKNOWN");
-    } finally {
-      setFileBusy(null);
-    }
-  }, [fileBusy]);
 
   // After Gamma confirms a finished presentation, remember its link on the project (non-fatal if it fails).
   const saveToProject = React.useCallback(async (job) => {
@@ -167,7 +119,7 @@ export default function PresentationsStudio() {
     return () => { active = false; };
   }, [projectId]);
 
-  // Server-side validation errors (e.g. an unsupported "other" language) are shown next to their fields.
+  // Server-side validation errors are shown next to their fields.
   React.useEffect(() => {
     if (genError?.fields) setErrors(genError.fields);
   }, [genError]);
@@ -177,41 +129,71 @@ export default function PresentationsStudio() {
     setErrors((prev) => (prev[key] ? { ...prev, [key]: undefined } : prev));
   };
 
-  const focusFirstError = (found) => {
-    const order = ["topic", "purpose", "audience", "customAudience", "slideCount", "language", "otherLanguage", "additionalInstructions"];
-    const first = order.find((key) => found[key]);
-    if (first === "additionalInstructions") setExtrasOpen(true);
-    requestAnimationFrame(() => {
-      const target = formRef.current?.querySelector(`[data-field="${first}"]`);
-      target?.scrollIntoView?.({ block: "center", behavior: "smooth" });
-      target?.focus?.();
-    });
-  };
-
   const submit = async (event) => {
     event?.preventDefault();
     if (busy) return; // no duplicate requests while one is running
     if (isAnonymous) { requireAccount(window.location.pathname + window.location.search); return; }
-    const found = validatePresentationSettings(settings);
+    const found = validatePresentationSettings(settings, file);
     setErrors(found);
-    if (Object.keys(found).length) { focusFirstError(found); return; }
-    await generation.start({ settings: buildSettingsPayload(settings), projectId });
+    if (Object.keys(found).length) {
+      requestAnimationFrame(() => formRef.current?.querySelector("[data-field=\"topic\"]")?.focus?.());
+      return;
+    }
+    await generation.start({ settings: buildSettingsPayload(settings, file), projectId, templateId: template?.id || null });
   };
 
-  const err = (key) => (errors[key] ? fieldMessage(errors[key], loc) : "");
-  const describedBy = (key) => (errors[key] ? `${key}-error` : undefined);
-  const borderFor = (key) => (errors[key] ? "border-destructive" : "border-input");
+  const closeEditor = () => { setPptxEditorOpen(false); setEditorFile(null); };
+
+  // The deck that was just generated is already saved in the project: open that stored .pptx in the editor.
+  const openGeneratedInEditor = async () => {
+    if (!job?.project_id || openingResult) return;
+    setOpeningResult(true);
+    setResultOpenError("");
+    try {
+      const opened = await fetchPresentationFile(job.project_id, job.version_id || null);
+      setEditorFile({ bytes: opened.bytes, name: opened.name, projectId: job.project_id, versionId: opened.version?.id || job.version_id || null, versionNo: opened.version?.version_no ?? job.version_no ?? null });
+      setPptxEditorOpen(true);
+    } catch (err) {
+      setResultOpenError(presentationErrorMessage(err.code, loc, err.detail));
+    } finally {
+      setOpeningResult(false);
+    }
+  };
+
+  // A template with a .pptx opens straight in the editor; one without a file is attached to the prompt as before.
+  const pickTemplate = async (picked) => {
+    if (openingTemplateId) return;
+    setTemplateError("");
+    if (!picked.pptx_path) {
+      setTemplate((current) => (current?.id === picked.id ? null : picked));
+      requestAnimationFrame(() => formRef.current?.scrollIntoView?.({ block: "center", behavior: "smooth" }));
+      return;
+    }
+    setOpeningTemplateId(picked.id);
+    try {
+      const opened = await fetchTemplatePptx(picked, loc({ ar: picked.title_ar, en: picked.title_en }));
+      setEditorFile(opened);
+      setPptxEditorOpen(true);
+    } catch (err) {
+      console.warn("Could not open the template in the editor", err?.message);
+      setTemplateError(loc({ ar: "تعذّر فتح القالب. حاول مرة أخرى.", en: "Could not open the template. Please try again." }));
+    } finally {
+      setOpeningTemplateId(null);
+    }
+  };
+
+  const topicError = errors.topic ? fieldMessage(errors.topic === "REQUIRED" ? "TOPIC_REQUIRED" : errors.topic, loc) : "";
 
   return (
-    <div className="min-h-full px-4 py-6 md:px-8" dir={direction}>
+    <div className="min-h-full px-4 py-4 md:px-8" dir={direction}>
       <div className="mx-auto max-w-6xl">
-        <header className="mb-6 flex items-center justify-between gap-4">
+        <header className="mb-4 flex items-center justify-between gap-4">
           <button type="button" onClick={() => navigate(projectId ? "/chat?project=" + encodeURIComponent(projectId) : "/studios")} className="inline-flex items-center gap-2 text-sm font-bold text-muted-foreground hover:text-foreground">
             {direction === "rtl" ? <ArrowRight className="h-4 w-4" /> : <ArrowLeft className="h-4 w-4" />}
             {loc({ ar: "رجوع", en: "Back" })}
           </button>
           <div className="flex items-center gap-2">
-            <button type="button" onClick={() => { setEditorFile(null); setPptxEditorOpen(true); }} data-testid="open-pptx-editor" className="inline-flex items-center gap-1.5 rounded-full border border-primary/20 bg-card px-3 py-2 text-xs font-extrabold text-primary shadow-sm hover:bg-primary/5">
+            <button type="button" onClick={() => setPptxEditorOpen(true)} data-testid="open-pptx-editor" className="inline-flex items-center gap-1.5 rounded-full border border-primary/20 bg-card px-3 py-2 text-xs font-extrabold text-primary shadow-sm hover:bg-primary/5">
               <PencilRuler className="h-4 w-4" />
               <span>{t("pptxEditor.title")}</span>
             </button>
@@ -223,138 +205,36 @@ export default function PresentationsStudio() {
         </header>
 
         {brand && (
-          <div className="mb-6 flex items-center gap-3 rounded-2xl border border-border bg-card p-4 shadow-sm">
+          <div className="mx-auto mb-6 flex max-w-4xl items-center gap-3 rounded-2xl border border-border bg-card p-4 shadow-sm">
             {brand.logo?.url && <img src={brand.logo.url} alt="" className="h-12 w-12 rounded-2xl bg-white object-contain p-2" />}
             <div><strong className="block text-sm text-foreground">{brand.brand_name}</strong><span className="text-xs text-muted-foreground">{loc({ ar: "الهوية المعتمدة متصلة", en: "Approved brand identity connected" })}</span></div>
             {profile?.companyName && <span className="ms-auto text-xs font-bold text-muted-foreground">{profile.companyName}</span>}
           </div>
         )}
 
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
-          <form ref={formRef} onSubmit={submit} noValidate aria-busy={busy} className="space-y-7 rounded-3xl border border-border bg-card p-5 shadow-sm md:p-7">
-            <div>
-              <Wand2 className="mb-3 h-6 w-6 text-primary" aria-hidden="true" />
-              <h1 className="text-2xl font-black text-foreground">{loc({ ar: "أنشئ عرضك بالذكاء الاصطناعي", en: "Build a presentation with AI" })}</h1>
-              <p className="mt-2 text-sm text-muted-foreground">{loc({ ar: "أجب عن بضعة أسئلة بسيطة وسنُنشئ عرضًا تقديميًا كاملًا لك.", en: "Answer a few quick questions and we will create a complete presentation for you." })}</p>
-            </div>
+        <div className="mx-auto max-w-4xl">
+          <h1 className="mb-4 text-balance text-center text-xl font-black leading-tight text-foreground md:text-2xl">
+            {loc({ ar: "اكتب موضوعك، وأنشئ محتوى العرض الآن", en: "Enter your topic, generate the presentation content now" })}
+          </h1>
 
-            <fieldset disabled={busy} className="min-w-0 space-y-7 border-0 p-0">
-              <Field id="topic" label={loc({ ar: "موضوع العرض التقديمي", en: "Presentation topic" })} required error={err("topic")}
-                hint={`${settings.topic.length}/${LIMITS.topicMax}`}>
-                <textarea id="topic" data-field="topic" rows={5} maxLength={LIMITS.topicMax} value={settings.topic}
-                  onChange={(e) => update("topic", e.target.value)} aria-required="true" aria-invalid={Boolean(errors.topic)} aria-describedby={describedBy("topic")}
-                  placeholder={loc({ ar: "اكتب الموضوع أو الفكرة التي تريد تحويلها إلى عرض تقديمي...", en: "Write the topic or idea you want to turn into a presentation..." })}
-                  className={`${inputClass} ${borderFor("topic")} resize-y leading-7`} />
-                <div className="flex flex-wrap gap-2" aria-label={loc({ ar: "أمثلة لموضوعات", en: "Topic examples" })}>
-                  {TOPIC_EXAMPLES.map((example) => (
-                    <button key={example.en} type="button" onClick={() => update("topic", loc(example))}
-                      className="rounded-full border border-border bg-muted/50 px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:border-primary/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                      {loc(example)}
-                    </button>
-                  ))}
-                </div>
-              </Field>
-
-              <Field id="purpose" group label={loc({ ar: "الغرض من العرض التقديمي", en: "Presentation purpose" })} required error={err("purpose")}>
-                <div data-field="purpose" tabIndex={-1} className="outline-none">
-                  <OptionCardGroup name="purpose" label={loc({ ar: "الغرض من العرض التقديمي", en: "Presentation purpose" })} options={PRESENTATION_PURPOSES}
-                    value={settings.purpose} onChange={(v) => update("purpose", v)} loc={loc} invalid={Boolean(errors.purpose)} describedBy={describedBy("purpose")} />
-                </div>
-                {settings.purpose === "auto" && <p className="text-xs text-muted-foreground">{loc({ ar: "سنستنتج الغرض من كلمات موضوعك؛ وإن لم نجد دلالة واضحة تُترك Gamma لتقدّر الأنسب.", en: "We infer the purpose from your topic's wording; if nothing is clear, Gamma decides." })}</p>}
-              </Field>
-
-              <Field id="audience" group label={loc({ ar: "الجمهور المستهدف", en: "Target audience" })} required error={err("audience")}>
-                <div data-field="audience" tabIndex={-1} className="outline-none">
-                  <OptionCardGroup name="audience" label={loc({ ar: "الجمهور المستهدف", en: "Target audience" })} options={PRESENTATION_AUDIENCES}
-                    value={settings.audience} onChange={(v) => update("audience", v)} loc={loc} invalid={Boolean(errors.audience)} describedBy={describedBy("audience")} />
-                </div>
-                {settings.audience === "auto" && <p className="text-xs text-muted-foreground">{loc({ ar: "يُحدَّد الجمهور حسب الغرض من العرض.", en: "The audience is derived from the presentation purpose." })}</p>}
-                {settings.audience === "custom" && (
-                  <div className="space-y-1.5 pt-1">
-                    <label htmlFor="customAudience" className="text-xs font-bold text-foreground">{loc({ ar: "صف الجمهور المستهدف", en: "Describe the audience" })}<span className="ms-1 text-destructive" aria-hidden="true">*</span></label>
-                    <input id="customAudience" data-field="customAudience" type="text" maxLength={LIMITS.customAudienceMax} value={settings.customAudience}
-                      onChange={(e) => update("customAudience", e.target.value)} aria-required="true" aria-invalid={Boolean(errors.customAudience)} aria-describedby={describedBy("customAudience")}
-                      placeholder={loc({ ar: "مثال: أصحاب المتاجر الصغيرة في الإسكندرية", en: "e.g. small shop owners in Alexandria" })}
-                      className={`${inputClass} ${borderFor("customAudience")}`} />
-                    {err("customAudience") && <p id="customAudience-error" role="alert" className="text-xs font-bold text-destructive">{err("customAudience")}</p>}
-                  </div>
-                )}
-              </Field>
-
-              <div className="grid gap-5 sm:grid-cols-2">
-                <Field id="slideCount" label={loc({ ar: "عدد الشرائح", en: "Number of slides" })} required error={err("slideCount")}>
-                  <div className="relative">
-                    <select id="slideCount" data-field="slideCount" value={settings.slideCount} onChange={(e) => update("slideCount", e.target.value)}
-                      className={`${inputClass} ${borderFor("slideCount")} appearance-none pe-9`}>
-                      {SLIDE_COUNT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{loc(o)}</option>)}
-                    </select>
-                    <ChevronDown className="pointer-events-none absolute end-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-                  </div>
-                </Field>
-
-                <Field id="language" label={loc({ ar: "لغة العرض التقديمي", en: "Presentation language" })} required error={err("language")}>
-                  <div className="relative">
-                    <select id="language" data-field="language" value={settings.language} onChange={(e) => update("language", e.target.value)}
-                      aria-required="true" aria-invalid={Boolean(errors.language)} aria-describedby={describedBy("language")}
-                      className={`${inputClass} ${borderFor("language")} appearance-none pe-9`}>
-                      <option value="" disabled>{loc({ ar: "اختر لغة العرض", en: "Choose a language" })}</option>
-                      {PRESENTATION_LANGUAGES.map((o) => <option key={o.value} value={o.value}>{loc(o)}</option>)}
-                    </select>
-                    <ChevronDown className="pointer-events-none absolute end-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-                  </div>
-                  <p className="text-xs text-muted-foreground">{loc({ ar: "لغة المحتوى مستقلة عن لغة واجهة التطبيق.", en: "The content language is independent of the app interface language." })}</p>
-                </Field>
-              </div>
-
-              {settings.language === "other" && (
-                <Field id="otherLanguage" label={loc({ ar: "اسم اللغة المطلوبة", en: "Language name" })} required error={err("otherLanguage")}>
-                  <input id="otherLanguage" data-field="otherLanguage" type="text" maxLength={LIMITS.otherLanguageMax} value={settings.otherLanguage}
-                    onChange={(e) => update("otherLanguage", e.target.value)} aria-required="true" aria-invalid={Boolean(errors.otherLanguage)} aria-describedby={describedBy("otherLanguage")}
-                    placeholder={loc({ ar: "مثال: الإيطالية أو التركية أو اليابانية", en: "e.g. Italian, Turkish, Japanese" })}
-                    className={`${inputClass} ${borderFor("otherLanguage")}`} />
-                </Field>
-              )}
-
-              <section aria-labelledby="color-package-title" className="space-y-3">
-                <div>
-                  <h2 id="color-package-title" className="text-sm font-black text-foreground">{loc({ ar: "باكدج الألوان", en: "Color package" })}</h2>
-                  <p className="mt-1 text-xs text-muted-foreground">{loc({ ar: "اختر مجموعة ألوان متناسقة لتصميم العرض.", en: "Choose a harmonious set of colors for the design." })}</p>
-                </div>
-                <ColorPackagePicker value={settings.colorPackageId} onChange={(id) => update("colorPackageId", id)} label={loc({ ar: "باكدج الألوان", en: "Color package" })} />
-              </section>
-
-              <Collapsible open={extrasOpen} onOpenChange={setExtrasOpen} className="rounded-2xl border border-border">
-                <CollapsibleTrigger type="button" data-testid="toggle-extra-instructions"
-                  className="flex w-full items-center justify-between gap-2 rounded-2xl px-4 py-3 text-start text-sm font-black text-foreground hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                  <span>{loc({ ar: "تعليمات إضافية (اختياري)", en: "Additional instructions (optional)" })}</span>
-                  <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${extrasOpen ? "rotate-180" : ""}`} aria-hidden="true" />
-                </CollapsibleTrigger>
-                <CollapsibleContent className="space-y-2 px-4 pb-4">
-                  <textarea id="additionalInstructions" data-field="additionalInstructions" rows={4} maxLength={LIMITS.additionalInstructionsMax} value={settings.additionalInstructions}
-                    onChange={(e) => update("additionalInstructions", e.target.value)} aria-label={loc({ ar: "تعليمات إضافية", en: "Additional instructions" })} aria-describedby={describedBy("additionalInstructions")}
-                    placeholder={loc({ ar: "أضف أي متطلبات أو أمثلة أو نقاط محددة تريد التركيز عليها في العرض التقديمي...", en: "Add any requirements, examples, or specific points you want the presentation to focus on..." })}
-                    className={`${inputClass} ${borderFor("additionalInstructions")} resize-y leading-7`} />
-                  {err("additionalInstructions") && <p id="additionalInstructions-error" role="alert" className="text-xs font-bold text-destructive">{err("additionalInstructions")}</p>}
-                </CollapsibleContent>
-              </Collapsible>
-            </fieldset>
-
-            <div className="space-y-2">
-              <button type="submit" disabled={busy} data-testid="generate-presentation"
-                className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-primary px-6 text-base font-black text-primary-foreground shadow hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-60">
-                {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Sparkles className="h-4 w-4" aria-hidden="true" />}
-                {busy ? loc({ ar: "جاري إنشاء العرض...", en: "Creating presentation..." }) : loc({ ar: "إنشاء العرض التقديمي (Generate Presentation)", en: "Generate Presentation" })}
-              </button>
-              {Object.values(errors).some(Boolean) && <p role="alert" className="text-center text-xs font-bold text-destructive">{loc({ ar: "راجع الحقول المحددة أعلاه.", en: "Please review the highlighted fields above." })}</p>}
-            </div>
+          <form ref={formRef} onSubmit={submit} noValidate aria-busy={busy}>
+            <PromptComposer
+              settings={settings} onChange={update} error={topicError} busy={busy} loc={loc}
+              detailOptions={DETAIL_OPTIONS} slideOptions={SLIDE_COUNT_OPTIONS} languageOptions={PRESENTATION_LANGUAGES}
+              file={file} onFileChange={setFile} template={template} onClearTemplate={() => setTemplate(null)}
+            />
           </form>
 
-          <aside aria-label={loc({ ar: "نتيجة التوليد", en: "Generation result" })} className="h-fit rounded-3xl border border-border bg-card p-5 shadow-sm md:p-6 lg:sticky lg:top-6">
-            <PresentationResult phase={phase} job={job} error={genError} timedOut={timedOut} loc={loc}
-              onRetry={submit} onRecheck={generation.recheck}
-              onOpen={openGenerated} onDownload={exportGenerated} fileBusy={fileBusy} fileError={fileError} />
-          </aside>
+          {phase !== "idle" && (
+            <aside aria-label={loc({ ar: "نتيجة التوليد", en: "Generation result" })} className="mt-6 rounded-3xl border border-border bg-card p-5 shadow-sm md:p-6">
+              <PresentationResult phase={phase} job={job} error={genError} timedOut={timedOut} loc={loc}
+                onRetry={submit} onRecheck={generation.recheck}
+                onOpenEditor={openGeneratedInEditor} openingEditor={openingResult} openError={resultOpenError} />
+            </aside>
+          )}
         </div>
+
+        <TemplateGallery selectedId={template?.id || null} onSelect={pickTemplate} openingId={openingTemplateId} error={templateError} loc={loc} />
 
         {projectId && phase === "completed" && <StudioNextActions projectId={projectId} fromStudio="presentations" asset={null} title={loc({ ar: "تم إنشاء العرض. اختر الخطوة التالية", en: "Presentation is ready. Choose the next step" })} description={loc({ ar: "بيانات الشركة والهوية تظل مرتبطة بالمشروع.", en: "Company data and brand identity remain attached to the project." })} />}
       </div>
@@ -362,7 +242,7 @@ export default function PresentationsStudio() {
         <PptxEditorLoadBoundary
           key={pptxEditorAttempt}
           loc={loc}
-          onClose={() => { setPptxEditorOpen(false); setEditorFile(null); }}
+          onClose={closeEditor}
           onRetry={retryPptxEditor}
         >
           <React.Suspense fallback={
@@ -370,7 +250,7 @@ export default function PresentationsStudio() {
               <div className="rounded-2xl bg-white px-6 py-5 text-sm font-bold text-slate-700 shadow-xl">{loc({ ar: "جاري تحميل محرر العروض…", en: "Loading the presentation editor…" })}</div>
             </div>
           }>
-            <PptxEditorComponent initialFile={editorFile} onClose={() => { setPptxEditorOpen(false); setEditorFile(null); }} />
+            <PptxEditorComponent onClose={closeEditor} initialFile={editorFile} />
           </React.Suspense>
         </PptxEditorLoadBoundary>
       )}

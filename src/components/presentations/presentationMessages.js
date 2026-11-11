@@ -17,6 +17,21 @@ const MESSAGES = {
   TOO_MANY_ACTIVE_JOBS: { ar: "لديك عروض قيد الإنشاء بالفعل. انتظر اكتمالها ثم حاول مجددًا.", en: "You already have presentations being created. Wait for them to finish." },
   REQUEST_IN_PROGRESS: { ar: "هذا الطلب قيد المعالجة بالفعل.", en: "This request is already being processed." },
   VALIDATION_FAILED: { ar: "راجع الحقول المحددة وصحّحها.", en: "Please review and fix the highlighted fields." },
+  TEMPLATE_NOT_FOUND: { ar: "هذا القالب لم يعد متاحًا. اختر قالبًا آخر أو أنشئ العرض بدونه.", en: "This template is no longer available. Pick another or create without one." },
+  INVALID_TEMPLATE_ID: { ar: "قالب غير صالح.", en: "Invalid template." },
+  PROJECT_CREATE_FAILED: { ar: "تعذر إنشاء مشروع للعرض. أعد المحاولة.", en: "Could not create a project for the presentation. Please retry." },
+  FILE_UNAVAILABLE: { ar: "تعذر تحميل ملف العرض. أعد المحاولة بعد قليل.", en: "The presentation file could not be loaded. Please retry shortly." },
+  FILE_INVALID: { ar: "ملف العرض غير صالح أو تالف.", en: "The presentation file is invalid or damaged." },
+  FILE_TOO_LARGE: { ar: "ملف العرض كبير جدًا (الحد 100 ميجابايت).", en: "The presentation file is too large (100 MB max)." },
+  VERSION_NOT_FOUND: { ar: "هذه النسخة لم تعد موجودة.", en: "This version no longer exists." },
+  VERSIONS_LOAD_FAILED: { ar: "تعذر تحميل نسخ العرض.", en: "Could not load the presentation versions." },
+  TOO_MANY_VERSIONS: { ar: "وصلت للحد الأقصى من النسخ لهذا العرض. استبدل نسخة موجودة بدل إنشاء نسخة جديدة.", en: "This presentation reached its version limit. Replace an existing version instead of creating a new one." },
+  UPLOAD_FAILED: { ar: "تعذر رفع الملف. تحقق من الاتصال وأعد المحاولة.", en: "The file could not be uploaded. Check your connection and retry." },
+  UPLOAD_NOT_AVAILABLE: { ar: "خدمة الحفظ غير متاحة الآن. أعد المحاولة.", en: "Saving is unavailable right now. Please retry." },
+  UPLOAD_NOT_FOUND: { ar: "لم يصل الملف إلى الخادم. أعد المحاولة.", en: "The file did not reach the server. Please retry." },
+  VERSION_CREATE_FAILED: { ar: "تعذر تسجيل النسخة. أعد المحاولة.", en: "Could not register the version. Please retry." },
+  VERSION_UPDATE_FAILED: { ar: "تعذر استبدال النسخة. أعد المحاولة.", en: "Could not replace the version. Please retry." },
+  PROJECT_NOT_FOUND: { ar: "المشروع غير موجود.", en: "The project was not found." },
   JOB_CREATE_FAILED: { ar: "تعذر تسجيل طلب الإنشاء. أعد المحاولة.", en: "Could not register the request. Please retry." },
 };
 
@@ -24,8 +39,21 @@ const FIELD_MESSAGES = {
   REQUIRED: { ar: "هذا الحقل مطلوب.", en: "This field is required." },
   TOO_LONG: { ar: "النص أطول من الحد المسموح.", en: "This text is too long." },
   INVALID: { ar: "قيمة غير صالحة.", en: "Invalid value." },
-  UNSUPPORTED_LANGUAGE: { ar: "هذه اللغة غير مدعومة في Gamma. جرّب اسمًا آخر (مثل: الإيطالية، التركية، اليابانية).", en: "This language is not supported by Gamma. Try another (e.g. Italian, Turkish, Japanese)." },
+  UNSUPPORTED_LANGUAGE: { ar: "هذه اللغة غير مدعومة.", en: "This language is not supported." },
+  TOPIC_REQUIRED: { ar: "اكتب موضوع العرض أو أرفق ملفًا.", en: "Write a topic or attach a file." },
 };
+
+/** File-attachment errors raised by src/services/fileTextService.js */
+const FILE_MESSAGES = {
+  UNSUPPORTED_FILE: { ar: "نوع الملف غير مدعوم. المتاح: TXT وMD وCSV وJSON وDOCX وPPTX.", en: "This file type is not supported. Use TXT, MD, CSV, JSON, DOCX or PPTX." },
+  FILE_TOO_LARGE: { ar: "الملف كبير جدًا (الحد 10 ميجابايت).", en: "The file is too large (10 MB max)." },
+  EMPTY_FILE: { ar: "الملف فارغ أو لا يحتوي على نص يمكن قراءته.", en: "The file is empty or has no readable text." },
+  FILE_UNREADABLE: { ar: "تعذّرت قراءة الملف. تأكد أنه غير تالف ثم حاول مرة أخرى.", en: "The file could not be read. Make sure it is not corrupted and try again." },
+};
+
+export function fileErrorMessage(code, loc) {
+  return loc(FILE_MESSAGES[code] || FILE_MESSAGES.FILE_UNREADABLE);
+}
 
 export function errorMessage(code, loc, detail = "") {
   const entry = MESSAGES[code] || { ar: "تعذر إنشاء العرض التقديمي. حاول مرة أخرى.", en: "Could not create the presentation. Please try again." };

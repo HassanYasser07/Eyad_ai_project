@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 /** Minimal in-memory stand-in for the parts of supabase-js used by the Edge Function. */
 export function createFakeBackend({ users = {} } = {}) {
-  const tables = { projects: [], gamma_presentation_jobs: [] };
+  const tables = { projects: [], gamma_presentation_jobs: [], presentation_templates: [] };
 
   class Query {
     constructor(table) { this.table = table; this.mode = "select"; this.filters = []; this.payload = null; this.opts = {}; }
@@ -55,7 +55,7 @@ export function createFakeGamma({ pollSequence = ["pending", "pending", "complet
     const record = { method: init.method || "GET", url: href, headers: init.headers || {}, body: init.body ? JSON.parse(init.body) : null };
     calls.push(record);
     if (!href.startsWith("https://public-api.gamma.app/v1.0")) return reply(599, { message: "unexpected host" });
-    if (record.method === "POST" && href.endsWith("/generations")) {
+    if (record.method === "POST" && (href.endsWith("/generations") || href.endsWith("/generations/from-template"))) {
       if (rejectThemeOnce && record.body.themeId && !themeRejected) { themeRejected = true; return reply(422, { message: "Unknown themeId" }); }
       if (createStatus !== 200) return reply(createStatus, { message: "create failed" });
       return reply(200, { generationId: "gen_123" });
