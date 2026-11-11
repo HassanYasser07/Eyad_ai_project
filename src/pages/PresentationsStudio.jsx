@@ -185,20 +185,20 @@ export default function PresentationsStudio() {
   const topicError = errors.topic ? fieldMessage(errors.topic === "REQUIRED" ? "TOPIC_REQUIRED" : errors.topic, loc) : "";
 
   return (
-    <div className="min-h-full px-4 py-4 md:px-8" dir={direction}>
+    <div className="min-h-full bg-[radial-gradient(70%_45%_at_50%_0%,hsl(var(--primary)/0.10),transparent_70%)] px-4 py-3 md:px-8" dir={direction}>
       <div className="mx-auto max-w-6xl">
-        <header className="mb-4 flex items-center justify-between gap-4">
-          <button type="button" onClick={() => navigate(projectId ? "/chat?project=" + encodeURIComponent(projectId) : "/studios")} className="inline-flex items-center gap-2 text-sm font-bold text-muted-foreground hover:text-foreground">
-            {direction === "rtl" ? <ArrowRight className="h-4 w-4" /> : <ArrowLeft className="h-4 w-4" />}
+        <header className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <button type="button" onClick={() => navigate(projectId ? "/chat?project=" + encodeURIComponent(projectId) : "/studios")} className="inline-flex min-h-[2rem] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-border bg-card px-3 py-1 text-xs font-bold text-muted-foreground shadow-sm transition-colors hover:border-primary/40 hover:text-primary">
+            {direction === "rtl" ? <ArrowRight className="h-3.5 w-3.5" /> : <ArrowLeft className="h-3.5 w-3.5" />}
             {loc({ ar: "رجوع", en: "Back" })}
           </button>
-          <div className="flex items-center gap-2">
-            <button type="button" onClick={() => setPptxEditorOpen(true)} data-testid="open-pptx-editor" className="inline-flex items-center gap-1.5 rounded-full border border-primary/20 bg-card px-3 py-2 text-xs font-extrabold text-primary shadow-sm hover:bg-primary/5">
-              <PencilRuler className="h-4 w-4" />
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <button type="button" onClick={() => setPptxEditorOpen(true)} data-testid="open-pptx-editor" className="inline-flex min-h-[2rem] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-primary/25 bg-card px-3 py-1 text-xs font-bold text-primary shadow-sm transition-colors hover:bg-primary/10">
+              <PencilRuler className="h-3.5 w-3.5 shrink-0" />
               <span>{t("pptxEditor.title")}</span>
             </button>
-            <div className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-2 text-xs font-bold text-primary shadow-sm">
-              <Presentation className="h-4 w-4" />
+            <div className="inline-flex min-h-[2rem] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-gradient-to-br from-primary to-violet-600 px-3 py-1 text-xs font-bold text-primary-foreground shadow-sm shadow-primary/20">
+              <Presentation className="h-3.5 w-3.5 shrink-0" />
               {loc({ ar: "ستوديو العروض التقديمية", en: "Presentation Studio" })}
             </div>
           </div>
@@ -213,7 +213,7 @@ export default function PresentationsStudio() {
         )}
 
         <div className="mx-auto max-w-4xl">
-          <h1 className="mb-4 text-balance text-center text-xl font-black leading-tight text-foreground md:text-2xl">
+          <h1 className="mb-3 text-balance text-center text-base font-extrabold leading-tight text-foreground md:text-lg">
             {loc({ ar: "اكتب موضوعك، وأنشئ محتوى العرض الآن", en: "Enter your topic, generate the presentation content now" })}
           </h1>
 
