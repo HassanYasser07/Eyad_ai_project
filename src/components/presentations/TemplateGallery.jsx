@@ -1,8 +1,11 @@
+
 import React from "react";
-import { Check, FileText, Loader2, Presentation, RefreshCw } from "lucide-react";
+import { Check, Layers, Loader2, Presentation, RefreshCw } from "lucide-react";
 import { fetchTemplateGallery } from "@/services/templateService";
 
 const ALL = "all";
+// Loaded on demand: pulls in the pptx renderer only when a template has a .pptx and no thumbnail image.
+const TemplateThumbnail = React.lazy(() => import("./TemplateThumbnail"));
 
 /** Placeholder art for templates without a thumbnail: gradient from the row's own accent colors. */
 function placeholderStyle(template) {
@@ -11,8 +14,20 @@ function placeholderStyle(template) {
   return { backgroundImage: `linear-gradient(135deg, ${a}, ${b || a})` };
 }
 
+/** Display only the slide count number. */
+function slidesLabel(n) {
+  return String(n);
+}
+
 function TemplateCard({ template, selected, opening, disabled, onSelect, loc }) {
   const title = loc({ ar: template.title_ar, en: template.title_en });
+  const [deckCount, setDeckCount] = React.useState(0);
+  const slideCount = deckCount || template.slide_count || 0;
+  const placeholder = (
+    <span className="grid h-full w-full place-items-center bg-gradient-to-br from-muted to-accent" style={placeholderStyle(template)} aria-hidden="true">
+      <Presentation className="h-8 w-8 text-white/70 drop-shadow-sm" />
+    </span>
+  );
   return (
     <li>
       <button
@@ -22,16 +37,17 @@ function TemplateCard({ template, selected, opening, disabled, onSelect, loc }) 
         <span className={`relative block aspect-[16/9] overflow-hidden rounded-2xl border bg-muted transition-all group-hover:shadow-md group-focus-visible:ring-2 group-focus-visible:ring-ring group-focus-visible:ring-offset-2 group-focus-visible:ring-offset-background ${selected ? "border-primary ring-2 ring-primary" : "border-border"}`}>
           {template.thumbnail_url ? (
             <img src={template.thumbnail_url} alt={title} loading="lazy" className="h-full w-full object-cover" />
-          ) : (
-            <span className="grid h-full w-full place-items-center bg-gradient-to-br from-muted to-accent" style={placeholderStyle(template)} aria-hidden="true">
-              <Presentation className="h-8 w-8 text-white/70 drop-shadow-sm" />
+          ) : template.pptx_path ? (
+            <React.Suspense fallback={placeholder}>
+              <TemplateThumbnail template={template} title={title} fallback={placeholder} onSlideCount={setDeckCount} />
+            </React.Suspense>
+          ) : placeholder}
+          {slideCount > 0 && (
+            <span data-testid="template-slide-count" className="absolute bottom-2 end-2 inline-flex items-center gap-1.5 rounded-full bg-black/65 py-1 ps-2 pe-2.5 text-[11px] font-bold leading-none text-white shadow-sm ring-1 ring-white/15 backdrop-blur-sm">
+              <Layers className="h-3 w-3" aria-hidden="true" />
+              <span>{slidesLabel(slideCount)}</span>
             </span>
           )}
-          {template.slide_count ? (
-            <span className="absolute end-2 top-2 inline-flex items-center gap-1 rounded-md bg-black/55 px-1.5 py-0.5 text-xs font-bold text-white backdrop-blur-sm" dir="ltr">
-              <FileText className="h-3 w-3" aria-hidden="true" />{template.slide_count}
-            </span>
-          ) : null}
           {opening && (
             <span role="status" aria-label={loc({ ar: "جاري فتح القالب", en: "Opening template" })} className="absolute inset-0 grid place-items-center bg-background/60 backdrop-blur-[1px]"><Loader2 className="h-6 w-6 animate-spin text-primary" aria-hidden="true" /></span>
           )}
