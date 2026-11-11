@@ -9,6 +9,7 @@ import { LogIn, Mail, Lock, Loader2 } from "lucide-react";
 import AuthLayout from "@/components/AuthLayout";
 import GoogleIcon from "@/components/GoogleIcon";
 import { safeReturnTo, getOAuthRedirectTo } from "@/lib/authReturnTo";
+import { openOAuthUrl } from "@/lib/nativeAuth";
 
 export default function Login() {
   const [email, setEmail] = useState("");
@@ -77,7 +78,7 @@ export default function Login() {
     // runs the app in an iframe, causing a 403). Break out to the top-level
     // window so Google loads normally. In production (no iframe)
     // window.top === window, so behavior is unchanged.
-    window.top.location.href = data.url;
+    await openOAuthUrl(data.url);
   };
 
   const handleSendOtp = async () => {

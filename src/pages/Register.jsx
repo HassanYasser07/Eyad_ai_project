@@ -9,6 +9,7 @@ import AuthLayout from "@/components/AuthLayout";
 import GoogleIcon from "@/components/GoogleIcon";
 import { toast } from "@/components/ui/use-toast";
 import { safeReturnTo, getOAuthRedirectTo } from "@/lib/authReturnTo";
+import { openOAuthUrl } from "@/lib/nativeAuth";
 
 // Store the returnTo in sessionStorage so we can redirect after the
 // OAuth callback. Shared with Login.jsx — IntroGate reads these keys.
@@ -137,7 +138,7 @@ export default function Register() {
     // runs the app in an iframe, causing a 403). Break out to the top-level
     // window so Google loads normally. In production (no iframe)
     // window.top === window, so behavior is unchanged.
-    window.top.location.href = data.url;
+    await openOAuthUrl(data.url);
   };
 
   if (showOtp) {

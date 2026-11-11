@@ -1,3 +1,4 @@
+import { isNativeApp, NATIVE_REDIRECT } from "@/lib/nativeAuth";
 // Shared by the auth pages (Login, Register, and any page that resumes a flow
 // after sign-in, e.g. the MCP OAuth consent page). Keep the redirect
 // validation in one place — it is security-sensitive and easy to drift.
@@ -22,6 +23,8 @@
 // iframe ("eyad-ai.com refused to connect"). The IntroGate at "/"
 // already handles post-OAuth session detection and redirect.
 export function getOAuthRedirectTo() {
+  // Native app: return through the custom-scheme deep link so the WebView (not a browser tab) is resumed.
+  if (isNativeApp()) return NATIVE_REDIRECT;
   return window.location.origin;
 }
 
