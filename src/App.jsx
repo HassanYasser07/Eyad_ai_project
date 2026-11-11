@@ -8,6 +8,7 @@ import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 import ScrollToTop from './components/ScrollToTop';
 import { Navigate } from 'react-router-dom';
 import AccountRequiredRoute from '@/components/AccountRequiredRoute';
+import OAuthReturnHandler from '@/components/OAuthReturnHandler';
 import { I18nProvider } from '@/i18n/I18nContext';
 import AppLayout from '@/components/layout/AppLayout';
 import Login from '@/pages/Login';
@@ -102,6 +103,7 @@ function App() {
       <QueryClientProvider client={queryClientInstance}>
         <Router>
           <ScrollToTop />
+          <OAuthReturnHandler />
           <I18nProvider>
             <AuthenticatedApp />
           </I18nProvider>
