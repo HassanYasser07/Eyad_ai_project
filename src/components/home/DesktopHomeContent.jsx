@@ -1,6 +1,6 @@
 /**
  * EYAD AI — Desktop Home content (>=1024px only).
- * Hero banner, Quick Create (image cards), Recent Projects, Studio Types (image cards),
+ * Hero banner, Quick Create (all 8 studios, 4 per row), Recent Projects,
  * and the rest of the home sections (marketplace, feature, create, ideas, compare).
  * Reuses existing mobile section components so content stays in sync.
  */
@@ -12,7 +12,7 @@ import { studioRegistry } from "@/studios/studioRegistry";
 import { getStudioIcon } from "@/studios/studioIcons";
 import { projectService } from "@/services/projectService";
 import { normalizeProject } from "@/models/projectModel";
-import { STUDIO_VISUALS } from "@/components/home/HomeStudios";
+import { STUDIO_VISUALS, HOME_STUDIO_IDS } from "@/components/home/HomeStudios";
 import HomeMarketplace from "@/components/home/HomeMarketplace";
 import HomeFeatureBlock from "@/components/home/HomeFeatureBlock";
 import HomeCreateSection from "@/components/home/HomeCreateSection";
@@ -48,6 +48,13 @@ const getProjectImage = (project) => {
 };
 
 const studioImage = (id) => STUDIO_VISUALS[id]?.image;
+
+// Quick Create shows every studio in one grid (4 per row). Order follows the
+// mobile home order, with the marketplace last.
+const QUICK_CREATE_IDS = [...HOME_STUDIO_IDS, "marketplace"];
+const QUICK_CREATE_STUDIOS = QUICK_CREATE_IDS
+  .map((id) => studioRegistry.find((s) => s.id === id))
+  .filter(Boolean);
 
 export default function DesktopHomeContent() {
   const { t, loc } = useI18n();
@@ -94,7 +101,7 @@ export default function DesktopHomeContent() {
           <h2>{t("home.desktop.quickCreate")}</h2>
         </div>
         <div className="eyad-dt-quick-row">
-          {studioRegistry.slice(0, 5).map((studio) => {
+          {QUICK_CREATE_STUDIOS.map((studio) => {
             const img = studioImage(studio.id);
             const Icon = getStudioIcon(studio.icon);
             const bg = PASTEL[studio.id] || "#E0F2FE";
@@ -116,10 +123,17 @@ export default function DesktopHomeContent() {
                   </>
                 ) : (
                   <>
-                    <span className="eyad-dt-quick-fallback" style={{ backgroundColor: bg, color: studio.accent }}>
+                    <span
+                      className="eyad-dt-quick-fallback"
+                      style={{ background: `linear-gradient(135deg, ${bg} 0%, ${studio.accent}33 100%)`, color: studio.accent }}
+                    >
                       <Icon />
                     </span>
-                    <strong>{loc(studio.name)}</strong>
+                    <span className="eyad-dt-quick-shade is-soft" />
+                    <span className="eyad-dt-quick-iconchip" style={{ backgroundColor: bg, color: studio.accent }}>
+                      <Icon />
+                    </span>
+                    <strong className="is-dark">{loc(studio.name)}</strong>
                   </>
                 )}
               </button>
@@ -175,48 +189,6 @@ export default function DesktopHomeContent() {
             </button>
           </div>
         )}
-      </section>
-
-      {/* ── Available Studios (image cards) ── */}
-      <section className="eyad-dt-section">
-        <div className="eyad-dt-section-head">
-          <h2>{t("home.desktop.studioTypes")}</h2>
-        </div>
-        <div className="eyad-dt-studio-types">
-          {studioRegistry.map((studio) => {
-            const img = studioImage(studio.id);
-            const Icon = getStudioIcon(studio.icon);
-            const bg = PASTEL[studio.id] || "#E0F2FE";
-            return (
-              <button
-                key={studio.id}
-                type="button"
-                className="eyad-dt-studio-type"
-                onClick={() => navigate(studio.route)}
-              >
-                {img ? (
-                  <>
-                    <span className="eyad-dt-studio-type-media">
-                      <img src={img} alt="" loading="lazy" />
-                      <span className="eyad-dt-studio-type-shade" />
-                      <span className="eyad-dt-studio-type-iconchip" style={{ backgroundColor: bg, color: studio.accent }}>
-                        <Icon />
-                      </span>
-                    </span>
-                    <span className="eyad-dt-studio-type-name">{loc(studio.name)}</span>
-                  </>
-                ) : (
-                  <>
-                    <span className="eyad-dt-studio-type-icon" style={{ backgroundColor: bg, color: studio.accent }}>
-                      <Icon />
-                    </span>
-                    <span className="eyad-dt-studio-type-name">{loc(studio.name)}</span>
-                  </>
-                )}
-              </button>
-            );
-          })}
-        </div>
       </section>
 
       {/* ── Rest of the home sections (shared with mobile) ── */}

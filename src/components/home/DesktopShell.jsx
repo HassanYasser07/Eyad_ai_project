@@ -1,6 +1,6 @@
 /**
  * EYAD AI — Desktop workspace shell (>=1024px only).
- * Sidebar (left) + header + workspace + right rail. Mobile is untouched.
+ * Sidebar (leading edge) + header + workspace + rail (trailing edge); mirrors in RTL. Mobile is untouched.
  * Uses the official Logo component, existing routes, and studioRegistry.
  */
 import React from "react";
@@ -50,8 +50,8 @@ export default function DesktopShell() {
   const profileInitial = (user?.full_name || user?.email || "EYAD").charAt(0).toUpperCase();
 
   return (
-    <div className="eyad-dt-shell" dir="ltr">
-      {/* Sidebar — always on the left; inner text follows language direction */}
+    <div className="eyad-dt-shell" dir={direction}>
+      {/* Sidebar — leading edge: left in English, right in Arabic */}
       <aside className="eyad-dt-sidebar" dir={direction}>
         <Link to="/home" className="eyad-dt-sidebar-logo" aria-label="EYAD AI">
           <Logo variant="full" className="eyad-dt-logo-img" />
