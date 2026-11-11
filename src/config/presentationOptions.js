@@ -21,8 +21,6 @@ export const SLIDE_COUNT_OPTIONS = [
   { value: "10", ar: "10", en: "10" },
   { value: "15", ar: "15", en: "15" },
   { value: "20", ar: "20", en: "20" },
-  { value: "25", ar: "25", en: "25" },
-  { value: "30", ar: "30", en: "30" },
 ];
 
 // `value` is a Gamma textOptions.language key (see supabase/functions/eyad-presentation/gammaRequest.mjs).

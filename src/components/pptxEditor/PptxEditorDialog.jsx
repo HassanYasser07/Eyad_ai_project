@@ -468,12 +468,39 @@ export default function PptxEditorDialog({ onClose, initialFile = null, onSaved 
     return () => { document.removeEventListener("visibilitychange", hide); window.removeEventListener("pagehide", flushDraft); window.removeEventListener("beforeunload", warn); };
   }, [flushDraft]);
 
+  // Browser Back: the editor is an overlay (no route of its own), so Back would silently leave the page and lose edits.
+  // Keep one guard history entry while the editor is open; Back consumes it and we ask first if there are unsaved edits.
+  const guardActive = React.useRef(false);
+  const onCloseRef = React.useRef(onClose);
+  onCloseRef.current = onClose;
+  React.useEffect(() => {
+    window.history.pushState({ ...(window.history.state || {}), peEditorGuard: true }, "");
+    guardActive.current = true;
+    const onPop = () => {
+      if (!guardActive.current) return;
+      if (pkgRef.current?.isDirty) {
+        window.history.pushState({ ...(window.history.state || {}), peEditorGuard: true }, ""); // re-arm the guard
+        setSaveDialog({ intent: "exit" });
+      } else {
+        guardActive.current = false; // the entry was already consumed by Back
+        clearDraft(); onCloseRef.current();
+      }
+    };
+    window.addEventListener("popstate", onPop);
+    return () => {
+      window.removeEventListener("popstate", onPop);
+      // Closed via X / save / discard: drop our leftover guard entry so Back doesn't land on a dead step.
+      if (guardActive.current) { guardActive.current = false; if (window.history.state?.peEditorGuard) window.history.back(); }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Leaving with unsaved edits asks: new version / replace the saved one / don't save.
   const requestClose = () => {
     if (pkg?.isDirty) setSaveDialog({ intent: "exit" });
     else { clearDraft(); onClose(); }
   };
-  const askSave = () => { if (pkg && !busy) setSaveDialog({ intent: "save" }); };
+  const askSave = () => { if (pkg?.isDirty && !busy) setSaveDialog({ intent: "save" }); };
   const discardAndClose = async () => { setSaveDialog(null); await clearDraft(); onClose(); };
   const persistToProject = async (mode, { closeAfter = false } = {}) => {
     setSaveDialog(null);
@@ -1170,7 +1197,7 @@ export default function PptxEditorDialog({ onClose, initialFile = null, onSaved 
               <IconButton icon={Info} label={t("pptxEditor.report")} onClick={() => setSheet("report")} active={report?.warnings.length > 0} testId="pptx-report" /></>}
             <span className="pe-grow" />
             <IconButton icon={Play} label={t("pptxEditor.present")} onClick={() => setPresenting(true)} testId="pptx-present" />
-            <button type="button" className="pe-btn-secondary pe-btn-save" onClick={askSave} disabled={!!busy} data-testid="pptx-save"><Save size={16} aria-hidden="true" /><span>{t("pptxEditor.save")}</span></button>
+            <button type="button" className="pe-btn-secondary pe-btn-save" onClick={askSave} disabled={!!busy || !pkg.isDirty} data-testid="pptx-save"><Save size={16} aria-hidden="true" /><span>{t("pptxEditor.save")}</span></button>
             <button type="button" className="pe-btn-primary" onClick={exportNow} disabled={!!busy} data-testid="pptx-export">{busy ? <Loader2 className="pe-spin" size={16} aria-hidden="true" /> : <Download size={16} aria-hidden="true" />}<span>{t("pptxEditor.export")}</span></button>
             {compact && <IconButton icon={MoreHorizontal} label={t("pptxEditor.more")} onClick={() => setSheet("more")} testId="pptx-more" />}
           </header>
@@ -1328,7 +1355,7 @@ export default function PptxEditorDialog({ onClose, initialFile = null, onSaved 
           {shownSheet === "more" && (
             <BottomSheet closing={sheetClosing} closingBottom={chrome.bottom} title={t("pptxEditor.more")} onClose={() => setSheet(null)} testId="pptx-more-sheet">
               <ul className="pe-list">
-                <li><button type="button" onClick={() => { setSheet(null); askSave(); }}><Save size={16} aria-hidden="true" />{t("pptxEditor.save")}</button></li>
+                <li><button type="button" disabled={!pkg?.isDirty || !!busy} onClick={() => { setSheet(null); askSave(); }}><Save size={16} aria-hidden="true" />{t("pptxEditor.save")}</button></li>
                 <li><button type="button" onClick={() => { setSheet(null); exportNow(); }}><Download size={16} aria-hidden="true" />{t("pptxEditor.export")}</button></li>
                 <li><button type="button" onClick={() => { setGrid((g) => ({ ...g, show: !g.show })); }}><Grid3x3 size={16} aria-hidden="true" />{t("pptxEditor.grid")} {grid.show ? "✓" : ""}</button></li>
                 <li><button type="button" onClick={() => canvasRef.current?.fit()}><Maximize size={16} aria-hidden="true" />{t("pptxEditor.fitScreen")}</button></li>
