@@ -461,10 +461,10 @@
 /* --- Generated image grid --- */
 .eyad-chat-page__generated-grid {
   width: 100%;
-  max-width: 560px;
+  max-width: 440px;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  gap: 10px;
   animation: eyad-msg-in 0.4s cubic-bezier(0.22, 1, 0.36, 1);
 }
 .eyad-chat-page__generated-card {
@@ -1027,7 +1027,19 @@
   .eyad-chat-page { max-width: 100%; }
   /* Keep the first chat message clear of the fixed glass header. */
   .eyad-chat-page__body { padding: 96px 12px 100px; }
-  .eyad-chat-page__generated-grid { grid-template-columns: 1fr; }
+  /* Keep the two generated designs side by side on phones, just more compact. */
+  .eyad-chat-page__generated-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 100%; gap: 8px; }
+  .eyad-chat-page__generated-card { border-radius: 16px; }
+  .eyad-chat-page__generated-number,
+  .eyad-chat-page__generated-check { width: 26px; height: 26px; top: 8px; }
+  .eyad-chat-page__generated-number { left: 8px; border-radius: 8px; font-size: 0.66rem; }
+  .eyad-chat-page__generated-check { right: 8px; }
+  .eyad-chat-page__generated-check svg { width: 13px; height: 13px; }
+  .eyad-chat-page__generated-badge { left: 8px; bottom: 8px; padding: 3px 8px; font-size: 0.6rem; }
+  .eyad-chat-page__generated-zoom { right: 8px; bottom: 8px; width: 26px; height: 26px; border-radius: 8px; }
+  .eyad-chat-page__generated-zoom svg { width: 12px; height: 12px; }
+  .eyad-chat-page__generated-card-actions { grid-template-columns: 1fr; padding: 6px; }
+  .eyad-chat-page__generated-card-actions button { padding: 7px 4px; font-size: 0.62rem; }
   .eyad-chat-page__generated-selection-actions { flex-direction: column; }
   .eyad-chat-page__creative-actions { overflow-x: auto; flex-wrap: nowrap; padding-bottom: 4px; }
   .eyad-chat-page__creative-actions button { white-space: nowrap; flex-shrink: 0; }

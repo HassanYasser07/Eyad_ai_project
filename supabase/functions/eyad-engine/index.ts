@@ -231,15 +231,21 @@ function buildProfessionalLogoPrompt({
   message,
   designOptions,
   language,
+  variantIndex = 0,
+  variantCount = 1,
 }: {
   basePrompt: string;
   message: string;
   designOptions: Record<string, unknown>;
   language: string;
+  variantIndex?: number;
+  variantCount?: number;
 }) {
   const brief = extractLogoBrief(message);
-  const brandName = String(brief.name || "").trim();
-  const activity = String(brief.activity || "").trim();
+  // The Logo Studio fields are the source of truth; the regex brief extracted
+  // from the chat message is only a fallback.
+  const brandName = String(designOptions?.brand_name || brief.name || "").trim();
+  const activity = String(designOptions?.activity || brief.activity || "").trim();
   const style = String(designOptions?.style || "").trim();
   const logoType = String(designOptions?.logo_type || "").trim();
   const styleMap: Record<string, string> = {
@@ -258,14 +264,35 @@ function buildProfessionalLogoPrompt({
     abstract: "a distinctive abstract symbol paired with a disciplined wordmark",
     "eyad-decides": "the strongest professional logo structure for the brief",
   };
-  const colorInstruction = Array.isArray(designOptions?.colors)
-    ? "Use this exact approved palette as the primary color system: " + designOptions.colors.join(", ") + "."
+  const colorPalettes: Record<string, string[]> = {
+    blue: ["#123E9B", "#2B78F6", "#8DC7FF"],
+    purple: ["#4C16C8", "#8A2BE2", "#F28AE8"],
+    sunset: ["#D71920", "#FF7A21", "#FFD13B"],
+    green: ["#087A50", "#18B96B", "#9AE36B"],
+    mono: ["#27303A", "#7D8792", "#F4F6F8"],
+    earth: ["#70451F", "#B8894E", "#F1D3A2"],
+    cyan: ["#087DAA", "#00C7EE", "#8BE9FF"],
+    pink: ["#D81B72", "#F45BA4", "#FFD0E5"],
+    "navy-gold": ["#123B82", "#D3A53A", "#F5D99B"],
+  };
+  const paletteList = Array.isArray(designOptions?.colors)
+    ? (designOptions.colors as unknown[]).map(String)
+    : (colorPalettes[String(designOptions?.colors || "").trim()] || []);
+  const colorInstruction = paletteList.length
+    ? "Use ONLY this approved palette (no other hues): " + paletteList.join(", ") + "."
     : "";
+  const conceptDirection = buildLogoConceptDirection({
+    variantIndex,
+    variantCount,
+    logoType,
+    brandName,
+    activity,
+  });
   const exactText = brandName
     ? "PRIMARY BRAND TEXT — render exactly this string and nothing else: \"" + brandName + "\". Preserve every character, spelling, diacritic, Arabic shaping, RTL order, and letter connection. Do not transliterate, translate, paraphrase, or invent letters."
     : "The brand name supplied in the user brief is the source of truth. Render it exactly as supplied.";
   const descriptorText = activity
-    ? "SECONDARY DESCRIPTOR — the business activity is supporting information, never the main brand name. If used, place it directly beneath the primary brand name, clearly smaller (about 55–70% of the primary wordmark visual size) and comfortably readable. Never make it equal to or larger than the brand name, never repeat it, and never treat it as a tagline: \"" + activity + "\". Preserve the exact Arabic/Latin spelling and RTL/LTR order. Do not add any other copy."
+    ? "BUSINESS ACTIVITY (CONTEXT ONLY): \"" + activity + "\". Use it ONLY to inform the symbol and the overall visual concept. NEVER write, render, translate or paraphrase the activity (or the industry name) as text anywhere in the logo: no descriptor line under the brand name, no tagline, no caption. The ONLY text in the image is the brand name."
     : "Do not add any secondary descriptor, slogan, caption, URL, or invented text.";
 
   return [
@@ -281,8 +308,78 @@ function buildProfessionalLogoPrompt({
     "Composition: one centered logo lockup with generous breathing room and a strong visual hierarchy. The mark should occupy the canvas confidently without becoming tiny or floating in excessive empty space.",
     "Background: a plain removable background only for generation. The final pipeline will remove it. Never design any white box, frame, panel, badge, card, or backdrop as part of the logo.",
     "Do not create multiple logos in one image. Create exactly one finished concept per output.",
+    conceptDirection,
     basePrompt ? "Brief context from EYAD: " + basePrompt : "",
   ].filter(Boolean).join("\n");
+}
+
+// Two logo concepts are generated in two SEPARATE requests. Each request gets a
+// different creative route so the pair is visibly different, while both still
+// obey the same user inputs (brand name, activity, style, palette, logo type).
+// The routes differ in: where the idea comes from, shape language, layout and
+// typography. Each prompt also describes its sibling so it can avoid it.
+function buildLogoConceptDirection({
+  variantIndex,
+  variantCount,
+  logoType,
+  brandName,
+  activity,
+}: {
+  variantIndex: number;
+  variantCount: number;
+  logoType: string;
+  brandName: string;
+  activity: string;
+}) {
+  if (variantCount < 2) return "";
+  const subject = activity
+    ? "the business activity \"" + activity + "\""
+    : "the brand's field of work";
+  const initial = brandName ? Array.from(brandName)[0] : "";
+
+  // Route A — meaning-led: the idea is taken from WHAT the business does.
+  const routeA: Record<string, string> = {
+    "symbol-wordmark": "a recognisable-but-original symbol distilled from the core object, action or outcome of " + subject + ", reduced to 2-3 bold geometric shapes, placed beside/above the wordmark",
+    lettermark: "a monogram of the brand initial" + (initial ? " \"" + initial + "\"" : "") + " whose counter-space or cut quietly hints at " + subject,
+    wordmark: "a custom wordmark where ONE letter-shape is subtly modified to carry a visual cue of " + subject,
+    emblem: "a compact emblem whose silhouette is shaped like the core object of " + subject + ", with the name integrated inside or around it",
+    abstract: "an abstract symbol that visualises the core benefit or movement of " + subject + " (growth, flow, connection, protection, speed - whichever fits best)",
+  };
+  // Route B — form-led: the idea is taken from the brand NAME / pure geometry.
+  const routeB: Record<string, string> = {
+    "symbol-wordmark": "a symbol built from the brand name's initial letterform" + (initial ? " \"" + initial + "\"" : "") + " or from pure geometry (grid, circle, square, arc), NOT a literal depiction of the activity, combined with the wordmark",
+    lettermark: "a monogram built from interlocking / overlapping geometric primitives (grid-based, constructed with a ruler and compass), with an unexpected construction",
+    wordmark: "a refined typographic wordmark with custom ligatures, unified letter spacing and a rhythmic baseline treatment; no pictorial icon",
+    emblem: "a geometric badge-style emblem (circle, hexagon, shield or other crisp container) with an internal pattern of strong simple shapes and the name set cleanly",
+    abstract: "a pure geometric abstract mark built from repeated or rotated primitives, with a strong silhouette that has no literal link to the activity",
+  };
+  const key = routeA[logoType] ? logoType : "symbol-wordmark";
+  const isFirst = variantIndex === 0;
+
+  const first = [
+    "CONCEPT 1 OF 2 - MEANING-LED ROUTE.",
+    "Idea: " + routeA[key] + ".",
+    "Shape language: soft, rounded, organic curves with smooth terminals.",
+    "Layout: horizontal lockup (symbol on the start side, name on the other) unless the logo type forbids a symbol.",
+    "Typography: friendly, medium-weight letterforms with generous spacing.",
+    "Color use: the darkest palette color dominates; the lightest/accent color is used only as a small highlight.",
+  ];
+  const second = [
+    "CONCEPT 2 OF 2 - FORM-LED ROUTE.",
+    "Idea: " + routeB[key] + ".",
+    "Shape language: sharp, angular, precisely geometric forms with crisp corners and straight cuts.",
+    "Layout: vertical stacked lockup (symbol or monogram centered above the name) unless the logo type forbids a symbol.",
+    "Typography: strong, high-contrast or heavy letterforms with tighter spacing.",
+    "Color use: use the palette in a clearly different distribution from a typical single-dominant-color logo - split or layer 2-3 palette colors inside the symbol.",
+  ];
+  const other = isFirst
+    ? "A sibling concept exists that is geometric, angular, stacked and not tied literally to the activity. Your concept must NOT resemble it."
+    : "A sibling concept exists that is rounded, horizontal and derived literally from the activity. Your concept must NOT reuse its symbol idea, layout, curves or typography.";
+  return [
+    ...(isFirst ? first : second),
+    other,
+    "Both concepts must still render the exact same brand name text, use the same approved palette and respect the chosen style and logo type; only the creative route differs.",
+  ].join("\n");
 }
 
 function resolveOpenAIImageSize(value: string, fallback = "1024x1024") {
@@ -1224,7 +1321,7 @@ Deno.serve(async (req: Request) => {
     const visibleTextInstruction = name
       ? "VISIBLE TEXT RULE: Render the exact brand name \"" + name + "\" as the primary logo text. " +
       (activity
-        ? "Render the exact business activity \"" + activity + "\" as a secondary descriptor directly beneath the brand name, clearly readable and visually subordinate. "
+        ? "The business activity \"" + activity + "\" is context for the symbol only. Do NOT write it (or any translation/synonym of it) anywhere in the logo, not under the brand name and not as a tagline. "
         : "") +
       "Never render labels such as Brand/company, Business/activity, العلامة, النشاط, or any prompt metadata. Do not invent, translate, paraphrase, shorten, or alter the brand name or activity. Do not add a tagline, slogan, description, industry name, URL, phone number, or any other text."
       : "VISIBLE TEXT RULE: Do not render labels, prompt metadata, taglines, slogans, or extra text.";
@@ -1658,7 +1755,7 @@ The supplied approved logo reference must be used as the actual printed logo on 
           : isMockupGeneration
             ? `Create a photorealistic premium commercial mockup of a real ${mockupName}. ${imagePrompt}. ${mockupDirection} ${mockupLogoInstruction} ${businessDataPrompt} Make it look like professional product photography, not a UI, CSS illustration, flat template or placeholder. No UI controls, watermarks, invented extra logos, or unrelated captions.${mockupType === "business-card" ? " Show the complete finished business card naturally placed on a premium desk/tabletop, with realistic paper texture, perspective, contact shadows and depth of field. The business card itself must be the hero subject." : ""}${exactDataSurfacePrompt}`
             : isLogo
-              ? `You are a senior brand designer creating a professional logo. Task: ${imagePrompt}\n\nDESIGN REQUIREMENTS — produce a single, polished, production-ready logo mark:\n- Clean, precise vector-style geometry with smooth curves and sharp edges. No jagged lines, no pixelation, no random dots, specks, noise, or stray artifacts.\n- Strong visual hierarchy: the company/brand name is the HERO text and must be clearly larger, heavier, and more visually dominant. If a business activity is used, it is secondary supporting text directly beneath the company name at about 55–70% of the primary wordmark visual size.\n- Typography must be crisp, legible, and professionally kerned. Render the company name exactly as supplied. If the activity is used, render it exactly as supplied only as secondary text beneath the company name. Keep it clearly smaller than the company name. Never distort, stretch, overlap, duplicate, translate, or invent text.\n- Centered composition with generous, balanced negative space around the mark. The logo must read clearly and look professional at any scale.\n- Use only the requested color palette. Solid, confident color blocks — no muddy gradients, no accidental fills, no semi-transparent haze.\n- Flat, iconic, brand-mark aesthetic. Think modern tech, luxury, or corporate identity — not illustration, not clipart, not a poster.\n- Transparent background. No backdrop, no scene, no shadow, no glow, no frame, no paper texture, no business card, no mockup, no wall sign, no presentation slide. The logo floats on a fully transparent canvas.\n- If a reference logo is provided, preserve its core identity, colors, and lettering while applying the requested refinements.\n- Deliver ONE clean logo only. Do not generate multiple variants, explorations, or layout options in a single image.`
+              ? `You are a senior brand designer creating a professional logo. Task: ${imagePrompt}\n\nDESIGN REQUIREMENTS — produce a single, polished, production-ready logo mark:\n- Clean, precise vector-style geometry with smooth curves and sharp edges. No jagged lines, no pixelation, no random dots, specks, noise, or stray artifacts.\n- Strong visual hierarchy: the company/brand name is the HERO text and must be clearly larger, heavier, and more visually dominant. The logo contains ONLY the brand name as text; the business activity must NOT be written anywhere in the logo (no descriptor line, no tagline).\n- Typography must be crisp, legible, and professionally kerned. Render the company name exactly as supplied and nothing else. Never render the business activity or industry name as text. Never distort, stretch, overlap, duplicate, translate, or invent text.\n- Centered composition with generous, balanced negative space around the mark. The logo must read clearly and look professional at any scale.\n- Use only the requested color palette. Solid, confident color blocks — no muddy gradients, no accidental fills, no semi-transparent haze.\n- Flat, iconic, brand-mark aesthetic. Think modern tech, luxury, or corporate identity — not illustration, not clipart, not a poster.\n- Transparent background. No backdrop, no scene, no shadow, no glow, no frame, no paper texture, no business card, no mockup, no wall sign, no presentation slide. The logo floats on a fully transparent canvas.\n- If a reference logo is provided, preserve its core identity, colors, and lettering while applying the requested refinements.\n- Deliver ONE clean logo only. Do not generate multiple variants, explorations, or layout options in a single image.`
               : `Create/edit a premium ${studioName} visual for the user's request: ${imagePrompt}. ${aiImageDirection} Produce a polished standalone creative image with no UI, no mockup, and no explanatory text.`
         const imageReference = effectiveReferenceImage || imageAttachment?.dataUrl || null;
         const styleReferenceUrl = String(styleReference?.url || '').trim() || null;
@@ -1973,46 +2070,58 @@ The supplied approved logo reference must be used as the actual printed logo on 
             return json({ error: "OPENAI_CONFIG_ERROR", detail: "OpenAI API key is not configured." }, 500);
           }
 
-          const logoPrompt = buildProfessionalLogoPrompt({
-            basePrompt: imagePrompt,
-            message,
-            designOptions,
-            language,
-          });
-          const openAiLogoResponse = await fetchWithTimeout("https://api.openai.com/v1/images/generations", {
-            method: "POST",
-            headers: {
-              "Authorization": "Bearer " + openAiKey,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              model: "gpt-image-2.5-sunburst",
-              prompt: logoPrompt,
-              n: generationVariantCount,
-              size: "2048x2048",
-              quality: "high",
-              background: "transparent",
-              output_format: "png",
-            }),
-          }, 150000);
+          // One request per concept (n=1 each) with a different creative route.
+          // A single request with n=2 returns two near-identical logos because
+          // both samples share the exact same prompt.
+          const logoPrompts: string[] = Array.from({ length: generationVariantCount }, (_, i) =>
+            buildProfessionalLogoPrompt({
+              basePrompt: imagePrompt,
+              message,
+              designOptions,
+              language,
+              variantIndex: i,
+              variantCount: generationVariantCount,
+            }));
+          const logoResults = await Promise.all(logoPrompts.map(async (variantPrompt) => {
+            const response = await fetchWithTimeout("https://api.openai.com/v1/images/generations", {
+              method: "POST",
+              headers: {
+                "Authorization": "Bearer " + openAiKey,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                model: "gpt-image-2.5-sunburst",
+                prompt: variantPrompt,
+                n: 1,
+                size: "2048x2048",
+                quality: "high",
+                background: "transparent",
+                output_format: "png",
+              }),
+            }, 150000);
+            const raw = await response.text();
+            let data: any = {};
+            try { data = JSON.parse(raw); } catch { }
+            return { ok: response.ok, status: response.status, data, raw };
+          }));
 
-          const openAiLogoRaw = await openAiLogoResponse.text();
-          let openAiLogoData: any = {};
-          try { openAiLogoData = JSON.parse(openAiLogoRaw); } catch { }
-          if (!openAiLogoResponse.ok) {
+          const failedLogo = logoResults.find((r) => !r.ok);
+          if (failedLogo) {
             console.error("EYAD_OPENAI_LOGO_ERROR", JSON.stringify({
-              status: openAiLogoResponse.status,
-              error: openAiLogoData?.error?.message || openAiLogoRaw.slice(0, 500),
+              status: failedLogo.status,
+              error: failedLogo.data?.error?.message || failedLogo.raw.slice(0, 500),
               model: "gpt-image-2.5-sunburst",
             }));
             return json({
               error: "IMAGE_PROVIDER_ERROR",
-              status: openAiLogoResponse.status,
-              detail: openAiLogoData?.error?.message || openAiLogoRaw.slice(0, 500) || "OpenAI logo generation failed",
+              status: failedLogo.status,
+              detail: failedLogo.data?.error?.message || failedLogo.raw.slice(0, 500) || "OpenAI logo generation failed",
             }, 502);
           }
 
-          const generatedImages = Array.isArray(openAiLogoData?.data) ? openAiLogoData.data : [];
+          const generatedImages = logoResults
+            .map((r) => (Array.isArray(r.data?.data) ? r.data.data[0] : null))
+            .filter(Boolean);
           if (generatedImages.length < generationVariantCount) {
             return json({ error: "IMAGE_RESULT_MISSING", detail: "OpenAI returned fewer logo concepts than requested." }, 502);
           }
@@ -2061,7 +2170,7 @@ The supplied approved logo reference must be used as the actual printed logo on 
               size_bytes: bytes.byteLength,
               kind: "logo",
               name: (project.name || "شعار جديد").trim() + ".png",
-              prompt: logoPrompt,
+              prompt: logoPrompts[index],
               input: { design_options: designOptions, has_reference_image: false, variant_index: index + 1 },
               metadata: {
                 source: "openai-api",
@@ -2119,9 +2228,18 @@ The supplied approved logo reference must be used as the actual printed logo on 
         // post-approval logo vectorization and production vector workflows.
         const imageRequests = generationVariantCount === 2 ? [0, 1] : [0];
         const openAiImageResponses = await Promise.all(imageRequests.map(async (variantIndex) => {
-          const variantPrompt = variantIndex === 0
-            ? finalPrompt + (generationVariantCount === 2 ? " This is concept 1 of 2. Establish one clear creative direction." : "")
-            : finalPrompt + " This is concept 2 of 2. Create a clearly distinct second creative direction while preserving the same user brief. Vary the composition, visual hierarchy, subject treatment, and overall style. Do not copy concept 1.";
+          // Logo edits: both results must apply the user's requested change, but
+          // as two visibly different interpretations of it. Identity anchors
+          // (brand name text, palette unless the edit changes it) stay fixed.
+          const logoEditVariantSuffix = [
+            " This is edit option 1 of 2. Apply the requested change faithfully and conservatively: keep the reference logo's symbol, layout and typography as close as possible and change only what the user asked for.",
+            " This is edit option 2 of 2. Apply the SAME requested change, but as a clearly different interpretation: rework the layout (e.g. horizontal vs stacked), the typography weight/style and the symbol's construction or proportions, while keeping the exact brand name text and the requested change. It must be visibly different from option 1 and must not be a copy of the reference.",
+          ];
+          const variantPrompt = (isLogo && generationVariantCount === 2)
+            ? finalPrompt + logoEditVariantSuffix[variantIndex]
+            : variantIndex === 0
+              ? finalPrompt + (generationVariantCount === 2 ? " This is concept 1 of 2. Establish one clear creative direction." : "")
+              : finalPrompt + " This is concept 2 of 2. Create a clearly distinct second creative direction while preserving the same user brief. Vary the composition, visual hierarchy, subject treatment, and overall style. Do not copy concept 1.";
 
           const size = resolveOpenAIImageSize(aiImageAspect, "1024x1024");
           let response: Response;
