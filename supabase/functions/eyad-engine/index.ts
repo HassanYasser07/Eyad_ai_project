@@ -382,13 +382,59 @@ function buildLogoConceptDirection({
   ].join("\n");
 }
 
+// Contrasting creative directions for the two options of a regular image.
+// Subject and any requested text stay the same; camera, composition, light,
+// palette and environment change completely so the two results are never alike.
+const IMAGE_DIRECTION_PAIRS: Array<[string, string]> = [
+  [
+    "Wide establishing shot at eye level, the subject placed within a spacious environment, soft natural daylight, airy and clean cool-neutral palette, calm and balanced mood.",
+    "Extreme close-up macro view with very shallow depth of field, the subject filling the frame, warm golden low-key lighting with deep shadows, rich warm palette, intimate and dramatic mood.",
+  ],
+  [
+    "Perfectly centered symmetrical composition, bright high-key lighting, clean uncluttered light background, minimal and polished look.",
+    "Dynamic diagonal composition from a dramatic low angle, strong directional side lighting, deep shadows, a detailed moody environment around the subject.",
+  ],
+  [
+    "Top-down overhead view with an organized flat arrangement, even soft light, muted pastel palette, tidy and graphic feel.",
+    "Three-quarter angle with cinematic backlight and atmospheric haze, saturated teal-and-orange palette, depth with foreground and background layers.",
+  ],
+  [
+    "The subject small within a vast scene with lots of negative space, soft dawn light, serene and spacious feeling.",
+    "A tight crop with the subject large and bold, night-time scene with vivid colored accent lights and strong contrast, energetic feeling.",
+  ],
+];
+
+// Exact pixel sizes for every aspect ratio the AI Images studio offers.
+// All dimensions are multiples of 16 so they match the requested ratio exactly.
+// `fallback` is the nearest classic size, used only if the provider rejects the
+// exact one; the client then crops that result to the exact ratio.
+const AI_IMAGE_ASPECTS: Record<string, { size: string; fallback: string; label: string }> = {
+  "1:1": { size: "1024x1024", fallback: "1024x1024", label: "square" },
+  "16:9": { size: "1536x864", fallback: "1536x1024", label: "wide landscape" },
+  "9:16": { size: "864x1536", fallback: "1024x1536", label: "tall vertical" },
+  "4:3": { size: "1280x960", fallback: "1536x1024", label: "standard landscape" },
+  "3:4": { size: "960x1280", fallback: "1024x1536", label: "standard portrait" },
+};
+
+function normalizeAspectRatio(value: string) {
+  const normalized = String(value || "").trim().replace(/\s+/g, "");
+  return AI_IMAGE_ASPECTS[normalized] ? normalized : "";
+}
+
 function resolveOpenAIImageSize(value: string, fallback = "1024x1024") {
+  const key = normalizeAspectRatio(value);
+  if (key) return AI_IMAGE_ASPECTS[key].size;
   const normalized = String(value || "").trim().toLowerCase();
-  if (normalized === "square" || normalized === "1:1") return "1024x1024";
+  if (normalized === "square") return "1024x1024";
   if (normalized === "portrait" || normalized === "2:3" || normalized === "4:5") return "1024x1536";
-  if (normalized === "landscape" || normalized === "16:9" || normalized === "3:2") return "1536x1024";
+  if (normalized === "landscape" || normalized === "3:2") return "1536x1024";
   if (/^\d+x\d+$/.test(normalized)) return normalized;
   return fallback;
+}
+
+function resolveFallbackImageSize(value: string, fallback = "1024x1024") {
+  const key = normalizeAspectRatio(value);
+  return key ? AI_IMAGE_ASPECTS[key].fallback : fallback;
 }
 
 async function appendOpenAIImageInput(formData: FormData, source: string, filename: string) {
@@ -1249,16 +1295,18 @@ Deno.serve(async (req: Request) => {
       intent: "mockup_generation",
     };
   } else if (explicitImageGeneration) {
-    const imagePreset = String(designOptions?.preset || "").trim();
-    const aspectRatio = String(designOptions?.aspect_ratio || "").trim();
-    const presetDirection = String(designOptions?.preset_direction || "").trim();
+    const aspectRatio = normalizeAspectRatio(String(designOptions?.aspect_ratio || ""));
+    if (!aspectRatio) {
+      return json({
+        error: "ASPECT_RATIO_REQUIRED",
+        detail: language === "ar" ? "اختر نسبة العرض إلى الارتفاع أولًا." : "Choose an aspect ratio first.",
+      }, 400);
+    }
     const styleReferencePrompt = String(designOptions?.style_reference_prompt || "").trim();
     const imagePromptParts = [
       "Create the requested image exactly from the user's brief.",
       "User brief: " + message,
-      imagePreset ? "Visual preset: " + imagePreset : "",
-      presetDirection ? "Preset direction: " + presetDirection : "",
-      aspectRatio ? "Aspect ratio: " + aspectRatio : "",
+      "Aspect ratio: " + aspectRatio + " (" + AI_IMAGE_ASPECTS[aspectRatio].label + "). Compose the scene natively for this exact frame and fill it edge to edge.",
       styleReferencePrompt ? "Style reference direction: " + styleReferencePrompt : "",
     ].filter(Boolean);
     decision = {
@@ -1718,19 +1766,16 @@ Deno.serve(async (req: Request) => {
         const exactDataSurfacePrompt = requiresExactBusinessData && mockupType !== "business-card"
           ? " IMPORTANT EXACT-DATA MOCKUP RULE: " + (exactDataSurfaceInstructions[mockupType] || "Create a clean, clearly visible primary application surface with enough empty area for the deterministic post-generation data overlay.") + " Do not render customer contact data, fake text, placeholder text, numbers, URLs, captions, or unrelated readable copy anywhere in the scene. The approved logo may remain visible."
           : "";
-        const aiImagePreset = String(body?.design_options?.preset_direction || '').trim();
-        const aiImageAspect = String(body?.design_options?.aspect_ratio || '').trim();
-        const aiImageDirection = [
-          aiImagePreset ? 'Creative direction: ' + aiImagePreset + '.' : '',
-          aiImageAspect ? 'Compose for a ' + aiImageAspect + ' aspect ratio.' : '',
-        ].filter(Boolean).join(' ');
+        const aiImageAspect = normalizeAspectRatio(String(body?.design_options?.aspect_ratio || ''));
+        const aiImageDirection = aiImageAspect
+          ? 'Output frame: exactly ' + aiImageAspect + ' aspect ratio (' + AI_IMAGE_ASPECTS[aiImageAspect].label + '). Compose natively for this frame and fill it edge to edge with the artwork itself; no borders, letterboxing, margins, blank bars or padding.'
+          : '';
         const styleReference = body?.design_options?.style_reference_image || null;
         const styleReferencePrompt = String(body?.design_options?.style_reference_prompt || styleReference?.prompt || '').trim();
         if (styleReferencePrompt) {
           imagePrompt += "\nStyle Reference — preserve the visual language, lighting, color behavior, composition feel, texture and art direction of the selected style reference. Do not copy its subject or objects; use only its style.\n" + styleReferencePrompt;
         }
         const mockupDirection = [
-          aiImagePreset ? 'Creative direction: ' + aiImagePreset + '.' : '',
           aiImageAspect ? 'Compose for a ' + aiImageAspect + ' aspect ratio.' : '',
           styleReferencePrompt
             ? 'Style reference: preserve the selected reference image\'s visual language, lighting, palette, texture and art direction without copying its subject matter.'
@@ -2227,6 +2272,7 @@ The supplied approved logo reference must be used as the actual printed logo on 
         // OpenAI handles non-mockup visual generation. Recraft is reserved for
         // post-approval logo vectorization and production vector workflows.
         const imageRequests = generationVariantCount === 2 ? [0, 1] : [0];
+        const imageDirectionPair = IMAGE_DIRECTION_PAIRS[Math.floor(Math.random() * IMAGE_DIRECTION_PAIRS.length)];
         const openAiImageResponses = await Promise.all(imageRequests.map(async (variantIndex) => {
           // Logo edits: both results must apply the user's requested change, but
           // as two visibly different interpretations of it. Identity anchors
@@ -2235,43 +2281,47 @@ The supplied approved logo reference must be used as the actual printed logo on 
             " This is edit option 1 of 2. Apply the requested change faithfully and conservatively: keep the reference logo's symbol, layout and typography as close as possible and change only what the user asked for.",
             " This is edit option 2 of 2. Apply the SAME requested change, but as a clearly different interpretation: rework the layout (e.g. horizontal vs stacked), the typography weight/style and the symbol's construction or proportions, while keeping the exact brand name text and the requested change. It must be visibly different from option 1 and must not be a copy of the reference.",
           ];
+          // Regular images: lead the prompt with a mandatory, contrasting direction.
+          const variantDirection = imageDirectionPair[variantIndex] || "";
+          const imageVariantPrefix = generationVariantCount === 2 && variantDirection
+            ? "MANDATORY CREATIVE DIRECTION FOR THIS VERSION (this is what makes it different from the other version, follow it strictly): " + variantDirection + " Keep the same subject, story and any requested text from the brief, but do NOT reuse the composition, camera angle, lighting or color palette of any reference image or of the other version. This is version " + (variantIndex === 0 ? "A" : "B") + " of 2 and the two versions must look clearly different even as small thumbnails.\n\n"
+            : "";
           const variantPrompt = (isLogo && generationVariantCount === 2)
             ? finalPrompt + logoEditVariantSuffix[variantIndex]
-            : variantIndex === 0
-              ? finalPrompt + (generationVariantCount === 2 ? " This is concept 1 of 2. Establish one clear creative direction." : "")
-              : finalPrompt + " This is concept 2 of 2. Create a clearly distinct second creative direction while preserving the same user brief. Vary the composition, visual hierarchy, subject treatment, and overall style. Do not copy concept 1.";
+            : imageVariantPrefix + finalPrompt;
 
           const size = resolveOpenAIImageSize(aiImageAspect, "1024x1024");
           let response: Response;
           let raw = "";
           let data: any = {};
 
-          if (imageReference || styleReferenceUrl) {
-            const formData = new FormData();
-            formData.append("model", "gpt-image-2.5-sunburst");
-            formData.append("prompt", variantPrompt);
-            formData.append("n", "1");
-            formData.append("quality", isLogo ? "high" : "medium");
-            formData.append("size", size);
-            formData.append("background", isLogo ? "transparent" : "opaque");
-            formData.append("output_format", "png");
+          const requestImage = async (requestSize: string): Promise<Response> => {
+            if (imageReference || styleReferenceUrl) {
+              const formData = new FormData();
+              formData.append("model", "gpt-image-2.5-sunburst");
+              formData.append("prompt", variantPrompt);
+              formData.append("n", "1");
+              formData.append("quality", isLogo ? "high" : "medium");
+              formData.append("size", requestSize);
+              formData.append("background", isLogo ? "transparent" : "opaque");
+              formData.append("output_format", "png");
 
-            if (imageReference) {
-              const attached = await appendOpenAIImageInput(formData, imageReference, "reference-image.png");
-              if (!attached) throw new Error("IMAGE_REFERENCE_LOAD_FAILED");
-            }
-            if (styleReferenceUrl) {
-              const attached = await appendOpenAIImageInput(formData, styleReferenceUrl, "style-reference.png");
-              if (!attached) throw new Error("STYLE_REFERENCE_LOAD_FAILED");
-            }
+              if (imageReference) {
+                const attached = await appendOpenAIImageInput(formData, imageReference, "reference-image.png");
+                if (!attached) throw new Error("IMAGE_REFERENCE_LOAD_FAILED");
+              }
+              if (styleReferenceUrl) {
+                const attached = await appendOpenAIImageInput(formData, styleReferenceUrl, "style-reference.png");
+                if (!attached) throw new Error("STYLE_REFERENCE_LOAD_FAILED");
+              }
 
-            response = await fetchWithTimeout("https://api.openai.com/v1/images/edits", {
-              method: "POST",
-              headers: { "Authorization": "Bearer " + openAiKey },
-              body: formData,
-            }, 150000);
-          } else {
-            response = await fetchWithTimeout("https://api.openai.com/v1/images/generations", {
+              return await fetchWithTimeout("https://api.openai.com/v1/images/edits", {
+                method: "POST",
+                headers: { "Authorization": "Bearer " + openAiKey },
+                body: formData,
+              }, 150000);
+            }
+            return await fetchWithTimeout("https://api.openai.com/v1/images/generations", {
               method: "POST",
               headers: {
                 "Authorization": "Bearer " + openAiKey,
@@ -2281,12 +2331,24 @@ The supplied approved logo reference must be used as the actual printed logo on 
                 model: "gpt-image-2.5-sunburst",
                 prompt: variantPrompt,
                 n: 1,
-                size,
+                size: requestSize,
                 quality: isLogo ? "high" : "medium",
                 background: isLogo ? "transparent" : "opaque",
                 output_format: "png",
               }),
             }, 150000);
+          };
+
+          response = await requestImage(size);
+          // If the provider refuses the exact size, retry once with the nearest
+          // classic size; the client crops that result to the exact ratio.
+          const fallbackSize = resolveFallbackImageSize(aiImageAspect, size);
+          if (!response.ok && response.status === 400 && fallbackSize !== size) {
+            const firstRaw = await response.clone().text();
+            if (/size|dimension|resolution/i.test(firstRaw)) {
+              console.warn("EYAD_IMAGE_SIZE_FALLBACK", JSON.stringify({ requested: size, fallback: fallbackSize }));
+              response = await requestImage(fallbackSize);
+            }
           }
 
           raw = await response.text();
@@ -2337,7 +2399,11 @@ The supplied approved logo reference must be used as the actual printed logo on 
             });
             return json({ error: "IMAGE_RESULT_MISSING", detail: "Recraft returned an empty image." }, 502);
           }
-          const variantIndex = Number(generatedImages[index]?.variantIndex || index + 1);
+          // variantIndex is 0-based (0 or 1). `0 || index + 1` collapsed option A to 1,
+          // so both options were stored at ".../1.png" (the second overwrote the first)
+          // and shared variant_index 1, which finalize_eyad_generation de-duplicates.
+          const rawVariantIndex = Number(generatedImages[index]?.variantIndex);
+          const variantIndex = (Number.isInteger(rawVariantIndex) ? rawVariantIndex : index) + 1;
 
           // GPT Image returns logo concepts directly as transparent PNGs.
           // Do not pass them through Recraft raster processing; Recraft is reserved
@@ -2378,6 +2444,7 @@ The supplied approved logo reference must be used as the actual printed logo on 
               background: isLogo ? "transparent" : "provider_default",
               output_format: "png",
               variant_index: variantIndex,
+              aspect_ratio: aiImageAspect || null,
             },
           });
         }
