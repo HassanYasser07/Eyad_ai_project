@@ -2399,7 +2399,11 @@ The supplied approved logo reference must be used as the actual printed logo on 
             });
             return json({ error: "IMAGE_RESULT_MISSING", detail: "Recraft returned an empty image." }, 502);
           }
-          const variantIndex = Number(generatedImages[index]?.variantIndex || index + 1);
+          // variantIndex is 0-based (0 or 1). `0 || index + 1` collapsed option A to 1,
+          // so both options were stored at ".../1.png" (the second overwrote the first)
+          // and shared variant_index 1, which finalize_eyad_generation de-duplicates.
+          const rawVariantIndex = Number(generatedImages[index]?.variantIndex);
+          const variantIndex = (Number.isInteger(rawVariantIndex) ? rawVariantIndex : index) + 1;
 
           // GPT Image returns logo concepts directly as transparent PNGs.
           // Do not pass them through Recraft raster processing; Recraft is reserved
