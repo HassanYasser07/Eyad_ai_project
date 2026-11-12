@@ -1,6 +1,6 @@
 import React from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { ArrowLeft, ArrowRight, ImagePlus, Sparkles, Check, Palette, Wand2, Camera, Clapperboard, PenLine, SlidersHorizontal, Maximize2, ChevronDown, Folder, Home, Search, UserRound, Plus, Mic } from "lucide-react";
+import { ArrowLeft, ArrowRight, ImagePlus, Sparkles, Check, Mic, Download, Maximize2, X } from "lucide-react";
 import { useI18n } from "@/i18n/I18nContext";
 import { useAuth } from "@/lib/AuthContext";
 import { runEyadEngine } from "@/services/eyadEngineService";
@@ -11,49 +11,147 @@ import { projectService } from "@/services/projectService";
 import { assetService } from "@/services/assetService";
 import { saveStudioOutput } from "@/services/projectContextService";
 import StudioNextActions from "@/components/studios/StudioNextActions";
-import { Image as UIImage } from "@/components/ui/image";
 import "./aiImagesStudio.css";
 
-const EYAD_AI_HEADER_LOGO = "/images/brand/eyad-ai-header-logo.jpg";
-const AI_IMAGES_HERO_IPHONE = "/images/ai-images/hero-iphone.png";
+const MIN_PROMPT_LENGTH = 3;
+const MAX_REFERENCES = 5;
 
-const PRESETS = [
-  { id: "all", ar: "الكل", en: "All", icon: Sparkles, prompt: "premium creative image" },
-  { id: "realistic", ar: "واقعي", en: "Realistic", icon: Camera, prompt: "photorealistic premium photography" },
-  { id: "cinematic", ar: "سينمائي", en: "Cinematic", icon: Clapperboard, prompt: "cinematic premium visual" },
-  { id: "design", ar: "تصميمي", en: "Design", icon: Palette, prompt: "high-end graphic design composition" },
-  { id: "illustration", ar: "رسومي", en: "Illustration", icon: ImagePlus, prompt: "premium artistic illustration" },
-  { id: "art", ar: "فني", en: "Art", icon: PenLine, prompt: "refined contemporary art direction" },
-];
 const STYLE_REFERENCES = [
-  { id: "cinematic", ar: "سينمائي", en: "Cinematic", url: "https://images.unsplash.com/photo-1500534623283-312aade485b7?auto=format&fit=crop&w=600&q=80", prompt: "cinematic lighting, dramatic contrast, film still composition, atmospheric depth" },
-  { id: "luxury", ar: "فاخر", en: "Luxury", url: "https://images.unsplash.com/photo-1497366811353-6870744d04b2?auto=format&fit=crop&w=600&q=80", prompt: "luxury editorial aesthetic, premium materials, refined composition, sophisticated lighting" },
-  { id: "editorial", ar: "تحريري", en: "Editorial", url: "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=600&q=80", prompt: "high-fashion editorial photography, polished art direction, magazine aesthetic" },
-  { id: "minimal", ar: "مينيمال", en: "Minimal", url: "https://images.unsplash.com/photo-1526481280695-3c687fd643ed?auto=format&fit=crop&w=600&q=80", prompt: "minimalist visual language, clean negative space, restrained palette, precise composition" },
-  { id: "3d", ar: "ثري دي", en: "3D", url: "https://images.unsplash.com/photo-1535223289827-42f1e9919769?auto=format&fit=crop&w=600&q=80", prompt: "premium 3D render aesthetic, polished materials, studio lighting, dimensional forms" },
-  { id: "futuristic", ar: "مستقبلي", en: "Futuristic", url: "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=600&q=80", prompt: "futuristic design, advanced technology aesthetic, luminous details, sleek forms" },
-  { id: "analog", ar: "فيلم أنالوج", en: "Analog Film", url: "https://images.unsplash.com/photo-1516035069371-29a1b244cc32?auto=format&fit=crop&w=600&q=80", prompt: "35mm analog film look, organic grain, natural highlights, nostalgic color response" },
-  { id: "blackwhite", ar: "أبيض وأسود", en: "B&W", url: "https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&w=600&q=80", prompt: "high-contrast black and white photography, expressive light and shadow, timeless tone" },
-  { id: "neon", ar: "نيون", en: "Neon", url: "https://images.unsplash.com/photo-1519608487953-e999c86e7455?auto=format&fit=crop&w=600&q=80", prompt: "neon-lit nightlife aesthetic, vibrant luminous colors, cinematic urban atmosphere" },
-  { id: "pastel", ar: "باستيل", en: "Pastel", url: "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=600&q=80", prompt: "soft pastel palette, airy light, gentle contrast, dreamy contemporary aesthetic" },
-  { id: "moody", ar: "مودي", en: "Moody", url: "https://images.unsplash.com/photo-1470770841072-f978cf4d019e?auto=format&fit=crop&w=600&q=80", prompt: "moody photography, deep shadows, muted tones, emotional atmosphere" },
-  { id: "golden", ar: "غروب ذهبي", en: "Golden Hour", url: "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=600&q=80", prompt: "golden hour sunlight, warm cinematic glow, soft highlights, premium photography" },
-  { id: "street", ar: "ستريت", en: "Street", url: "https://images.unsplash.com/photo-1493246507139-91e8fad9978e?auto=format&fit=crop&w=600&q=80", prompt: "contemporary street photography, candid energy, urban texture, authentic framing" },
-  { id: "fashion", ar: "موضة", en: "Fashion", url: "https://images.unsplash.com/photo-1529139574466-a303027c1d8b?auto=format&fit=crop&w=600&q=80", prompt: "fashion campaign aesthetic, bold styling, controlled studio light, luxury editorial direction" },
-  { id: "product", ar: "منتج", en: "Product", url: "https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&w=600&q=80", prompt: "premium product photography, clean studio lighting, crisp details, commercial art direction" },
-  { id: "architecture", ar: "معماري", en: "Architecture", url: "https://images.unsplash.com/photo-1487958449943-2429e8be8625?auto=format&fit=crop&w=600&q=80", prompt: "architectural photography, geometric precision, clean lines, dramatic spatial composition" },
-  { id: "illustrative", ar: "إلوستريشن", en: "Illustrative", url: "https://images.unsplash.com/photo-1549490349-8643362247b5?auto=format&fit=crop&w=600&q=80", prompt: "modern artistic illustration, painterly texture, expressive shapes, curated color harmony" },
-  { id: "dreamy", ar: "حالم", en: "Dreamy", url: "https://images.unsplash.com/photo-1518837695005-2083093ee35b?auto=format&fit=crop&w=600&q=80", prompt: "dreamlike visual atmosphere, soft focus, ethereal light, poetic composition" },
-  { id: "dark", ar: "دارك", en: "Dark", url: "https://images.unsplash.com/photo-1513364776144-60967b0f800f?auto=format&fit=crop&w=600&q=80", prompt: "dark luxury aesthetic, rich blacks, dramatic directional light, sophisticated mood" },
-  { id: "vibrant", ar: "ألوان قوية", en: "Vibrant", url: "https://images.unsplash.com/photo-1531058020387-3be344556be6?auto=format&fit=crop&w=600&q=80", prompt: "vibrant contemporary art direction, saturated colors, energetic composition, bold visual rhythm" },
+  { id: "cinematic", ar: "سينمائي", en: "Cinematic", url: "https://images.unsplash.com/photo-1500534623283-312aade485b7?auto=format&fit=crop&w=400&q=70", prompt: "cinematic lighting, dramatic contrast, film still composition, atmospheric depth" },
+  { id: "luxury", ar: "فاخر", en: "Luxury", url: "https://images.unsplash.com/photo-1497366811353-6870744d04b2?auto=format&fit=crop&w=400&q=70", prompt: "luxury editorial aesthetic, premium materials, refined composition, sophisticated lighting" },
+  { id: "editorial", ar: "تحريري", en: "Editorial", url: "https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=400&q=70", prompt: "high-fashion editorial photography, polished art direction, magazine aesthetic" },
+  { id: "minimal", ar: "مينيمال", en: "Minimal", url: "https://images.unsplash.com/photo-1526481280695-3c687fd643ed?auto=format&fit=crop&w=400&q=70", prompt: "minimalist visual language, clean negative space, restrained palette, precise composition" },
+  { id: "3d", ar: "ثري دي", en: "3D", url: "https://images.unsplash.com/photo-1535223289827-42f1e9919769?auto=format&fit=crop&w=400&q=70", prompt: "premium 3D render aesthetic, polished materials, studio lighting, dimensional forms" },
+  { id: "futuristic", ar: "مستقبلي", en: "Futuristic", url: "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=400&q=70", prompt: "futuristic design, advanced technology aesthetic, luminous details, sleek forms" },
+  { id: "analog", ar: "فيلم أنالوج", en: "Analog Film", url: "https://images.unsplash.com/photo-1516035069371-29a1b244cc32?auto=format&fit=crop&w=400&q=70", prompt: "35mm analog film look, organic grain, natural highlights, nostalgic color response" },
+  { id: "blackwhite", ar: "أبيض وأسود", en: "B&W", url: "https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&w=400&q=70", prompt: "high-contrast black and white photography, expressive light and shadow, timeless tone" },
+  { id: "neon", ar: "نيون", en: "Neon", url: "https://images.unsplash.com/photo-1519608487953-e999c86e7455?auto=format&fit=crop&w=400&q=70", prompt: "neon-lit nightlife aesthetic, vibrant luminous colors, cinematic urban atmosphere" },
+  { id: "pastel", ar: "باستيل", en: "Pastel", url: "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=400&q=70", prompt: "soft pastel palette, airy light, gentle contrast, dreamy contemporary aesthetic" },
+  { id: "moody", ar: "مودي", en: "Moody", url: "https://images.unsplash.com/photo-1470770841072-f978cf4d019e?auto=format&fit=crop&w=400&q=70", prompt: "moody photography, deep shadows, muted tones, emotional atmosphere" },
+  { id: "golden", ar: "غروب ذهبي", en: "Golden Hour", url: "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=400&q=70", prompt: "golden hour sunlight, warm cinematic glow, soft highlights, premium photography" },
+  { id: "street", ar: "ستريت", en: "Street", url: "https://images.unsplash.com/photo-1493246507139-91e8fad9978e?auto=format&fit=crop&w=400&q=70", prompt: "contemporary street photography, candid energy, urban texture, authentic framing" },
+  { id: "fashion", ar: "موضة", en: "Fashion", url: "https://images.unsplash.com/photo-1529139574466-a303027c1d8b?auto=format&fit=crop&w=400&q=70", prompt: "fashion campaign aesthetic, bold styling, controlled studio light, luxury editorial direction" },
+  { id: "product", ar: "منتج", en: "Product", url: "https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&w=400&q=70", prompt: "premium product photography, clean studio lighting, crisp details, commercial art direction" },
+  { id: "architecture", ar: "معماري", en: "Architecture", url: "https://images.unsplash.com/photo-1487958449943-2429e8be8625?auto=format&fit=crop&w=400&q=70", prompt: "architectural photography, geometric precision, clean lines, dramatic spatial composition" },
+  { id: "illustrative", ar: "إلوستريشن", en: "Illustrative", url: "https://images.unsplash.com/photo-1549490349-8643362247b5?auto=format&fit=crop&w=400&q=70", prompt: "modern artistic illustration, painterly texture, expressive shapes, curated color harmony" },
+  { id: "dreamy", ar: "حالم", en: "Dreamy", url: "https://images.unsplash.com/photo-1518837695005-2083093ee35b?auto=format&fit=crop&w=400&q=70", prompt: "dreamlike visual atmosphere, soft focus, ethereal light, poetic composition" },
+  { id: "dark", ar: "دارك", en: "Dark", url: "https://images.unsplash.com/photo-1513364776144-60967b0f800f?auto=format&fit=crop&w=400&q=70", prompt: "dark luxury aesthetic, rich blacks, dramatic directional light, sophisticated mood" },
+  { id: "vibrant", ar: "ألوان قوية", en: "Vibrant", url: "https://images.unsplash.com/photo-1531058020387-3be344556be6?auto=format&fit=crop&w=400&q=70", prompt: "vibrant contemporary art direction, saturated colors, energetic composition, bold visual rhythm" },
 ];
+
+// w/h are the exact ratio the generated image must have.
 const ASPECTS = [
-  { id: "1:1", ar: "مربع", en: "1:1" },
-  { id: "16:9", ar: "أفقي", en: "16:9" },
-  { id: "9:16", ar: "عمودي", en: "9:16" },
-  { id: "4:3", ar: "قياسي", en: "4:3" },
-  { id: "3:4", ar: "بورتريه", en: "3:4" },
+  { id: "1:1", w: 1, h: 1, ar: "مربع", en: "Square", useAr: "بوست", useEn: "Post" },
+  { id: "16:9", w: 16, h: 9, ar: "أفقي", en: "Wide", useAr: "يوتيوب / عرض", useEn: "YouTube / Slides" },
+  { id: "9:16", w: 9, h: 16, ar: "عمودي", en: "Vertical", useAr: "ستوري / ريلز", useEn: "Story / Reels" },
+  { id: "4:3", w: 4, h: 3, ar: "قياسي", en: "Standard", useAr: "عرض / طباعة", useEn: "Display / Print" },
+  { id: "3:4", w: 3, h: 4, ar: "بورتريه", en: "Portrait", useAr: "بوستر / بنترست", useEn: "Poster / Pinterest" },
 ];
+
+const getAspect = (id) => ASPECTS.find((item) => item.id === id) || null;
+const imageSrc = (image) => image?.data_url || image?.url || "";
+const imageKey = (image, index) => image?.asset_id || image?.id || image?.url || "img-" + index;
+
+function loadImageElement(src) {
+  return new Promise((resolve, reject) => {
+    const el = new window.Image();
+    if (!src.startsWith("data:") && !src.startsWith("blob:")) el.crossOrigin = "anonymous";
+    el.onload = () => resolve(el);
+    el.onerror = reject;
+    el.src = src;
+  });
+}
+
+/**
+ * Guarantees the exact aspect ratio. If the provider returned a slightly
+ * different shape, centre-crop it to the requested ratio. Returns a blob URL,
+ * or null when the image already matches (or cannot be processed).
+ */
+async function cropToAspect(src, w, h) {
+  const el = await loadImageElement(src);
+  const target = w / h;
+  const current = el.naturalWidth / el.naturalHeight;
+  if (Math.abs(current - target) / target < 0.015) return null;
+  let sw = el.naturalWidth;
+  let sh = el.naturalHeight;
+  let sx = 0;
+  let sy = 0;
+  if (current > target) { sw = Math.round(sh * target); sx = Math.round((el.naturalWidth - sw) / 2); }
+  else { sh = Math.round(sw / target); sy = Math.round((el.naturalHeight - sh) / 2); }
+  const canvas = document.createElement("canvas");
+  canvas.width = sw;
+  canvas.height = sh;
+  canvas.getContext("2d").drawImage(el, sx, sy, sw, sh, 0, 0, sw, sh);
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+  return blob ? URL.createObjectURL(blob) : null;
+}
+
+async function downloadImage(src, filename) {
+  try {
+    const response = await fetch(src);
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  } catch {
+    window.open(src, "_blank", "noopener");
+  }
+}
+
+function ResultSlot({ index, image, aspect, loading, selected, onSelect, onExpand, onDownload, loc }) {
+  const label = index === 0 ? "A" : "B";
+  const src = imageSrc(image);
+  const [displaySrc, setDisplaySrc] = React.useState(src);
+  React.useEffect(() => {
+    let active = true;
+    let created = null;
+    setDisplaySrc(src);
+    if (!src || !aspect) return undefined;
+    cropToAspect(src, aspect.w, aspect.h).then((cropped) => {
+      if (!active) { if (cropped) URL.revokeObjectURL(cropped); return; }
+      created = cropped;
+      if (cropped) setDisplaySrc(cropped);
+    }).catch(() => {});
+    return () => { active = false; if (created) URL.revokeObjectURL(created); };
+  }, [src, aspect?.w, aspect?.h]);
+
+  const frameStyle = aspect ? { "--ar": aspect.w + " / " + aspect.h, "--ar-num": aspect.w / aspect.h } : { "--ar": "1 / 1", "--ar-num": 1 };
+  const state = src ? "ready" : loading ? "loading" : "empty";
+  return (
+    <article className={"aiw-slot is-" + state + (selected ? " is-selected" : "")} style={frameStyle}>
+      <div className="aiw-slot-frame">
+        {src ? (
+          <>
+            <img src={displaySrc} alt={loc({ en: "Option " + label, ar: "الخيار " + label })} onClick={() => onSelect(image)} />
+            <span className="aiw-slot-tag">{label}</span>
+            <button type="button" className="aiw-icon-btn aiw-slot-expand" onClick={() => onExpand(displaySrc)} aria-label={loc({ en: "View larger", ar: "تكبير" })}><Maximize2 /></button>
+            {selected ? <span className="aiw-slot-badge"><Check /></span> : null}
+          </>
+        ) : (
+          <div className="aiw-slot-placeholder">
+            <b>{label}</b>
+            <span>{loading ? loc({ en: "Creating…", ar: "جاري الإنشاء…" }) : aspect ? aspect.id : ""}</span>
+          </div>
+        )}
+      </div>
+      <footer className="aiw-slot-foot">
+        {src ? (
+          <div className="aiw-slot-actions">
+            <button type="button" className="aiw-icon-btn" onClick={() => onDownload(displaySrc, label)} aria-label={loc({ en: "Download", ar: "تحميل" })}><Download /></button>
+            <button type="button" className={"aiw-pick" + (selected ? " is-picked" : "")} onClick={() => onSelect(image)}>
+              {selected ? <><Check />{loc({ en: "Selected", ar: "تم الاختيار" })}</> : loc({ en: "Choose this", ar: "اختار دي" })}
+            </button>
+          </div>
+        ) : null}
+      </footer>
+    </article>
+  );
+}
 
 export default function AIImagesStudio() {
   const { loc, direction, language } = useI18n();
@@ -63,10 +161,13 @@ export default function AIImagesStudio() {
   const projectId = params.get("project");
   const incomingAssetId = params.get("asset");
   const [brand, setBrand] = React.useState(null);
-  const [loadingBrand, setLoadingBrand] = React.useState(Boolean(projectId));
   const [prompt, setPrompt] = React.useState("");
-  const [preset, setPreset] = React.useState("all");
-  const [aspect, setAspect] = React.useState("1:1");
+  // No default: the user must choose the aspect ratio before generating.
+  const [aspectId, setAspectId] = React.useState(null);
+  // Aspect ratio the current results were generated with (frames never change after generation).
+  const [resultAspectId, setResultAspectId] = React.useState(null);
+  // Ratio the results are currently shown/cropped to. The user can change it freely after generation.
+  const [displayAspectId, setDisplayAspectId] = React.useState(null);
   const [generating, setGenerating] = React.useState(false);
   const [jobId, setJobId] = React.useState(null);
   const [images, setImages] = React.useState([]);
@@ -74,7 +175,7 @@ export default function AIImagesStudio() {
   const [selectedImage, setSelectedImage] = React.useState(null);
   const [referenceImages, setReferenceImages] = React.useState([]);
   const [styleReference, setStyleReference] = React.useState(null);
-  const [previewReference, setPreviewReference] = React.useState(null);
+  const [lightboxSrc, setLightboxSrc] = React.useState(null);
   const [voiceMode, setVoiceMode] = React.useState(false);
   const [voiceRecording, setVoiceRecording] = React.useState(false);
   const [voiceProcessing, setVoiceProcessing] = React.useState(false);
@@ -83,6 +184,17 @@ export default function AIImagesStudio() {
   const mediaStreamRef = React.useRef(null);
   const voiceChunksRef = React.useRef([]);
   const referenceInputRef = React.useRef(null);
+  const stageRef = React.useRef(null);
+  const savedKeysRef = React.useRef(new Set());
+  const generationAspectRef = React.useRef(null);
+
+  const aspect = getAspect(aspectId);
+  const resultAspect = getAspect(displayAspectId) || getAspect(resultAspectId) || aspect;
+  const hasPrompt = prompt.trim().length >= MIN_PROMPT_LENGTH;
+  const missing = [];
+  if (!hasPrompt) missing.push(loc({ en: "describe your image", ar: "وصف الصورة" }));
+  if (!aspect) missing.push(loc({ en: "choose an aspect ratio", ar: "نسبة العرض" }));
+  const canGenerate = missing.length === 0 && !generating;
 
   React.useEffect(() => {
     let active = true;
@@ -93,19 +205,13 @@ export default function AIImagesStudio() {
         setError(loc({ en: "The selected design could not be loaded. Return to chat and open it again.", ar: "تعذر تحميل التصميم المحدد. ارجع للمحادثة وافتح التصميم مرة أخرى." }));
         return;
       }
-      const incomingImage = {
-        id: asset.id,
-        asset_id: asset.id,
-        url: asset.url,
-        name: asset.name || "Incoming design",
-        type: asset.mime_type || "image/png",
-      };
+      const incomingImage = { id: asset.id, asset_id: asset.id, url: asset.url, name: asset.name || "Incoming design", type: asset.mime_type || "image/png" };
       setImages([incomingImage]);
       setSelectedImage(incomingImage);
       setReferenceImages([incomingImage]);
       setError("");
-    }).catch((error) => {
-      console.warn("[AI Images] Could not load incoming asset", error);
+    }).catch((err) => {
+      console.warn("[AI Images] Could not load incoming asset", err);
       if (active) setError(loc({ en: "The selected design could not be loaded. Return to chat and open it again.", ar: "تعذر تحميل التصميم المحدد. ارجع للمحادثة وافتح التصميم مرة أخرى." }));
     });
     return () => { active = false; };
@@ -122,11 +228,29 @@ export default function AIImagesStudio() {
       setBrand(brandData);
       const inheritedPrompt = String(project?.metadata?.initial_prompt || project?.description || "").trim();
       if (inheritedPrompt) setPrompt(inheritedPrompt);
-    }).finally(() => {
-      if (active) setLoadingBrand(false);
     });
     return () => { active = false; };
   }, [projectId]);
+
+  // On desktop the results sit beside the form; only phones/tablets need the scroll.
+  const scrollStageIntoView = React.useCallback(() => {
+    if (window.innerWidth >= 1024) return;
+    window.setTimeout(() => stageRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 80);
+  }, []);
+
+  const showResults = React.useCallback((list) => {
+    const next = list.filter((item) => imageSrc(item)).slice(0, 2);
+    if (!next.length) return false;
+    setResultAspectId(generationAspectRef.current);
+    setDisplayAspectId(generationAspectRef.current);
+    setImages(next);
+    // The user picks the best one themselves.
+    setSelectedImage(null);
+    setGenerating(false);
+    setJobId(null);
+    scrollStageIntoView();
+    return true;
+  }, [scrollStageIntoView]);
 
   React.useEffect(() => {
     if (!jobId) return undefined;
@@ -140,14 +264,11 @@ export default function AIImagesStudio() {
         if (!active || !data) return;
         if (data.status === "generated" || data.status === "completed") {
           const next = Array.isArray(data.images) ? data.images : data.image ? [data.image] : [];
-          if (next.length) {
-            setImages(next);
-            setSelectedImage(next[0]);
-          } else {
+          if (!showResults(next)) {
             setError(loc({ en: "The generation completed without an image.", ar: "اكتمل التوليد بدون صورة." }));
+            setGenerating(false);
+            setJobId(null);
           }
-          setGenerating(false);
-          setJobId(null);
         } else if (data.status === "failed") {
           setError(data.error || loc({ en: "Image generation failed.", ar: "فشل توليد الصورة." }));
           setGenerating(false);
@@ -161,24 +282,29 @@ export default function AIImagesStudio() {
       }
     }, 2000);
     return () => { active = false; clearInterval(timer); };
-  }, [jobId, loc]);
+  }, [jobId, loc, showResults]);
 
-  const generate = async (promptOverride = null, { fromVoice = false } = {}) => {
+  const generate = async () => {
+    if (generating) return;
     if (isAnonymous) {
       requireAccount();
       return;
     }
-    const requestPrompt = String(promptOverride ?? prompt).trim();
-    if (!requestPrompt) {
-      setError(loc({ en: "Describe the image you want first.", ar: "اكتب وصف الصورة أولًا." }));
+    const requestPrompt = prompt.trim();
+    // Hard guard: the button is disabled, but the logic must never run with incomplete input.
+    if (requestPrompt.length < MIN_PROMPT_LENGTH || !aspect) {
+      setError(loc({ en: "Complete the description and aspect ratio first.", ar: "أكمل وصف الصورة واختيار نسبة العرض أولًا." }));
       return;
     }
+    generationAspectRef.current = aspect.id;
     setGenerating(true);
     setError("");
     setImages([]);
     setSelectedImage(null);
+    setResultAspectId(aspect.id);
+    setDisplayAspectId(aspect.id);
+    scrollStageIntoView();
     try {
-      const chosen = PRESETS.find((item) => item.id === preset);
       const data = await runEyadEngine({
         message: requestPrompt,
         projectId,
@@ -188,9 +314,7 @@ export default function AIImagesStudio() {
         referenceImage: referenceImages[0]?.data_url || referenceImages[0]?.url || brand?.logo?.url || null,
         designOptions: {
           image_type: "ai-image",
-          preset,
-          preset_direction: chosen?.prompt || "",
-          aspect_ratio: aspect,
+          aspect_ratio: aspect.id,
           brand_identity: brand || null,
           approved_logo_url: brand?.logo?.url || null,
           brand_name: brand?.brand_name || "",
@@ -200,17 +324,9 @@ export default function AIImagesStudio() {
           style_reference_prompt: styleReference?.prompt || "",
         },
       });
-      if (data?.image?.data_url || data?.image?.url) {
-        setImages([data.image]);
-        setSelectedImage(data.image);
-        if (projectId) await saveStudioOutput(projectId, { studioId: "ai-images", asset: { id: data.image.id || data.image.asset_id || null, url: data.image.url || data.image.data_url || null, data_url: data.image.data_url || null }, approved: false, metadata: { preset, aspect } });
-        setGenerating(false);
-      } else if (Array.isArray(data?.images) && data.images.length) {
-        setImages(data.images);
-        setSelectedImage(data.images[0]);
-        if (projectId) await saveStudioOutput(projectId, { studioId: "ai-images", asset: { id: data.images[0].id || data.images[0].asset_id || null, url: data.images[0].url || data.images[0].data_url || null, data_url: data.images[0].data_url || null }, approved: false, metadata: { preset, aspect } });
-        setGenerating(false);
-      } else if (data?.job_id) {
+      const list = Array.isArray(data?.images) && data.images.length ? data.images : data?.image ? [data.image] : [];
+      if (list.length && showResults(list)) return;
+      if (data?.job_id) {
         setJobId(data.job_id);
       } else {
         setError(data?.reply || loc({ en: "Generation did not start.", ar: "لم يبدأ التوليد." }));
@@ -219,6 +335,20 @@ export default function AIImagesStudio() {
     } catch (err) {
       setError(err?.message || loc({ en: "Image generation failed.", ar: "فشل توليد الصورة." }));
       setGenerating(false);
+    }
+  };
+
+  const chooseImage = (image) => {
+    setSelectedImage(image);
+    const key = imageKey(image, 0);
+    if (projectId && !savedKeysRef.current.has(key)) {
+      savedKeysRef.current.add(key);
+      saveStudioOutput(projectId, {
+        studioId: "ai-images",
+        asset: { id: image.id || image.asset_id || null, url: image.url || image.data_url || null, data_url: image.data_url || null },
+        approved: false,
+        metadata: { aspect: displayAspectId || resultAspectId, generated_aspect: resultAspectId, chosen: true },
+      }).catch(() => savedKeysRef.current.delete(key));
     }
   };
 
@@ -297,7 +427,7 @@ export default function AIImagesStudio() {
   const handleReferenceImage = (event) => {
     const files = Array.from(event.target.files || []);
     if (!files.length) return;
-    const remaining = Math.max(0, 5 - referenceImages.length);
+    const remaining = Math.max(0, MAX_REFERENCES - referenceImages.length);
     if (!remaining) {
       setError(loc({ en: "Maximum 5 reference images.", ar: "الحد الأقصى 5 صور مرجعية." }));
       event.target.value = "";
@@ -315,115 +445,171 @@ export default function AIImagesStudio() {
       reader.onerror = reject;
       reader.readAsDataURL(file);
     }))).then((loaded) => {
-      setReferenceImages((prev) => [...prev, ...loaded].slice(0, 5));
+      setReferenceImages((prev) => [...prev, ...loaded].slice(0, MAX_REFERENCES));
       setError(accepted.length < files.length ? loc({ en: "Only 5 reference images can be added.", ar: "يمكن إضافة 5 صور مرجعية فقط." }) : "");
     }).catch(() => setError(loc({ en: "Could not load the reference images.", ar: "تعذر تحميل الصور المرجعية." })));
     event.target.value = "";
   };
 
   const removeReferenceImage = (index) => setReferenceImages((prev) => prev.filter((_, i) => i !== index));
-
-  const currentSrc = (image) => image?.data_url || image?.url || "";
+  const BackIcon = direction === "rtl" ? ArrowRight : ArrowLeft;
+  const slotCount = images.length === 1 && !generating ? 1 : 2;
+  const stageAspect = resultAspect;
+  const isLandscape = Boolean(stageAspect && stageAspect.w > stageAspect.h);
+  const hasResults = images.length > 0;
 
   return (
-    <div className="ai-images-page" dir={direction}>
-      <header className="ai-images-topbar">
-        <button type="button" className="ai-images-circle-btn" onClick={() => navigate(projectId ? "/chat?project=" + encodeURIComponent(projectId) : "/studios")} aria-label={loc({ en: "Back", ar: "رجوع" })}>{direction === "rtl" ? <ArrowRight /> : <ArrowLeft />}</button>
-        <div className="ai-images-brand"><UIImage src={EYAD_AI_HEADER_LOGO} alt="EYAD AI" fittingType="fit" className="ai-images-brand-img" /></div>
-
+    <div className="aiw" dir={direction}>
+      <header className="aiw-head">
+        <button type="button" className="aiw-back" onClick={() => navigate(projectId ? "/chat?project=" + encodeURIComponent(projectId) : "/studios")} aria-label={loc({ en: "Back", ar: "رجوع" })}><BackIcon /></button>
+        <div className="aiw-head-text">
+          <h1>{loc({ en: "AI Images Studio", ar: "ستوديو الصور بالذكاء الاصطناعي" })}</h1>
+          <p>{loc({ en: "Describe your idea and get two different options — pick the one you like.", ar: "اكتب فكرتك وهتطلعلك نسختين مختلفتين، وانت تختار الأفضل." })}</p>
+        </div>
       </header>
-      <section className="ai-images-hero">
-        <div className="ai-images-hero-bg" aria-hidden="true"><img src={AI_IMAGES_HERO_IPHONE} alt="" /></div>
-        <div className="ai-images-hero-overlay" aria-hidden="true" />
-        <div className="ai-images-hero-content">
-          <div className="ai-images-kicker"><Sparkles /> {loc({ en: "CREATIVE ENGINE", ar: "محرك الإبداع" })}</div>
-          <h1>{loc({ en: "AI Images", ar: "الصور بالذكاء الاصطناعي" })} <span>Studio</span></h1>
-          <p>{loc({ en: "Turn your ideas into extraordinary images", ar: "حوّل أفكارك إلى صور احترافية" })}</p>
+
+      {lightboxSrc ? (
+        <div className="aiw-lightbox" role="dialog" aria-modal="true" onClick={() => setLightboxSrc(null)}>
+          <button type="button" onClick={() => setLightboxSrc(null)} aria-label={loc({ en: "Close preview", ar: "إغلاق المعاينة" })}><X /></button>
+          <img src={lightboxSrc} alt="" onClick={(e) => e.stopPropagation()} />
         </div>
-      </section>
-      <div className="ai-images-presets">{PRESETS.map((item) => { const Icon=item.icon; return <button key={item.id} type="button" className={preset===item.id?"is-active":""} onClick={()=>setPreset(item.id)}><Icon/><span>{loc({en:item.en,ar:item.ar})}</span></button>; })}</div>
-      {previewReference && <div className="ai-images-reference-lightbox" role="dialog" aria-modal="true" onClick={() => setPreviewReference(null)}><button type="button" onClick={() => setPreviewReference(null)} aria-label={loc({en:"Close preview",ar:"إغلاق المعاينة"})}>×</button><img src={previewReference.data_url || previewReference.url} alt={previewReference.name || "Reference"} onClick={(e) => e.stopPropagation()} /></div>}
-      <section className="ai-images-style-section">
-        <div className="ai-images-style-head">
-          <div><span>{loc({ en: "STYLE REFERENCES", ar: "ستايلات جاهزة" })}</span><strong>{loc({ en: "Choose a visual style", ar: "اختار الستايل اللي يعجبك" })}</strong><small>{loc({ en: "Pick one image and EYAD will use its visual language for your prompt.", ar: "اختار صورة واحدة وإياد هيستخدم أسلوبها البصري مع الوصف اللي هتكتبه." })}</small></div>
-          {styleReference ? <button type="button" className="ai-images-style-clear" onClick={() => setStyleReference(null)}>{loc({ en: "Clear style", ar: "إلغاء الستايل" })}</button> : null}
-        </div>
-        <div className="ai-images-style-grid">
-          {STYLE_REFERENCES.map((style) => <button key={style.id} type="button" className={styleReference?.id === style.id ? "is-selected" : ""} onClick={() => setStyleReference(style)}>
-            <img src={style.url} alt="" loading="lazy" />
-            <span>{loc({ en: style.en, ar: style.ar })}</span>
-            {styleReference?.id === style.id ? <b><Check /></b> : null}
-          </button>)}
-        </div>
-        <div className="ai-images-style-credit">Style preview photography via <a href="https://unsplash.com/" target="_blank" rel="noreferrer">Unsplash</a></div>
-      </section>
-      <section className="ai-images-preview-shell">{images.length && selectedImage ? <div className="ai-images-main-preview"><img src={currentSrc(selectedImage)} alt="" /><button type="button" className="ai-images-reference-btn" onClick={() => referenceInputRef.current?.click()}><ImagePlus /> {loc({en:"Add reference image",ar:"إضافة صورة مرجعية"})}</button><button type="button" className="ai-images-expand-btn"><Maximize2 /></button></div> : <div className="ai-images-main-preview ai-images-main-empty"><div className="ai-preview-glow"/><div className="ai-preview-icon"><ImagePlus/></div><strong>{loc({en:"Your creation appears here",ar:"الصورة التي تنشئها ستظهر هنا"})}</strong><small>{loc({en:"Describe your idea below and let EYAD create it.",ar:"اكتب فكرتك بالأسفل ودع إياد ينشئها."})}</small></div>}</section>
-      <section className="ai-images-prompt-card">
-        <input ref={referenceInputRef} type="file" accept="image/*" multiple onChange={handleReferenceImage} style={{display:"none"}} />
-        {styleReference ? <div className="ai-images-style-chip"><img src={styleReference.url} alt="" /><div><b>{loc({ en: "Style", ar: "ستايل" })}</b><span>{loc({ en: styleReference.en, ar: styleReference.ar })}</span></div><button type="button" onClick={() => setStyleReference(null)}>×</button></div> : null}
-        {referenceImages.length > 0 ? <div className="ai-images-reference-thumbs">{referenceImages.map((item, index) => (
-          <div key={index} className="ai-images-reference-thumb">
-            <button type="button" className="ai-images-reference-preview" onClick={() => setPreviewReference(item)}><img src={item.data_url} alt="" /></button>
-            <button type="button" className="ai-images-reference-remove" onClick={() => removeReferenceImage(index)}>×</button>
-            <span>{index + 1}</span>
+      ) : null}
+
+      <div className="aiw-grid">
+        <aside className="aiw-panel">
+          <input ref={referenceInputRef} type="file" accept="image/*" multiple onChange={handleReferenceImage} style={{ display: "none" }} />
+
+          <section className="aiw-step">
+            <div className="aiw-step-head">
+              <span className={"aiw-step-no" + (hasPrompt ? " is-done" : "")}>{hasPrompt ? <Check /> : "1"}</span>
+              <strong>{loc({ en: "Describe your image", ar: "اوصف صورتك" })}</strong>
+            </div>
+            {!voiceMode ? (
+              <div className="aiw-prompt">
+                <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder={loc({ en: "e.g. A cup of Arabic coffee on a marble table at sunrise…", ar: "مثال: فنجان قهوة عربية على طاولة رخام وقت الشروق…" })} rows={4} />
+                <div className="aiw-prompt-bar">
+                  <div className="aiw-refs">
+                    {referenceImages.map((item, index) => (
+                      <div key={index} className="aiw-ref">
+                        <button type="button" className="aiw-ref-img" onClick={() => setLightboxSrc(item.data_url || item.url)}><img src={item.data_url || item.url} alt="" /></button>
+                        <button type="button" className="aiw-ref-remove" onClick={() => removeReferenceImage(index)} aria-label={loc({ en: "Remove", ar: "حذف" })}><X /></button>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="aiw-prompt-tools">
+                    <button type="button" className="aiw-tool" onClick={() => referenceInputRef.current?.click()} disabled={referenceImages.length >= MAX_REFERENCES} title={loc({ en: "Add reference image", ar: "إضافة صورة مرجعية" })}><ImagePlus /></button>
+                    <button type="button" className="aiw-tool" onClick={() => { setVoiceMode(true); setVoiceError(""); startInlineRecording(); }} title={loc({ en: "Voice input", ar: "إدخال صوتي" })}><Mic /></button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="aiw-voice">
+                <div className="aiw-voice-head">
+                  <span>{voiceProcessing ? loc({ en: "Converting voice to text…", ar: "جاري تحويل الصوت إلى كتابة…" }) : voiceRecording ? loc({ en: "Listening…", ar: "جاري الاستماع…" }) : loc({ en: "Voice input", ar: "الإدخال الصوتي" })}</span>
+                  <button type="button" onClick={() => { if (voiceRecording) stopInlineRecording(); setVoiceMode(false); }} aria-label={loc({ en: "Close", ar: "إغلاق" })}><X /></button>
+                </div>
+                <div className={voiceRecording ? "aiw-wave is-recording" : "aiw-wave"} aria-hidden="true">{Array.from({ length: 24 }).map((_, i) => <i key={i} style={{ "--i": i }} />)}</div>
+                {voiceError ? <div className="aiw-voice-error">{voiceError}</div> : null}
+                {voiceRecording
+                  ? <button type="button" className="aiw-voice-btn" onClick={stopInlineRecording}><Mic /> {loc({ en: "Done", ar: "تم" })}</button>
+                  : <button type="button" className="aiw-voice-btn" onClick={startInlineRecording} disabled={voiceProcessing}><Mic /> {loc({ en: "Record again", ar: "تسجيل مرة أخرى" })}</button>}
+              </div>
+            )}
+          </section>
+
+          <section className="aiw-step">
+            <div className="aiw-step-head">
+              <span className={"aiw-step-no" + (aspect ? " is-done" : "")}>{aspect ? <Check /> : "2"}</span>
+              <strong>{loc({ en: "Aspect ratio", ar: "نسبة العرض" })}</strong>
+              {aspect ? <em>{loc({ en: aspect.useEn, ar: aspect.useAr })}</em> : null}
+            </div>
+            <div className="aiw-aspects" role="radiogroup" aria-label={loc({ en: "Aspect ratio", ar: "نسبة العرض" })}>
+              {ASPECTS.map((item) => (
+                <button key={item.id} type="button" role="radio" aria-checked={aspectId === item.id} className={aspectId === item.id ? "is-active" : ""} onClick={() => setAspectId(item.id)} title={loc({ en: item.useEn, ar: item.useAr })}>
+                  <span className="aiw-ratio" style={{ "--rw": item.w, "--rh": item.h }} />
+                  <b>{item.id}</b>
+                  <small>{loc({ en: item.en, ar: item.ar })}</small>
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <section className="aiw-step">
+            <div className="aiw-step-head">
+              <span className={"aiw-step-no" + (styleReference ? " is-done" : " is-optional")}>{styleReference ? <Check /> : "3"}</span>
+              <strong>{loc({ en: "Visual style", ar: "الستايل" })}</strong>
+              <em>{loc({ en: "optional", ar: "اختياري" })}</em>
+              {styleReference ? <button type="button" className="aiw-clear" onClick={() => setStyleReference(null)}>{loc({ en: "Clear", ar: "إلغاء" })}</button> : null}
+            </div>
+            <div className="aiw-styles">
+              {STYLE_REFERENCES.map((style) => (
+                <button key={style.id} type="button" className={styleReference?.id === style.id ? "is-selected" : ""} onClick={() => setStyleReference(styleReference?.id === style.id ? null : style)}>
+                  <img src={style.url} alt="" loading="lazy" />
+                  <span>{loc({ en: style.en, ar: style.ar })}</span>
+                  {styleReference?.id === style.id ? <b><Check /></b> : null}
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <div className="aiw-cta">
+            {error ? <div className="aiw-error" role="alert">{error}</div> : null}
+            <button type="button" className="aiw-generate" onClick={() => generate()} disabled={!canGenerate} aria-disabled={!canGenerate}>
+              {generating ? <><span className="aiw-spinner" />{loc({ en: "Creating 2 options…", ar: "جاري إنشاء نسختين…" })}</> : <><Sparkles />{loc({ en: "Create 2 options", ar: "إنشاء نسختين" })}</>}
+            </button>
+            {!generating && missing.length ? <p className="aiw-missing">{loc({ en: "Still needed: ", ar: "لسه ناقص: " })}{missing.join(loc({ en: ", ", ar: "، " }))}</p> : null}
           </div>
-        ))}</div> : null}
-        {!voiceMode ? <div className="ai-images-text-mode">
-          <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder={loc({en:"Describe the image you want to create…",ar:"صف الصورة التي تريد إنشاءها..."})} rows={5} />
-          <div className="ai-images-prompt-actions">
-            <button type="button" className="ai-images-upload-btn" onClick={() => referenceInputRef.current?.click()} disabled={referenceImages.length >= 5}><ImagePlus /></button>
-            <button type="button" className="ai-images-voice-btn" onClick={() => { setVoiceMode(true); setVoiceError(""); startInlineRecording(); }}><Mic /></button>
+        </aside>
+
+        <section className="aiw-stage" ref={stageRef}>
+          <div className="aiw-stage-head">
+            <strong>{hasResults ? loc({ en: "Pick your favourite", ar: "اختار الأفضل بالنسبة لك" }) : loc({ en: "Your results", ar: "النتائج" })}</strong>
+            {!hasResults && stageAspect ? <span>{stageAspect.id}</span> : null}
           </div>
-        </div> : null}
-        {voiceMode ? <div className="ai-images-inline-voice">
-          <div className="ai-images-voice-head"><span>{voiceProcessing ? loc({en:"Converting voice to text…",ar:"جاري تحويل الصوت إلى كتابة…"}) : voiceRecording ? loc({en:"Listening…",ar:"جاري الاستماع…"}) : loc({en:"Voice input",ar:"الإدخال الصوتي"})}</span><button type="button" onClick={() => { if (voiceRecording) stopInlineRecording(); else setVoiceMode(false); }}>×</button></div>
-          <div className={voiceRecording ? "ai-images-waveform is-recording" : "ai-images-waveform"} aria-hidden="true">{Array.from({length:28}).map((_, i) => <i key={i} />)}</div>
-          {voiceError ? <div className="ai-images-voice-error">{voiceError}</div> : null}
-          <div className="ai-images-voice-controls">{voiceRecording ? <button type="button" className="ai-images-voice-send" onClick={stopInlineRecording}><Mic /> {loc({en:"Send recording",ar:"إرسال التسجيل"})}</button> : <button type="button" className="ai-images-voice-send" onClick={startInlineRecording} disabled={voiceProcessing}><Mic /> {loc({en:"Record again",ar:"تسجيل مرة أخرى"})}</button>}</div>
-        </div> : null}
-      </section>
-      <section className="ai-images-format-row"><button type="button" className="ai-images-format-select">{loc({en:"Aspect ratio",ar:"نسبة العرض"})}<ChevronDown/></button><div className="ai-images-aspects">{ASPECTS.map(item=><button key={item.id} type="button" className={aspect===item.id?"is-active":""} onClick={()=>setAspect(item.id)}><span className={"ratio-icon ratio-"+item.id.replace(":","-")}/><b>{item.id}</b></button>)}</div></section>
-      <button type="button" className="ai-images-generate" onClick={generate} disabled={generating}>{generating?<><span className="ai-images-spinner"/>{loc({en:"Creating image…",ar:"جاري إنشاء الصورة…"})}</>:<><Sparkles/>{loc({en:"Create Image",ar:"إنشاء الصورة"})}</>}</button>
-      {error&&<div className="ai-images-error">{error}</div>}
-      {images.length>0&&<section className="ai-images-history"><div className="ai-images-history-head"><strong>{loc({en:"Previous results",ar:"نتائج سابقة"})}</strong><button type="button">{loc({en:"View all",ar:"عرض الكل"})}<ArrowLeft/></button></div><div className="ai-images-history-grid">{images.map((image,index)=>{const src=currentSrc(image);return <button key={image.asset_id||image.id||index} type="button" className={selectedImage===image?"is-selected":""} onClick={()=>setSelectedImage(image)}>{src&&<img src={src} alt=""/>}{selectedImage===image&&<span className="history-check"><Check/></span>}</button>;})}</div><StudioNextActions projectId={projectId} fromStudio="ai-images" asset={selectedImage} title={loc({en:"Continue with this image",ar:"كمّل باستخدام الصورة دي"})} description={loc({en:"The project context stays attached.",ar:"بيانات المشروع والهوية تفضل مرتبطة."})}/></section>}
-
-      <section className="ai-images-about">
-        <div className="ai-images-about-glow" aria-hidden="true" />
-        <div className="ai-images-about-head">
-          <div>
-            <span>{loc({en:"ABOUT EYAD AI",ar:"عن إياد AI"})}</span>
-            <h2>{loc({en:"Professional image creation, from idea to final visual.",ar:"من الفكرة إلى صورة احترافية جاهزة للاستخدام."})}</h2>
-            <p>{loc({en:"EYAD combines creative direction, AI generation and visual references in one focused workspace — so you can build polished images without leaving the studio.",ar:"إياد يجمع التوجيه الإبداعي، وتوليد الصور بالذكاء الاصطناعي، والمراجع البصرية في مساحة واحدة — علشان تطلع بصورة متقنة من غير ما تخرج من الاستوديو."})}</p>
+          {hasResults && !generating ? (
+            <div className="aiw-reframe">
+              <span>{loc({ en: "Change ratio", ar: "غيّر النسبة" })}</span>
+              <div role="radiogroup" aria-label={loc({ en: "Change ratio", ar: "غيّر النسبة" })}>
+                {ASPECTS.map((item) => (
+                  <button key={item.id} type="button" role="radio" aria-checked={stageAspect?.id === item.id} className={stageAspect?.id === item.id ? "is-active" : ""} onClick={() => setDisplayAspectId(item.id)}>
+                    <i className="aiw-ratio" style={{ "--rw": item.w, "--rh": item.h }} />{item.id}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+          <div className={"aiw-slots" + (isLandscape ? " is-landscape" : "") + (slotCount === 1 ? " is-single" : "")}>
+            {Array.from({ length: slotCount }).map((_, index) => (
+              <ResultSlot
+                key={index}
+                index={index}
+                image={images[index]}
+                aspect={stageAspect}
+                loading={generating}
+                selected={Boolean(images[index]) && selectedImage === images[index]}
+                onSelect={chooseImage}
+                onExpand={setLightboxSrc}
+                onDownload={(src, label) => downloadImage(src, "eyad-image-" + label + ".png")}
+                loc={loc}
+              />
+            ))}
           </div>
-          <div className="ai-images-about-badge"><Sparkles/><strong>{loc({en:"Creative Intelligence",ar:"ذكاء إبداعي"})}</strong><small>{loc({en:"Built for professional visual work",ar:"مصمم للشغل البصري الاحترافي"})}</small></div>
-        </div>
-
-        <div className="ai-images-about-features">
-          <article><div className="ai-images-about-icon"><Wand2/></div><div><b>{loc({en:"Precise creative direction",ar:"توجيه إبداعي دقيق"})}</b><p>{loc({en:"Turn a simple brief into a clear visual direction with style, mood and composition.",ar:"حوّل وصف بسيط إلى اتجاه بصري واضح مع ستايل ومود وتكوين مناسب."})}</p></div></article>
-          <article><div className="ai-images-about-icon"><Camera/></div><div><b>{loc({en:"Professional visual quality",ar:"جودة بصرية احترافية"})}</b><p>{loc({en:"Create commercial-looking visuals for products, campaigns, social content and presentations.",ar:"أنشئ صورًا مناسبة للمنتجات والحملات والسوشيال ميديا والعروض التقديمية."})}</p></div></article>
-          <article><div className="ai-images-about-icon"><Palette/></div><div><b>{loc({en:"20 ready-made visual styles",ar:"20 ستايل بصري جاهز"})}</b><p>{loc({en:"Choose a visual language such as cinematic, luxury, editorial, 3D, minimal and more.",ar:"اختار لغة بصرية مثل السينمائي، الفاخر، التحريري، الثري دي، المينيمال وغيرهم."})}</p></div></article>
-          <article><div className="ai-images-about-icon"><ImagePlus/></div><div><b>{loc({en:"Reference-aware creation",ar:"فهم الصور المرجعية"})}</b><p>{loc({en:"Add up to five reference images to guide the visual result while keeping your prompt in control.",ar:"أضف حتى 5 صور مرجعية لتوجيه النتيجة البصرية مع الحفاظ على تحكمك في الوصف."})}</p></div></article>
-          <article><div className="ai-images-about-icon"><SlidersHorizontal/></div><div><b>{loc({en:"Flexible formats",ar:"مقاسات متعددة"})}</b><p>{loc({en:"Prepare the same idea for square, landscape, portrait and standard compositions.",ar:"جهّز نفس الفكرة بمقاسات مربع وأفقي وعمودي وقياسية حسب الاستخدام."})}</p></div></article>
-          <article><div className="ai-images-about-icon"><Clapperboard/></div><div><b>{loc({en:"Built for real workflows",ar:"مصمم لسير العمل الحقيقي"})}</b><p>{loc({en:"Move the approved result into EYAD's other studios and continue the same project context.",ar:"انقل النتيجة المعتمدة إلى باقي استوديوهات إياد وكمل بنفس سياق المشروع."})}</p></div></article>
-        </div>
-
-        <div className="ai-images-about-process">
-          <div><span>01</span><b>{loc({en:"Describe",ar:"اوصف"})}</b><small>{loc({en:"Your idea",ar:"فكرتك"})}</small></div>
-          <i />
-          <div><span>02</span><b>{loc({en:"Direct",ar:"اختار"})}</b><small>{loc({en:"Style & format",ar:"الستايل والمقاس"})}</small></div>
-          <i />
-          <div><span>03</span><b>{loc({en:"Create",ar:"أنشئ"})}</b><small>{loc({en:"Professional visual",ar:"الصورة الاحترافية"})}</small></div>
-          <i />
-          <div><span>04</span><b>{loc({en:"Continue",ar:"كمّل"})}</b><small>{loc({en:"Across EYAD studios",ar:"في باقي الاستوديوهات"})}</small></div>
-        </div>
-
-        <div className="ai-images-about-cta">
-          <div><span>{loc({en:"YOUR IDEA. YOUR STYLE. YOUR IMAGE.",ar:"فكرتك. ستايلك. صورتك."})}</span><strong>{loc({en:"Create visuals that look ready for the real world.",ar:"أنشئ صورًا تبدو جاهزة للاستخدام الحقيقي."})}</strong></div>
-          <button type="button" onClick={() => window.scrollTo({top:0,behavior:"smooth"})}><Sparkles/>{loc({en:"Start creating",ar:"ابدأ الإنشاء"})}</button>
-        </div>
-      </section>
-
-      <nav className="ai-images-bottom-nav"><button type="button" onClick={()=>navigate("/account")}><UserRound/><span>{loc({en:"Account",ar:"الحساب"})}</span></button><button type="button" onClick={()=>navigate("/projects")}><Folder/><span>{loc({en:"Projects",ar:"أعمالي"})}</span></button><button type="button" className="is-create"><span><Plus/></span><b>{loc({en:"Create",ar:"إنشاء"})}</b></button><button type="button" onClick={()=>navigate("/search")}><Search/><span>{loc({en:"Search",ar:"البحث"})}</span></button><button type="button" onClick={()=>navigate("/")}><Home/><span>{loc({en:"Home",ar:"الرئيسية"})}</span></button></nav>
+          {!hasResults && !generating ? (
+            <p className="aiw-stage-note">{loc({ en: "Two different versions of your idea will appear here, in the exact ratio you chose.", ar: "هتظهر هنا نسختين مختلفتين من فكرتك، بنفس النسبة اللي اخترتها بالظبط." })}</p>
+          ) : null}
+          {hasResults && resultAspectId && stageAspect && stageAspect.id !== resultAspectId ? (
+            <p className="aiw-stage-note">{loc({ en: "The image is framed from the original (" + resultAspectId + "), so some edges may be trimmed. Switch back anytime.", ar: "الصورة متقصوصة من الأصل (" + resultAspectId + ") فممكن أطراف تتشال. تقدر ترجع للنسبة الأصلية في أي وقت." })}</p>
+          ) : null}
+          {hasResults && !selectedImage ? (
+            <p className="aiw-stage-note">{loc({ en: "Tap the image you like best to continue with it.", ar: "اضغط على الصورة اللي عجبتك علشان تكمل بيها." })}</p>
+          ) : null}
+          {selectedImage ? (
+            <div className="aiw-next">
+              <StudioNextActions projectId={projectId} fromStudio="ai-images" asset={selectedImage} title={loc({ en: "Continue with this image", ar: "كمّل باستخدام الصورة دي" })} description={loc({ en: "The project context stays attached.", ar: "بيانات المشروع والهوية تفضل مرتبطة." })} />
+            </div>
+          ) : null}
+        </section>
+      </div>
     </div>
   );
 }
