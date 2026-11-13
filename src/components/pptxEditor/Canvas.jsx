@@ -462,7 +462,13 @@ const Canvas = React.forwardRef(function Canvas({ pkg, model, selection, onSelec
       const sx = g.kind.includes("e") ? 1 : g.kind.includes("w") ? -1 : 0, sy = g.kind.includes("s") ? 1 : g.kind.includes("n") ? -1 : 0;
       let w = Math.max(MIN_SIZE, b0.w + sx * lx), h = Math.max(MIN_SIZE, b0.h + sy * ly);
       const corner = sx !== 0 && sy !== 0;
-      if (corner && (g.isImage ? !e.shiftKey : e.shiftKey)) { const ratio = b0.w / b0.h; if (Math.abs(w / b0.w - 1) > Math.abs(h / b0.h - 1)) h = w / ratio; else w = h * ratio; }
+      if (corner && (g.isImage ? !e.shiftKey : e.shiftKey)) {
+        // Aspect-locked corner drag: one uniform scale that follows the pointer. The LARGER of the two axis scales is
+        // used (the frame keeps containing the pointer) for growing AND shrinking; picking the larger *change* made the
+        // frame jump to the faster-shrinking axis when shrinking. Never below MIN_SIZE on either side.
+        const s = Math.max(w / b0.w, h / b0.h, MIN_SIZE / b0.w, MIN_SIZE / b0.h);
+        w = b0.w * s; h = b0.h * s;
+      }
       // Re-flow: content re-wraps at the new width, so the frame may never be shorter than its
       // content (text) or its rows' content (tables). This gives vertical shrinking a natural floor.
       const fit = fitOf(g.id, w, h);
