@@ -11,15 +11,19 @@ import StudioNextActions from "@/components/studios/StudioNextActions";
 import "./videoStudio.css";
 
 const MODELS = [
-  { id: "minimax-h3-turbo", name: "MiniMax H3 Max Turbo", quality: "standard", ar: "جودة عادية", en: "Standard", ratios: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"], durations: [5, 6, 8, 10, 12, 15], maxImages: 5 },
-  { id: "kling-2.5", name: "Kling 2.5 Turbo Pro", quality: "medium", ar: "جودة متوسطة", en: "Medium", ratios: ["16:9", "9:16", "1:1"], durations: [5, 10], maxImages: 1 },
-  { id: "seedance-2.0", name: "Seedance 2.0", quality: "high", ar: "جودة عالية", en: "High", ratios: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"], durations: [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], maxImages: 5 },
+  { id: "minimax-h3-turbo", name: "MiniMax H3 Max Turbo", quality: "standard", ar: "جودة عادية", en: "Standard", ratios: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"], durations: [5, 6, 8, 10, 12, 15], resolutions: ["480P", "768P", "1080P"], defaultResolution: "768P", maxImages: 5 },
+  { id: "kling-2.5", name: "Kling 2.5 Turbo Pro", quality: "medium", ar: "جودة متوسطة", en: "Medium", ratios: ["16:9", "9:16", "1:1"], durations: [5, 10], resolutions: [], defaultResolution: "", maxImages: 1 },
+  { id: "seedance-2.0", name: "Seedance 2.0", quality: "high", ar: "جودة عالية", en: "High", ratios: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"], durations: [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], resolutions: ["480p", "720p", "1080p", "4k"], defaultResolution: "720p", maxImages: 5 },
 ];
 const FORMATS = [
   { id: "16:9", en: "Landscape", ar: "أفقي" }, { id: "9:16", en: "Portrait", ar: "عمودي" },
   { id: "1:1", en: "Square", ar: "مربع" }, { id: "4:3", en: "Standard", ar: "تقليدي" },
   { id: "3:4", en: "Vertical Standard", ar: "عمودي تقليدي" }, { id: "21:9", en: "Ultra-wide", ar: "عريض سينمائي" },
 ];
+const RESOLUTION_HINTS = {
+  "480p": { en: "Fastest", ar: "الأسرع" }, "720p": { en: "Balanced", ar: "متوازن" }, "1080p": { en: "High quality", ar: "جودة عالية" }, "4k": { en: "Highest quality", ar: "أعلى جودة" },
+  "480P": { en: "Fastest", ar: "الأسرع" }, "768P": { en: "Native (default)", ar: "الأصلية (الافتراضي)" }, "1080P": { en: "Refined to 1080P · slower", ar: "تحسين لـ1080P · أبطأ" },
+};
 const STYLES = [
   { id: "cinematic", en: "Cinematic", ar: "سينمائي" }, { id: "commercial", en: "Commercial", ar: "إعلاني" },
   { id: "social", en: "Social", ar: "سوشيال ميديا" }, { id: "minimal", en: "Minimal", ar: "مينيمال" },
@@ -73,6 +77,7 @@ export default function VideoStudio() {
   const [isCustomDuration, setIsCustomDuration] = React.useState(false);
   const [customDurationText, setCustomDurationText] = React.useState("5");
   const [aspect, setAspect] = React.useState("16:9");
+  const [resolution, setResolution] = React.useState(MODELS[0].defaultResolution);
   const [style, setStyle] = React.useState("cinematic");
   const [images, setImages] = React.useState([]);
   const [generating, setGenerating] = React.useState(false);
@@ -90,7 +95,7 @@ export default function VideoStudio() {
   else if (durationValue > MAX_DURATION) durationIssue = loc({ en: "The maximum length is 2 minutes (120 seconds).", ar: "أقصى مدة للفيديو دقيقتين (120 ثانية)." });
   else if (durationValue > maxClip) durationIssue = loc({ en: `${selectedModel.name} creates up to ${maxClip}s per video. Choose a shorter length or switch the model.`, ar: `${selectedModel.name} بيولّد لحد ${maxClip} ثانية في الفيديو الواحد. اختار مدة أقل أو غيّر الموديل.` });
   else if (!selectedModel.durations.includes(durationValue)) durationIssue = loc({ en: `${selectedModel.name} supports these lengths: ${selectedModel.durations.join(", ")}s.`, ar: `${selectedModel.name} بيدعم المدد دي: ${selectedModel.durations.join("، ")} ثانية.` });
-  const canGenerate = promptReady && Boolean(modelId) && Boolean(aspect) && Boolean(style) && !durationIssue && selectedModel.ratios.includes(aspect) && images.length <= selectedModel.maxImages && !generating;
+  const canGenerate = promptReady && Boolean(modelId) && Boolean(aspect) && Boolean(style) && !durationIssue && (selectedModel.resolutions.length === 0 || selectedModel.resolutions.includes(resolution)) && selectedModel.ratios.includes(aspect) && images.length <= selectedModel.maxImages && !generating;
 
   React.useEffect(() => {
     let active = true;
@@ -120,7 +125,7 @@ export default function VideoStudio() {
           const url = getVideoUrl(data.result);
           if (!url) throw new Error("VIDEO_URL_MISSING");
           setVideoUrl(url); setGenerationId(queueRequest.request_id); setQueueRequest(null); setGenerating(false);
-          if (projectId) await saveStudioOutput(projectId, { studioId: "video", asset: { id: queueRequest.request_id, url, generation_id: queueRequest.request_id }, approved: false, metadata: { provider: "fal", model: modelId, duration, aspect, style, source_asset_id: incomingAssetId || null } });
+          if (projectId) await saveStudioOutput(projectId, { studioId: "video", asset: { id: queueRequest.request_id, url, generation_id: queueRequest.request_id }, approved: false, metadata: { provider: "fal", model: modelId, duration, aspect, resolution: selectedModel.resolutions.length ? resolution : null, style, source_asset_id: incomingAssetId || null } });
         } else if (data.status === "FAILED") {
           throw new Error(data.error || "VIDEO_GENERATION_FAILED");
         } else if (attempts >= 180) {
@@ -133,12 +138,13 @@ export default function VideoStudio() {
       }
     }, 4000);
     return () => { active = false; clearInterval(timer); };
-  }, [queueRequest, projectId, modelId, duration, aspect, style, incomingAssetId, loc]);
+  }, [queueRequest, projectId, modelId, duration, aspect, resolution, style, incomingAssetId, loc]);
 
   const changeModel = (nextId) => {
     const next = MODELS.find((m) => m.id === nextId);
     if (!next) return;
     setModelId(nextId);
+    setResolution(next.defaultResolution);
     if (!next.ratios.includes(aspect)) setAspect(next.ratios.includes("16:9") ? "16:9" : next.ratios[0]);
     const nextMaxClip = Math.max(...next.durations);
     if (Number(duration) <= nextMaxClip && !next.durations.includes(Number(duration))) {
@@ -196,11 +202,11 @@ export default function VideoStudio() {
       }
       const brandContext = brand?.brand_name ? `Brand: ${brand.brand_name}.` : "";
       const promptWithStyle = `${prompt.trim()}\n\nVisual direction: ${STYLE_GUIDANCE[style]} ${brandContext}`.trim();
-      const { data, error: invokeError } = await supabase.functions.invoke("fal-video", { body: { action: "submit", model: modelId, prompt: promptWithStyle, duration: Number(duration), aspect_ratio: aspect, image_urls: uploadedUrls, user_id: ownerId } });
+      const { data, error: invokeError } = await supabase.functions.invoke("fal-video", { body: { action: "submit", model: modelId, prompt: promptWithStyle, duration: Number(duration), aspect_ratio: aspect, resolution: selectedModel.resolutions.length ? resolution : undefined, image_urls: uploadedUrls, user_id: ownerId } });
       if (invokeError) throw invokeError;
       if (data?.video?.url || data?.video_url || data?.url) {
         const url = getVideoUrl(data); setVideoUrl(url); setGenerationId(data.request_id || data.id || null);
-        if (projectId) await saveStudioOutput(projectId, { studioId: "video", asset: { id: data.request_id || data.id || null, url, generation_id: data.request_id || data.id || null }, approved: false, metadata: { provider: "fal", model: modelId, duration, aspect, style, source_asset_id: incomingAssetId || null } });
+        if (projectId) await saveStudioOutput(projectId, { studioId: "video", asset: { id: data.request_id || data.id || null, url, generation_id: data.request_id || data.id || null }, approved: false, metadata: { provider: "fal", model: modelId, duration, aspect, resolution: selectedModel.resolutions.length ? resolution : null, style, source_asset_id: incomingAssetId || null } });
         setGenerating(false);
       } else if (data?.request_id) setQueueRequest({ model: modelId, model_path: data.model_path, request_id: data.request_id });
       else throw new Error(data?.error || "FAL_SUBMIT_FAILED");
@@ -223,6 +229,7 @@ export default function VideoStudio() {
           <div className="video-studio-composer-bar">
             <PillSelect label={loc({ en: "AI Model", ar: "موديل الفيديو" })} valueLabel={selectedModel.name} value={modelId} onChange={changeModel} options={MODELS.map((model) => ({ id: model.id, label: model.name, sub: loc({ en: model.en, ar: model.ar }) }))} />
             <PillSelect label={loc({ en: "Format", ar: "الفورمات" })} valueLabel={aspect} value={aspect} onChange={(id) => setAspect(id)} options={FORMATS.map((item) => ({ id: item.id, label: item.id, sub: loc({ en: item.en, ar: item.ar }), disabled: !selectedModel.ratios.includes(item.id) }))} />
+            {selectedModel.resolutions.length > 0 && <PillSelect label={loc({ en: "Resolution", ar: "الدقة" })} valueLabel={resolution} value={resolution} onChange={(id) => setResolution(id)} options={selectedModel.resolutions.map((id) => ({ id, label: id, sub: RESOLUTION_HINTS[id] ? loc(RESOLUTION_HINTS[id]) : "" }))} />}
             <div className="video-studio-counter">{prompt.length}/2500</div>
           </div>
         </div>

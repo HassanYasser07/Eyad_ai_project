@@ -7,23 +7,23 @@ const corsHeaders = {
 };
 const json = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
-const MODEL_CONFIG: Record<string, { text: string; image: string; ratios: string[]; durations: number[]; maxImages: number }> = {
+const MODEL_CONFIG: Record<string, { text: string; image: string; ratios: string[]; durations: number[]; resolutions: string[]; defaultResolution: string; maxImages: number }> = {
   "minimax-h3-turbo": {
     text: "minimax/h3-max-turbo/text-to-video",
     image: "minimax/h3-max-turbo/reference-to-video",
     ratios: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"],
-    durations: [5, 6, 8, 10, 12, 15], maxImages: 5,
+    durations: [5, 6, 8, 10, 12, 15], resolutions: ["480P", "768P", "1080P"], defaultResolution: "768P", maxImages: 5,
   },
   "kling-2.5": {
     text: "fal-ai/kling-video/v2.5-turbo/pro/text-to-video",
     image: "fal-ai/kling-video/v2.5-turbo/pro/image-to-video",
-    ratios: ["16:9", "9:16", "1:1"], durations: [5, 10], maxImages: 1,
+    ratios: ["16:9", "9:16", "1:1"], durations: [5, 10], resolutions: [], defaultResolution: "", maxImages: 1,
   },
   "seedance-2.0": {
     text: "bytedance/seedance-2.0/text-to-video",
     image: "bytedance/seedance-2.0/reference-to-video",
     ratios: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"],
-    durations: [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], maxImages: 5,
+    durations: [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], resolutions: ["480p", "720p", "1080p", "4k"], defaultResolution: "720p", maxImages: 5,
   },
 };
 
@@ -94,18 +94,21 @@ Deno.serve(async (req: Request) => {
     if (prompt.length > 4000) return json({ error: "PROMPT_TOO_LONG" }, 400);
     if (!config.durations.includes(duration)) return json({ error: "UNSUPPORTED_DURATION" }, 400);
     if (!config.ratios.includes(aspect)) return json({ error: "UNSUPPORTED_ASPECT_RATIO" }, 400);
+    // Resolution is optional for older clients (falls back to the model default); models without a resolution parameter ignore it.
+    const resolution = String(body?.resolution || config.defaultResolution || "");
+    if (config.resolutions.length && !config.resolutions.includes(resolution)) return json({ error: "UNSUPPORTED_RESOLUTION" }, 400);
     if (images.length > config.maxImages || images.length > 5) return json({ error: "TOO_MANY_REFERENCE_IMAGES" }, 400);
 
     let endpoint = images.length ? config.image : config.text;
     let input: Record<string, unknown> = { prompt, duration, aspect_ratio: aspect };
     if (modelId === "minimax-h3-turbo") {
-      input = { ...input, resolution: "768P", prompt_expansion_mode: "balanced", enable_safety_checker: true };
+      input = { ...input, resolution, prompt_expansion_mode: "balanced", enable_safety_checker: true };
       if (images.length) input.reference_image_urls = images;
     } else if (modelId === "kling-2.5") {
-      input = { ...input, negative_prompt: "blur, distort, low quality", cfg_scale: 0.5 };
+      input = { ...input, duration: String(duration), negative_prompt: "blur, distort, low quality", cfg_scale: 0.5 };
       if (images.length) input.image_url = images[0];
     } else if (modelId === "seedance-2.0") {
-      input = { ...input, resolution: "720p", generate_audio: true };
+      input = { ...input, duration: String(duration), resolution, generate_audio: true };
       if (images.length) {
         input.image_urls = images;
         input.prompt = `${prompt}\nUse the supplied reference images in order: ${images.map((_, i) => `@Image${i + 1}`).join(", ")}.`;
