@@ -5,7 +5,7 @@
  * phases; this route exists so navigation is complete and stable now.
  */
 import React from "react";
-import { useParams, Link, useNavigate, useSearchParams } from "react-router-dom";
+import { useParams, Link, Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, CheckCircle2, ExternalLink, Image as ImageIcon, Sparkles } from "lucide-react";
 import { useI18n } from "@/i18n/I18nContext";
 import { getStudioById } from "@/studios/studioRegistry";
@@ -40,6 +40,11 @@ export default function StudioDetail() {
     });
     return () => { active = false; };
   }, [projectId]);
+
+  // A loose id from the chat router (e.g. "presentation") resolves to a real studio: open that studio's own page.
+  if (studio?.route && studio.id !== id && studio.route !== `/studios/${id}`) {
+    return <Navigate to={`${studio.route}${window.location.search}`} replace />;
+  }
 
   if (!studio) {
     return (

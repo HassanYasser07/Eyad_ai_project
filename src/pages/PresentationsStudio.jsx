@@ -8,6 +8,7 @@ import { getBrandIdentity } from "@/services/brandService";
 import StudioNextActions from "@/components/studios/StudioNextActions";
 import DesktopShell from "@/components/home/DesktopShell";
 import PromptComposer from "@/components/presentations/PromptComposer";
+import { extractPresentationTopic } from "@/components/presentations/presentationTopic";
 import TemplateGallery from "@/components/presentations/TemplateGallery";
 import PresentationResult from "@/components/presentations/PresentationResult";
 import { usePresentationGeneration } from "@/components/presentations/usePresentationGeneration";
@@ -112,7 +113,8 @@ export default function PresentationsStudio() {
     projectService.get(projectId).then(async (project) => {
       if (!active) return;
       setProfile(project?.project_data?.company_profile || null);
-      const inheritedPrompt = String(project?.metadata?.initial_prompt || project?.description || "").trim();
+      // The project keeps the raw chat request ("عايز اعمل بريزنتيشن عن ..."); only the actual topic belongs in the box.
+      const inheritedPrompt = String(project?.presentation_brief?.topic || "").trim() || extractPresentationTopic(String(project?.initial_prompt || project?.description || ""));
       if (inheritedPrompt) setSettings((prev) => (prev.topic ? prev : { ...prev, topic: inheritedPrompt }));
       const identity = await getBrandIdentity(projectId);
       if (active) setBrand(identity);

@@ -42,6 +42,10 @@ const fromRow = (row) => ({
   updated_date: row.updated_at,
   description: row.description,
   language: row.language,
+  // Written by the chat engine (not part of project_data): the first raw chat message and, for presentations,
+  // the topic extracted from the conversation. Read-only hints for the studios that Chat hands over to.
+  initial_prompt: row.metadata?.initial_prompt || null,
+  presentation_brief: row.metadata?.presentation_brief || row.metadata?.project_data?.presentation_brief || null,
 });
 
 async function requireUser() {

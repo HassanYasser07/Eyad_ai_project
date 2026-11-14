@@ -77,7 +77,28 @@ export const studioRegistry = [
   },
 ];
 
-export const getStudioById = (id) =>
-  studioRegistry.find((studio) => studio.id === id);
+// The chat router (an LLM) may answer with a loose id such as "presentation" or "powerpoint". Map those to the real
+// studio id so the user never lands on "Studio not found".
+const STUDIO_ALIASES = {
+  presentation: "presentations", presentations: "presentations", "presentation-studio": "presentations", presentation_studio: "presentations",
+  slides: "presentations", deck: "presentations", pptx: "presentations", powerpoint: "presentations", ppt: "presentations",
+  logos: "logo", "logo-studio": "logo", logo_studio: "logo",
+  brand: "brand-kit", "brand-identity": "brand-kit", brand_identity: "brand-kit", "visual-identity": "brand-kit", visual_identity: "brand-kit", brandkit: "brand-kit", brand_kit: "brand-kit", identity: "brand-kit",
+  "company_profile": "company-profile", companyprofile: "company-profile", profile: "company-profile",
+  image: "ai-images", images: "ai-images", ai_images: "ai-images", "ai-image": "ai-images", aiimages: "ai-images",
+  videos: "video", "video-studio": "video",
+  template: "templates", "template-studio": "templates",
+};
+
+export const resolveStudioId = (id) => {
+  const key = String(id ?? "").trim().toLowerCase();
+  if (!key) return null;
+  return STUDIO_ALIASES[key] || key;
+};
+
+export const getStudioById = (id) => {
+  const resolved = resolveStudioId(id);
+  return studioRegistry.find((studio) => studio.id === resolved);
+};
 
 export default studioRegistry;
