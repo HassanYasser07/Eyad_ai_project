@@ -897,19 +897,66 @@ export default function PptxEditorDialog({ onClose, initialFile = null, onSaved 
     try { await insertSvgSource(await fetchIconSvgText(icon), icon.name); setFeedback({ kind: "ok", text: t("iconLibrary.inserted") }); }
     catch { setFeedback({ kind: "error", text: t("iconLibrary.insertFailed") }); }
   };
-  // Recolouring a selected SVG picture: rewrite the SVG, re-render the PNG fallback, swap both media parts (one undo step).
-  const svgRecolorBusy = React.useRef(false);
-  const recolorSvgPicture = async (change) => {
+  // Recolouring a selected SVG picture. Dragging in the colour picker previews live on the canvas (a small temporary PNG),
+  // and the final colour is committed once: SVG rewritten, PNG fallback re-rendered, both media parts swapped (one undo step).
+  const svgRecolor = React.useRef({ epoch: 0, live: { running: false, pending: null }, commit: { running: false, pending: null }, cache: { path: null, text: "" } });
+  const svgSourceText = async (svgPath) => {
+    const c = svgRecolor.current.cache;
+    if (c.path !== svgPath) { c.text = new TextDecoder().decode(await pkg.bytes(svgPath)); c.path = svgPath; }
+    return c.text;
+  };
+  const applyChange = (text, change) => (typeof change === "string" ? recolorSvgAll(text, change) : recolorSvg(text, change));
+  const dropLiveSvgUrl = (id) => {
+    const cache = pkg?.urlCache; const key = `live:svg:${id}`;
+    const old = cache?.get(key);
+    if (old) { URL.revokeObjectURL(old); cache.delete(key); }
+  };
+  const liveRecolorSvgPicture = (change) => {
     const el = sel.length === 1 ? sel[0] : null;
-    if (!pkg || !path || !el?.svgPath || svgRecolorBusy.current) return;
-    svgRecolorBusy.current = true;
-    try {
-      const text = new TextDecoder().decode(await pkg.bytes(el.svgPath));
-      const next = typeof change === "string" ? recolorSvgAll(text, change) : recolorSvg(text, change);
-      const png = await svgToPng(next, 1024);
-      run(() => setSvgPicture(pkg, path, el.id, { svgBytes: new TextEncoder().encode(next), pngBytes: png.bytes }));
-    } catch { setFeedback({ kind: "error", text: t("pptxEditor.err.generic") }); }
-    finally { svgRecolorBusy.current = false; }
+    if (!pkg || !el?.svgPath) return;
+    const state = svgRecolor.current, queue = state.live, epoch = state.epoch, id = el.id, svgPath = el.svgPath;
+    queue.pending = change;
+    if (queue.running) return;
+    queue.running = true;
+    (async () => {
+      try {
+        while (queue.pending) {
+          const next = queue.pending; queue.pending = null;
+          try {
+            const png = await svgToPng(applyChange(await svgSourceText(svgPath), next), 512);
+            if (state.epoch !== epoch) break; // committed / cancelled meanwhile
+            const cache = (pkg.urlCache ||= new Map()); const key = `live:svg:${id}`;
+            const old = cache.get(key);
+            cache.set(key, URL.createObjectURL(new Blob([png.bytes], { type: "image/png" })));
+            if (old) URL.revokeObjectURL(old);
+            pkg.urlListeners?.forEach((fn) => fn());
+            setLivePreview({ ids: [id], fn: (e) => ({ ...e, imagePath: key }) });
+          } catch { /* ignore transient values while dragging */ }
+        }
+      } finally { queue.running = false; }
+    })();
+  };
+  const recolorSvgPicture = (change) => {
+    const el = sel.length === 1 ? sel[0] : null;
+    if (!pkg || !path || !el?.svgPath) return;
+    const state = svgRecolor.current, queue = state.commit;
+    state.epoch += 1; state.live.pending = null; // drop any preview still rendering
+    queue.pending = { change, id: el.id, svgPath: el.svgPath };
+    if (queue.running) return;
+    queue.running = true;
+    (async () => {
+      try {
+        while (queue.pending) {
+          const job = queue.pending; queue.pending = null;
+          try {
+            const next = applyChange(await svgSourceText(job.svgPath), job.change);
+            const png = await svgToPng(next, 1024);
+            run(() => setSvgPicture(pkg, path, job.id, { svgBytes: new TextEncoder().encode(next), pngBytes: png.bytes }));
+          } catch { setFeedback({ kind: "error", text: t("pptxEditor.err.generic") }); }
+          dropLiveSvgUrl(job.id);
+        }
+      } finally { queue.running = false; }
+    })();
   };
   const undo = () => { pkg.undo(); };
   const redo = () => { pkg.redo(); };
@@ -1211,10 +1258,10 @@ export default function PptxEditorDialog({ onClose, initialFile = null, onSaved 
       </RibbonGroup>
       {svgPicPath && <RibbonGroup art={colorPaletteArt} title={t("pptxEditor.svgColors")}>
         <ColorField label={t("pptxEditor.svgRecolorAll")} value={null} themeColors={ribbonColors} testId="pptx-svg-recolor-all" customColorLabel={t("pptxEditor.customColor")} disabled={imageDisabled}
-          onChange={(hex) => recolorSvgPicture(`#${String(hex).replace(/^#/, "")}`)} />
+          onLive={(hex) => liveRecolorSvgPicture(`#${String(hex).replace(/^#/, "")}`)} onChange={(hex) => recolorSvgPicture(`#${String(hex).replace(/^#/, "")}`)} />
         {svgColors.map((color, index) => (
           <ColorField key={`${color}-${index}`} label={t("pptxEditor.svgColorN", { n: index + 1 })} value={color.slice(1).toUpperCase()} themeColors={ribbonColors} testId={`pptx-svg-color-${index}`} customColorLabel={t("pptxEditor.customColor")} disabled={imageDisabled}
-            onChange={(hex) => recolorSvgPicture(new Map([[color, `#${String(hex).replace(/^#/, "")}`]]))} />
+            onLive={(hex) => liveRecolorSvgPicture(new Map([[color, `#${String(hex).replace(/^#/, "")}`]]))} onChange={(hex) => recolorSvgPicture(new Map([[color, `#${String(hex).replace(/^#/, "")}`]]))} />
         ))}
       </RibbonGroup>}
       <RibbonGroup art={appearanceArt} title={t("pptxEditor.section.appearance")}>

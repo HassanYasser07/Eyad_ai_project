@@ -1181,8 +1181,19 @@ export default function SvgEditorDialog({ onClose, direction = "ltr", initialSvg
   // Handlers shared by the properties sidebar, the desktop context bar and the mobile sheets.
   const handleSizeCommit = (dimension, value, bounds) => liveCommit(t("svgEditor.dimensionsUpdated"), (root, b) => updateElementSize(root, selectedId, dimension, value, b), bounds);
   const handleSizeLive = (dimension, value, bounds) => livePreview((root, b) => updateElementSize(root, selectedId, dimension, value, b), bounds);
-  const handleAttributeCommit = (name, value) => liveCommit(t("svgEditor.appearanceUpdated"), (root) => updateElementAttribute(root, selectedId, name, value));
-  const handleAttributeLive = (name, value) => livePreview((root) => updateElementAttribute(root, selectedId, name, value));
+  // A colour picker commits when it closes, and clicking the canvas to close it also changes the selection first.
+  // So the item being edited is remembered when the live preview starts and reused for the commit.
+  const liveAttributeTargetRef = React.useRef(null);
+  const handleAttributeCommit = (name, value) => {
+    const targetId = liveRef.current && liveAttributeTargetRef.current ? liveAttributeTargetRef.current : selectedId;
+    liveAttributeTargetRef.current = null;
+    return liveCommit(t("svgEditor.appearanceUpdated"), (root) => updateElementAttribute(root, targetId, name, value));
+  };
+  const handleAttributeLive = (name, value) => {
+    if (!liveRef.current || !liveAttributeTargetRef.current) liveAttributeTargetRef.current = selectedId;
+    const targetId = liveAttributeTargetRef.current;
+    livePreview((root) => updateElementAttribute(root, targetId, name, value));
+  };
 
   // Mobile sheets only exist in the mobile layout; on desktop the sidebar always shows the item's own controls.
   const activeMobileTab = isMobile ? mobileEditorTab : null;
