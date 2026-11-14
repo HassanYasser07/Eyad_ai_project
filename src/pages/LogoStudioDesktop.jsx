@@ -14,6 +14,8 @@ import { useAuth } from "@/lib/AuthContext";
 import "./logoStudioDesktop.css";
 import TypewriterHint from "@/components/ui/TypewriterHint";
 import { LOGO_HINTS } from "@/config/typewriterHints";
+import LogoStyleReferencePicker from "@/components/LogoStyleReferencePicker";
+import { getLogoStyleReference } from "@/config/logoStyleReferences";
 
 const PRIMARY_NAV = [
   { to: "/home", key: "nav.home", icon: HomeIcon },
@@ -49,14 +51,6 @@ const FEATURES = [
   ["print", "ملفات جاهزة للطباعة", "PNG, SVG, PDF, AI", FileText],
   ["colors", "ألوان وخطوط مخصصة", "بما يناسب هويتك التجارية", Palette],
   ["styles", "شعارات متعددة الأنماط", "حديث، كلاسيكي، إبداعي والمزيد", Wand2],
-];
-
-const TEMPLATE_LOGOS = [
-  ["Leafy", "COFFEE SHOP", "leafy"],
-  ["NUR", "BEAUTY", "nur"],
-  ["TechFlow", "SOLUTIONS", "techflow"],
-  ["URBAN", "REAL ESTATE", "urban"],
-  ["VITAL", "HEALTH CARE", "vital"],
 ];
 
 const MODERN_LOGOS = [
@@ -146,6 +140,7 @@ export default function LogoStudioDesktop({
   step, setStep, name, setName, activity, setActivity, selections, updateSelection,
   generate, loading, canGenerate, isAnonymous, images, selectedImage, selectedIndex, setSelectedImage,
   approve, approved, error, back, onSelectImage, onOpenSvgEditor, approvedActions,
+  logoStyleRef = null, setLogoStyleRef = () => {},
 }) {
   const { t, direction, toggleLanguage } = useI18n();
   const { user } = useAuth();
@@ -358,6 +353,7 @@ export default function LogoStudioDesktop({
                 <span>{ar ? "اختياراتك" : "Your selections"}</span>
                 <strong>{ar ? (STYLE_CARDS.find(i => i.id === selections.style)?.ar || "حديث وعصري") : (STYLE_CARDS.find(i => i.id === selections.style)?.en || "Modern")}</strong>
                 <em>{ar ? (PALETTE_CARDS.find(i => i.id === selections.colors)?.ar || "أزرق احترافي") : (PALETTE_CARDS.find(i => i.id === selections.colors)?.en || "Professional Blue")}</em>
+                {logoStyleRef && getLogoStyleReference(logoStyleRef) ? <em className="lsr-summary-chip">{ar ? "مرجع: " : "Ref: "}{ar ? getLogoStyleReference(logoStyleRef).ar : getLogoStyleReference(logoStyleRef).en}</em> : null}
               </div>
             </div>
             {(formError || error) && <div className="logo-desktop-error" role="alert">{formError || error}</div>}
@@ -376,13 +372,7 @@ export default function LogoStudioDesktop({
             </section>
           )}
 
-          <section className="logo-desktop-templates">
-            <div className="logo-desktop-gallery-head">
-              <div><h2>{ar ? "قوالب مقترحة" : "Suggested templates"}</h2><p>{ar ? "ابدأ من قالب وعدّل عليه ليناسب هويتك." : "Start from a template and customize it for your brand."}</p></div>
-              <button type="button">{ar ? "عرض الكل" : "View all"} <ChevronLeft/></button>
-            </div>
-            <div className="logo-desktop-logo-row logo-desktop-template-row">{TEMPLATE_LOGOS.map(item=><LogoMock key={item[0]} item={item} interactive/>)}</div>
-          </section>
+          <LogoStyleReferencePicker value={logoStyleRef} onChange={setLogoStyleRef} onCreate={createFromBrief} creating={loading} ar={ar} />
 
 
           <section className="logo-desktop-story logo-desktop-story-process">
