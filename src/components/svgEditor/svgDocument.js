@@ -383,6 +383,134 @@ export function addTextElement(root, textValue = "Your text") {
   return editorId;
 }
 
+// ── Icon library insertion ───────────────────────────────────────────────
+const ICON_PRESENTATION_ATTRS = [
+  "fill", "fill-opacity", "fill-rule", "clip-rule", "stroke", "stroke-width", "stroke-linecap",
+  "stroke-linejoin", "stroke-miterlimit", "stroke-dasharray", "stroke-opacity", "opacity", "color",
+];
+
+/** Flattens simple `.class` / `tag` rules of an icon's <style> into inline styles so they cannot leak into the logo. */
+function inlineIconStyles(iconRoot) {
+  const styles = Array.from(iconRoot.querySelectorAll("style"));
+  styles.forEach((styleElement) => {
+    const css = String(styleElement.textContent || "").replace(/\/\*[\s\S]*?\*\//g, "");
+    const rulePattern = /([^{}]+)\{([^{}]*)\}/g;
+    let match;
+    while ((match = rulePattern.exec(css))) {
+      const declarations = match[2].trim().replace(/;\s*$/, "");
+      if (!declarations) continue;
+      match[1].split(",").map((selector) => selector.trim()).filter(Boolean).forEach((selector) => {
+        if (!/^[.#]?[\w-]+$|^\*$/.test(selector)) return; // only simple selectors are supported
+        let targets = [];
+        try { targets = Array.from(iconRoot.querySelectorAll(selector)); } catch { /* ignore */ }
+        targets.forEach((target) => {
+          const existing = (target.getAttribute("style") || "").trim().replace(/;\s*$/, "");
+          target.setAttribute("style", existing ? `${declarations};${existing}` : declarations);
+        });
+      });
+    }
+    styleElement.remove();
+  });
+  // Classes are no longer needed (rules are inlined) and would otherwise pick up the logo's own CSS.
+  if (styles.length) collectElements(iconRoot).forEach((element) => element.removeAttribute("class"));
+}
+
+/**
+ * Adds an SVG icon from the icon library as one editable group, centred on the artboard.
+ * The icon is sanitised like an uploaded file; its ids are made unique so gradients / clip paths never
+ * collide with the logo. Returns the new group's editor id.
+ */
+export function addSvgIconElement(root, svgSource, name = "Icon") {
+  if (new Blob([svgSource]).size > MAX_SVG_BYTES) throw new Error("SVG files must be 10 MB or smaller.");
+  const { document: iconDocument } = sanitizeParsedDocument(parseXml(svgSource), { assignMetadata: false });
+  const iconRoot = iconDocument.documentElement;
+  inlineIconStyles(iconRoot);
+
+  const rawIconBox = (iconRoot.getAttribute("viewBox") || "").trim().split(/[ ,]+/).map(Number);
+  const iconBox = rawIconBox.length === 4 && rawIconBox.every(Number.isFinite) && rawIconBox[2] > 0 && rawIconBox[3] > 0
+    ? rawIconBox
+    : [0, 0, Number.parseFloat(iconRoot.getAttribute("width")) || 512, Number.parseFloat(iconRoot.getAttribute("height")) || 512];
+
+  // Unique ids: prefix every id inside the icon, then rewrite url(#…) and href="#…" references.
+  const used = new Set(collectElements(root).map((element) => element.getAttribute("id")).filter(Boolean));
+  let serial = 1;
+  while (used.has(`icon-${serial}-0`) || Array.from(used).some((id) => id.startsWith(`icon-${serial}-`))) serial += 1;
+  const prefix = `icon-${serial}-`;
+  const renamed = new Map();
+  collectElements(iconRoot).forEach((element) => {
+    const id = element.getAttribute("id");
+    if (!id) return;
+    renamed.set(id, `${prefix}${id}`);
+    element.setAttribute("id", `${prefix}${id}`);
+  });
+  if (renamed.size) {
+    collectElements(iconRoot).forEach((element) => {
+      Array.from(element.attributes).forEach((attribute) => {
+        let value = attribute.value;
+        renamed.forEach((next, previous) => {
+          value = value.replaceAll(`url(#${previous})`, `url(#${next})`).replaceAll(`url('#${previous}')`, `url(#${next})`).replaceAll(`url("#${previous}")`, `url(#${next})`);
+          if ((attribute.name === "href" || attribute.name === "xlink:href") && value === `#${previous}`) value = `#${next}`;
+        });
+        if (value !== attribute.value) element.setAttribute(attribute.name, value);
+      });
+    });
+  }
+  if (collectElements(iconRoot).some((element) => element.hasAttributeNS(XLINK_NAMESPACE, "href")) && !root.hasAttribute("xmlns:xlink")) {
+    root.setAttribute("xmlns:xlink", XLINK_NAMESPACE);
+  }
+
+  const group = root.ownerDocument.createElementNS(SVG_NAMESPACE, "g");
+  ICON_PRESENTATION_ATTRS.forEach((attribute) => {
+    if (iconRoot.hasAttribute(attribute)) group.setAttribute(attribute, iconRoot.getAttribute(attribute));
+  });
+  Array.from(iconRoot.childNodes).forEach((child) => {
+    if (child.nodeType !== 1) return;
+    if (["title", "desc", "metadata"].includes(child.localName)) return;
+    group.appendChild(root.ownerDocument.importNode(child, true));
+  });
+  if (!group.querySelector("*")) throw new Error("This icon does not contain any drawable shapes.");
+
+  // Fit into ~28% of the artboard and centre it.
+  const rawViewBox = (root.getAttribute("viewBox") || "").trim().split(/[ ,]+/).map(Number);
+  const viewBox = rawViewBox.length === 4 && rawViewBox.every(Number.isFinite) && rawViewBox[2] > 0 && rawViewBox[3] > 0
+    ? rawViewBox
+    : [0, 0, Number.parseFloat(root.getAttribute("width")) || 512, Number.parseFloat(root.getAttribute("height")) || 512];
+  const [vx, vy, vw, vh] = viewBox;
+  const [ix, iy, iw, ih] = iconBox;
+  const scale = (Math.min(vw, vh) * 0.28) / Math.max(iw, ih);
+  const tx = vx + vw / 2 - (ix + iw / 2) * scale;
+  const ty = vy + vh / 2 - (iy + ih / 2) * scale;
+  group.setAttribute("transform", `translate(${+tx.toFixed(3)} ${+ty.toFixed(3)}) scale(${+scale.toFixed(5)})`);
+
+  // Editor metadata (ids + layer labels) continuing the numbering of the existing document.
+  const existingIds = new Set(collectElements(root).map((element) => element.getAttribute("data-editor-id")).filter(Boolean));
+  let idCounter = 0;
+  const nextEditorId = () => {
+    let candidate;
+    do { candidate = `svg-icon-node-${++idCounter}`; } while (existingIds.has(candidate));
+    existingIds.add(candidate);
+    return candidate;
+  };
+  const maxNumber = (pattern) => Math.max(0, ...collectElements(root).map((element) => Number((element.getAttribute("data-editor-label") || "").match(pattern)?.[1] || 0)));
+  let itemCounter = maxNumber(/^Item (\d+)$/);
+  let groupCounter = maxNumber(/^Group (\d+)$/);
+  const groupId = nextEditorId();
+  group.setAttribute("data-editor-id", groupId);
+  group.setAttribute("data-editor-label", String(name || "Icon").slice(0, 60));
+  Array.from(group.querySelectorAll("*")).forEach((element) => {
+    element.setAttribute("data-editor-id", nextEditorId());
+    if (!isInsideDefinitions(element, group)) {
+      element.setAttribute("data-editor-label", element.localName === "g" ? `Group ${++groupCounter}` : `Item ${++itemCounter}`);
+    } else {
+      element.setAttribute("data-editor-label", element.localName);
+    }
+    element.setAttribute("data-editor-label-auto", "true");
+  });
+
+  root.appendChild(group);
+  return groupId;
+}
+
 export function getElementDetails(markup, id, labels = {}) {
   const root = parseSvgMarkup(markup).documentElement;
   const element = getElementByEditorId(root, id);

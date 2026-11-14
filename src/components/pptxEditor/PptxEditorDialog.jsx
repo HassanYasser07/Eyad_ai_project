@@ -5,7 +5,7 @@ import {
   ZoomIn, ZoomOut, Maximize, Grid3x3, Magnet, ChevronLeft, ChevronRight, LayoutGrid, MousePointerSquareDashed, RotateCcw, AlertTriangle, SquareDashedMousePointer, Move3d, Info, RectangleHorizontal, Loader2,
   Home, ClipboardCopy, ClipboardPaste, Scissors, FlipHorizontal2, FlipVertical2, AlignStartVertical, AlignCenterVertical, AlignEndVertical,
   Search, Bold, Italic, Underline,
-  Play, List, Strikethrough, Table2, Type as TextIcon, Image as ImageIcon, Save, LogIn,
+  Play, List, Strikethrough, Table2, Type as TextIcon, Image as ImageIcon, Save, LogIn, Smile,
 } from "lucide-react";
 import { useI18n } from "@/i18n/I18nContext";
 import { PptxPackage, PptxError, readPresentation, readSlide, setSlideBackground, setPresentationBackground, capturePresentationBackgrounds, restorePresentationBackgrounds, captureSlidePaletteState, restoreSlidePaletteStates, setBounds, deleteElements, duplicateElements, reorderElements, moveElementToLayer, setElementsHidden, groupElements, ungroupElement, setText, setTextProps, setShapeStyle, setOpacity, addTextBox, addShape, addTable, addPicture, replacePicture, setAltText, tableRows, tableCols, setTableOptions, setTableRangeTextProps, setTableRangeCellFill, copyElements, pasteElements, addSlide, duplicateSlide, deleteSlide, moveSlide, listLayouts, hasSections, computeAlign, computeDistribute, rotatedBox, unionBox, applySlidePalette } from "./engine/index.js";
@@ -37,6 +37,8 @@ import SlideView, { collectImagePaths } from "./SlideView.jsx";
 import Inspector from "./Inspector.jsx";
 import PptxLayersPanel from "./PptxLayersPanel.jsx";
 import ColorPalettePicker from "../shared/ColorPalettePicker.jsx";
+import IconLibraryPicker from "../shared/IconLibraryPicker.jsx";
+import { fetchIconSvgText, svgToPng } from "@/services/iconLibraryService";
 import { PRESENTATION_PALETTES } from "../shared/presentationPalettes.js";
 import { BottomSheet, SlidesPanel, SlidesStrip, useVisualViewport, MobileTextScreen } from "./Sheets.jsx";
 import { IconButton, ColorField, NumberField, SliderField, SelectField } from "./Controls.jsx";
@@ -863,6 +865,20 @@ export default function PptxEditorDialog({ onClose, initialFile = null, onSaved 
       setSelection([addPicture(pkg, path, { bytes: info.bytes, ext: info.ext, ...center(w, h), w, h, name: safeName(f.name, "Picture") })]);
     });
   } });
+  // Icon library: the chosen SVG is rasterised to a transparent PNG (the .pptx engine embeds PNG/JPEG/GIF pictures).
+  const insertIcon = async (icon) => {
+    if (!pkg || !path || !okModel) return;
+    try {
+      const png = await svgToPng(await fetchIconSvgText(icon), 1024);
+      run(() => {
+        const target = Math.min(okModel.size.w * 0.22, okModel.size.h * 0.3);
+        const k = target / Math.max(png.w, png.h);
+        const w = png.w * k, h = png.h * k;
+        setSelection([addPicture(pkg, path, { bytes: png.bytes, ext: "png", ...center(w, h), w, h, name: safeName(icon.name, "Icon") })]);
+        setSheet(null);
+      }, t("iconLibrary.inserted"));
+    } catch { setFeedback({ kind: "error", text: t("iconLibrary.insertFailed") }); }
+  };
   const undo = () => { pkg.undo(); };
   const redo = () => { pkg.redo(); };
   const exportNow = async () => {
@@ -1059,6 +1075,7 @@ export default function PptxEditorDialog({ onClose, initialFile = null, onSaved 
       <RibbonGroup art={objectsArt} title={t("pptxEditor.ribbon.group.objects")}>
         <RibbonButton icon={Type} label={t("pptxEditor.addText")} onClick={insertText} testId="pptx-add-text" />
         <RibbonButton icon={ImagePlus} label={t("pptxEditor.addImage")} onClick={insertImage} testId="pptx-add-image" />
+        <RibbonButton icon={Smile} label={t("iconLibrary.open")} onClick={() => setSheet("icons")} testId="pptx-add-icon" />
         <RibbonButton icon={Copy} label={t("pptxEditor.duplicate")} onClick={a.duplicate} disabled={!ids.length || sel.every((e) => lockedIds.has(e.id) || e.readOnlyGeometry)} testId="pptx-duplicate" />
         <RibbonButton icon={Trash2} label={t("pptxEditor.delete")} onClick={a.remove} disabled={!ids.length || sel.every((e) => lockedIds.has(e.id) || e.readOnlyGeometry)} danger testId="pptx-delete" />
       </RibbonGroup>
@@ -1072,7 +1089,7 @@ export default function PptxEditorDialog({ onClose, initialFile = null, onSaved 
         <RibbonButton icon={Circle} label={t("pptxEditor.shape.ellipse")} onClick={() => insertShape("ellipse")} testId="pptx-add-ellipse" />
         <RibbonButton icon={Minus} label={t("pptxEditor.shape.line")} onClick={() => insertShape("line")} testId="pptx-add-line" />
       </RibbonGroup>
-      <RibbonGroup art={mediaArt} title={t("pptxEditor.ribbon.group.media")}><RibbonButton icon={Type} label={t("pptxEditor.addText")} onClick={insertText} /><RibbonButton icon={ImagePlus} label={t("pptxEditor.addImage")} onClick={insertImage} /></RibbonGroup>
+      <RibbonGroup art={mediaArt} title={t("pptxEditor.ribbon.group.media")}><RibbonButton icon={Type} label={t("pptxEditor.addText")} onClick={insertText} /><RibbonButton icon={ImagePlus} label={t("pptxEditor.addImage")} onClick={insertImage} /><RibbonButton icon={Smile} label={t("iconLibrary.open")} onClick={() => setSheet("icons")} testId="pptx-add-icon-insert" /></RibbonGroup>
     </>;
     if (activeRibbon === "design") return <>
       <RibbonGroup art={slideBackgroundArt} title={t("pptxEditor.ribbon.group.background")}>
@@ -1369,6 +1386,11 @@ export default function PptxEditorDialog({ onClose, initialFile = null, onSaved 
                 })}
                 {!SHAPES.some(([prst, , key]) => `${prst} ${t(`pptxEditor.shape.${key}`)}`.toLowerCase().includes(shapeQuery.trim().toLowerCase())) && <p className="pe-note">{t("pptxEditor.noShapesFound")}</p>}
               </div>
+            </BottomSheet>
+          )}
+          {shownSheet === "icons" && (
+            <BottomSheet closing={sheetClosing} closingBottom={chrome.bottom} title={t("iconLibrary.title")} onClose={() => setSheet(null)} testId="pptx-icon-sheet" tall>
+              <IconLibraryPicker onSelect={insertIcon} />
             </BottomSheet>
           )}
           {shownSheet === "palettes" && (
