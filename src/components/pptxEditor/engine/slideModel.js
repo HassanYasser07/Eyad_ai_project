@@ -298,6 +298,8 @@ function readPic(node, ctx, xf) {
   el.imagePath = rel?.resolved || null;
   const ext = el.imagePath ? el.imagePath.slice(el.imagePath.lastIndexOf(".") + 1).toLowerCase() : "";
   el.mime = IMG_MIME[ext] || null;
+  const svgRid = blip ? descendants(blip, "svgBlip")[0]?.getAttributeNS(NS.r, "embed") : null;
+  el.svgPath = svgRid ? ctx.pkg.relById(ctx.slidePath, svgRid)?.resolved || null : null;
   if (linked && !rid) ctx.warnings.push({ code: "external-image", id: el.id, message: "An externally linked picture is not loaded (external resources are blocked)." });
   else if (el.imagePath && !el.mime) ctx.warnings.push({ code: "image-format", id: el.id, message: `Picture format .${ext} cannot be displayed in the editor; it is kept in the file.` });
   const src = path(node, "blipFill", "srcRect");

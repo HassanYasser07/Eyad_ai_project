@@ -113,6 +113,13 @@ function getBounds(element) {
   }
 }
 
+/** The element a canvas click selects: library icons are one block, so any click inside resolves to the icon's group. */
+function resolveCanvasTarget(node) {
+  const target = node?.closest?.("[data-editor-id]");
+  if (!target) return null;
+  return target.closest("[data-editor-icon]") || target;
+}
+
 function isDomElementLocked(element) {
   let current = element;
   while (current) {
@@ -968,7 +975,7 @@ export default function SvgEditorDialog({ onClose, direction = "ltr", initialSvg
     }
 
 
-    const target = event.target.closest?.("[data-editor-id]");
+    const target = resolveCanvasTarget(event.target);
     if (target) {
       const id = target.getAttribute("data-editor-id");
       const isAdditive = event.shiftKey || event.metaKey || event.ctrlKey;
@@ -1006,7 +1013,7 @@ export default function SvgEditorDialog({ onClose, direction = "ltr", initialSvg
     // milliseconds after pointer-down, so by pointer-up the pointer is often over empty canvas and the browser
     // reports the click on the canvas itself - which used to clear the selection the user had just made.
     // Deselecting on empty space is handled on pointer-down (beginCanvasInteraction) instead.
-    const target = event.target.closest?.("[data-editor-id]");
+    const target = resolveCanvasTarget(event.target);
     if (!target) return;
     // SVG element selection is performed during pointer-down; this click fallback
     // is only for keyboard-generated activation events.

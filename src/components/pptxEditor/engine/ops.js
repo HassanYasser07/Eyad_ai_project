@@ -1077,7 +1077,9 @@ export function addShape(pkg, slidePath, { prst = "rect", x, y, w, h, hex = null
   });
 }
 
-const MIME = { png: "image/png", jpeg: "image/jpeg", jpg: "image/jpeg", gif: "image/gif" };
+const MIME = { png: "image/png", jpeg: "image/jpeg", jpg: "image/jpeg", gif: "image/gif", svg: "image/svg+xml" };
+const SVG_BLIP_URI = "{96DAC541-7B7A-43D3-8B79-37D633B846F1}";
+const SVG_BLIP_NS = "http://schemas.microsoft.com/office/drawing/2016/SVG/main";
 function newMediaPath(pkg, ext) {
   let max = 0;
   for (const n of [...pkg.order, ...pkg.originalNames]) { const m = /^ppt\/media\/image(\d+)\./.exec(n); if (m) max = Math.max(max, Number(m[1])); }
@@ -1097,6 +1099,49 @@ export function addPicture(pkg, slidePath, { bytes, ext, x, y, w, h, name = "Pic
     return String(id);
   });
 }
+/** Writes a PNG fallback + SVG media pair (PowerPoint's own SVG picture layout) and returns the relationship ids. */
+function putSvgPair(pkg, slidePath, svgBytes, pngBytes) {
+  const pngMedia = newMediaPath(pkg, "png");
+  pkg.ensureDefault("png", MIME.png);
+  pkg.putBinary(pngMedia, pngBytes);
+  const pngRid = pkg.addRel(slidePath, REL.image, pngMedia);
+  const svgMedia = newMediaPath(pkg, "svg");
+  pkg.ensureDefault("svg", MIME.svg);
+  pkg.putBinary(svgMedia, svgBytes);
+  const svgRid = pkg.addRel(slidePath, REL.image, svgMedia);
+  return { pngRid, svgRid };
+}
+const svgExtXml = (svgRid) => `<a:ext xmlns:a="${NS.a}" xmlns:r="${NS.r}" uri="${SVG_BLIP_URI}"><asvg:svgBlip xmlns:asvg="${SVG_BLIP_NS}" r:embed="${svgRid}"/></a:ext>`;
+
+/** Insert an SVG picture: a PNG fallback for the canvas / old viewers plus the real SVG, so it stays recolourable. */
+export function addSvgPicture(pkg, slidePath, { svgBytes, pngBytes, x, y, w, h, name = "Icon" }) {
+  return mutateSlide(pkg, slidePath, "Add SVG image", (doc, tree) => {
+    const { pngRid, svgRid } = putSvgPair(pkg, slidePath, svgBytes, pngBytes);
+    const id = nextId(tree);
+    const node = importFragment(doc, `<p:pic ${NSDECL}><p:nvPicPr><p:cNvPr id="${id}" name="${esc(name)} ${id - 1}"/><p:cNvPicPr><a:picLocks noChangeAspect="1"/></p:cNvPicPr><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:embed="${pngRid}"><a:extLst>${svgExtXml(svgRid)}</a:extLst></a:blip><a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr><a:xfrm><a:off x="${R(x)}" y="${R(y)}"/><a:ext cx="${R(w)}" cy="${R(h)}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic>`);
+    tree.insertBefore(node, endAnchor(tree));
+    return String(id);
+  });
+}
+/** Replace a picture's content with new SVG + PNG fallback (recolouring, or swapping in another SVG). Keeps position and size. */
+export function setSvgPicture(pkg, slidePath, id, { svgBytes, pngBytes }) {
+  return mutateSlide(pkg, slidePath, "Recolor SVG image", (doc, tree) => {
+    const node = findNode(tree, id);
+    const blip = path(node, "blipFill", "blip");
+    if (!blip) throw new PptxError("NOT_PICTURE", "Select a picture first.");
+    const { pngRid, svgRid } = putSvgPair(pkg, slidePath, svgBytes, pngBytes);
+    blip.setAttributeNS(NS.r, "r:embed", pngRid);
+    const existing = descendants(blip, "svgBlip")[0];
+    if (existing) { existing.setAttributeNS(NS.r, "r:embed", svgRid); return; }
+    const ext = importFragment(doc, svgExtXml(svgRid));
+    const extLst = kid(blip, "extLst");
+    if (extLst) extLst.appendChild(ext);
+    else { const list = doc.createElementNS(NS.a, "a:extLst"); list.appendChild(ext); blip.appendChild(list); }
+  });
+}
+function stripSvgBlip(blip) {
+  for (const sb of descendants(blip, "svgBlip")) { const ext = sb.parentNode; ext?.parentNode?.removeChild(ext); }
+}
 /** Swap the picture for a new media part (never overwrites media another slide may share). */
 export function replacePicture(pkg, slidePath, id, { bytes, ext, keepSize = true, naturalRatio = null }) {
   ext = ext.toLowerCase() === "jpg" ? "jpeg" : ext.toLowerCase();
@@ -1110,6 +1155,7 @@ export function replacePicture(pkg, slidePath, id, { bytes, ext, keepSize = true
     pkg.putBinary(media, bytes);
     const rid = pkg.addRel(slidePath, REL.image, media);
     blip.setAttributeNS(NS.r, "r:embed", rid);
+    stripSvgBlip(blip); // the old SVG no longer matches the new bitmap
     for (const n of kids(path(node, "blipFill"), "srcRect")) path(node, "blipFill").removeChild(n);
     if (keepSize && naturalRatio) {
       const b = readBoundsFromNode(node);

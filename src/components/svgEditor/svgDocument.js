@@ -390,7 +390,7 @@ const ICON_PRESENTATION_ATTRS = [
 ];
 
 /** Flattens simple `.class` / `tag` rules of an icon's <style> into inline styles so they cannot leak into the logo. */
-function inlineIconStyles(iconRoot) {
+export function inlineIconStyles(iconRoot) {
   const styles = Array.from(iconRoot.querySelectorAll("style"));
   styles.forEach((styleElement) => {
     const css = String(styleElement.textContent || "").replace(/\/\*[\s\S]*?\*\//g, "");
@@ -497,6 +497,7 @@ export function addSvgIconElement(root, svgSource, name = "Icon") {
   const groupId = nextEditorId();
   group.setAttribute("data-editor-id", groupId);
   group.setAttribute("data-editor-label", String(name || "Icon").slice(0, 60));
+  group.setAttribute("data-editor-icon", "true"); // library icon: one block on canvas; "Ungroup" bakes its transform into the parts
   Array.from(group.querySelectorAll("*")).forEach((element) => {
     element.setAttribute("data-editor-id", nextEditorId());
     if (!isInsideDefinitions(element, group)) {
@@ -661,6 +662,37 @@ export function ungroupElement(root, id) {
   const group = getElementByEditorId(root, id);
   if (!group || group.localName !== "g") throw new Error("Select a group to ungroup.");
   if (isElementLocked(group)) throw new Error("Unlock this group before ungrouping it.");
+  if (group.getAttribute("data-editor-icon") === "true") {
+    // Library icon: push the group's transform / inherited paint down to its parts so nothing moves or changes colour.
+    const transform = group.getAttribute("transform") || "";
+    const inherited = ICON_PRESENTATION_ATTRS.filter((name) => group.hasAttribute(name));
+    Array.from(group.children).forEach((child) => {
+      if (["title", "desc", "metadata", "style"].includes(child.localName)) return;
+      if (["linearGradient", "radialGradient", "pattern"].includes(child.localName)) {
+        if (transform) child.setAttribute(child.localName === "pattern" ? "patternTransform" : "gradientTransform", `${transform} ${child.getAttribute(child.localName === "pattern" ? "patternTransform" : "gradientTransform") || ""}`.trim());
+        return;
+      }
+      if (child.localName === "defs") {
+        Array.from(child.children).forEach((def) => {
+          const attributeName = def.localName === "pattern" ? "patternTransform" : "gradientTransform";
+          if (transform && ["linearGradient", "radialGradient", "pattern"].includes(def.localName) && def.getAttribute(def.localName === "pattern" ? "patternUnits" : "gradientUnits") === "userSpaceOnUse") {
+            def.setAttribute(attributeName, `${transform} ${def.getAttribute(attributeName) || ""}`.trim());
+          }
+        });
+        return;
+      }
+      if (transform) child.setAttribute("transform", `${transform} ${child.getAttribute("transform") || ""}`.trim());
+      inherited.forEach((name) => {
+        const style = child.getAttribute("style") || "";
+        if (!child.hasAttribute(name) && !new RegExp(`(^|;)\\s*${name}\\s*:`, "i").test(style)) child.setAttribute(name, group.getAttribute(name));
+      });
+    });
+    const iconParent = group.parentNode;
+    if (!iconParent) throw new Error("This group cannot be ungrouped.");
+    while (group.firstChild) iconParent.insertBefore(group.firstChild, group);
+    group.remove();
+    return;
+  }
   const protectedAttributes = Array.from(group.attributes).filter((attribute) =>
     !attribute.name.startsWith(EDITOR_ATTRIBUTE_PREFIX) && attribute.name !== "id"
   );
@@ -793,6 +825,31 @@ export function updateElementAttribute(root, id, name, value) {
   const numeric = ["x", "y", "width", "height", "cx", "cy", "r", "rx", "ry", "stroke-width", "opacity", "fill-opacity", "stroke-opacity", "font-size", "letter-spacing", "word-spacing"].includes(name);
   if (numeric && value !== "" && !Number.isFinite(Number(value))) throw new Error(`${name} must be a valid number.`);
 
+  if (element.getAttribute("data-editor-icon") === "true" && (name === "fill" || name === "stroke")) {
+    // Library icon: recolour the whole block, not just the group's own (overridable) paint.
+    const paintOf = (node, property) => {
+      for (let current = node; current && current.nodeType === 1; current = current.parentElement) {
+        const styled = (current.getAttribute("style") || "").match(new RegExp(`(?:^|;)\\s*${property}\\s*:\\s*([^;]+)`, "i"));
+        const authored = styled ? styled[1].trim() : (current.getAttribute(property) || "").trim();
+        if (authored && authored.toLowerCase() !== "inherit") return authored;
+        if (current === element) break;
+      }
+      return property === "fill" ? "#000000" : "none";
+    };
+    Array.from(element.querySelectorAll("path,circle,ellipse,rect,line,polygon,polyline,text,tspan")).forEach((node) => {
+      if (isInsideDefinitions(node, element)) return;
+      if (String(paintOf(node, name)).trim().toLowerCase() === "none") return;
+      writeAttribute(node, name, value);
+    });
+    // After the parts (their previous paint was read first). A new stroke is not put on the group itself, or every
+    // part without a stroke would inherit it.
+    if (name === "fill" || element.hasAttribute("stroke")) writeAttribute(element, name, value);
+    return;
+  }
+  writeAttribute(element, name, value);
+}
+
+function writeAttribute(element, name, value) {
   const style = element.getAttribute("style") || "";
   const cssName = name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
   const styleRule = new RegExp(`(^|;)\\s*${cssName}\\s*:[^;]*`, "i");
