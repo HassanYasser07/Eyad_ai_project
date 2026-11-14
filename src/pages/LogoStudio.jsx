@@ -11,6 +11,7 @@ import { saveBrandIdentity } from "@/services/brandService";
 import { saveStudioOutput } from "@/services/projectContextService";
 import { storePendingAction, getPendingAction, clearPendingAction } from "@/services/guestUsageService";
 import { exportImagePng, exportImageSvg } from "@/services/exportService";
+import { getLogoStyleReference, rasterizeLogoStyleReference } from "@/config/logoStyleReferences";
 import StudioNextActions from "@/components/studios/StudioNextActions";
 import "./logoStudio.css";
 import LogoStudioDesktop from "@/pages/LogoStudioDesktop";
@@ -150,6 +151,8 @@ export default function LogoStudio() {
   // never overwrites fresh results with the previously saved ones.
   const generatedHereRef = React.useRef(false);
   const [mobileTab, setMobileTab] = React.useState("style");
+  // Optional reference logo (id of a file in src/assets/logoStyles). Single select; sent with the generation request.
+  const [logoStyleRef, setLogoStyleRef] = React.useState(null);
 
   const ar = direction === "rtl";
 
@@ -278,6 +281,24 @@ export default function LogoStudio() {
 
     const briefMessage = `صمم لوجو جديد. اسم العلامة: ${gName.trim()}. النشاط: ${gActivity.trim()}.`;
     try {
+      // The selected reference logo (SVG) is rasterized to PNG and travels like the
+      // "Visual style" of the AI Images Studio: style_reference_image + style_reference_prompt.
+      let styleOptions = {};
+      const styleRef = getLogoStyleReference(logoStyleRef);
+      if (styleRef) {
+        const styleDataUrl = await rasterizeLogoStyleReference(styleRef);
+        styleOptions = {
+          style_reference_image: { id: styleRef.id, name: styleRef.en, url: styleDataUrl, prompt: styleRef.prompt },
+          style_reference_prompt: styleRef.prompt,
+        };
+      }
+      const generationOptions = {
+        ...gSelections,
+        // The values currently edited in this studio are the source of truth for generation.
+        brand_name: gName.trim(),
+        activity: gActivity.trim(),
+        ...styleOptions,
+      };
       let data;
       try {
         data = await runEyadEngine({
@@ -286,12 +307,7 @@ export default function LogoStudio() {
           studioId: "logo",
           language: ar ? "ar" : "en",
           action: "generate",
-          designOptions: {
-            ...gSelections,
-            // The values currently edited in this studio are the source of truth for generation.
-            brand_name: gName.trim(),
-            activity: gActivity.trim(),
-          },
+          designOptions: generationOptions,
         });
       } catch (firstError) {
         // A project id can become stale after an anonymous session/login.
@@ -306,12 +322,7 @@ export default function LogoStudio() {
           studioId: "logo",
           language: ar ? "ar" : "en",
           action: "generate",
-          designOptions: {
-            ...gSelections,
-            // The values currently edited in this studio are the source of truth for generation.
-            brand_name: gName.trim(),
-            activity: gActivity.trim(),
-          },
+          designOptions: generationOptions,
         });
       }
 
@@ -437,7 +448,7 @@ export default function LogoStudio() {
         studioId: "logo",
         asset: { id: selectedImage, url: selectedAsset?.url || selectedAsset?.data_url || null },
         approved: true,
-        metadata: { name: name.trim(), activity: activity.trim(), selections, svg_url: svgUrl },
+        metadata: { name: name.trim(), activity: activity.trim(), selections, svg_url: svgUrl, style_reference_id: logoStyleRef || null },
       });
       setApproved(true);
       setLoading(false);
@@ -589,6 +600,8 @@ export default function LogoStudio() {
         back={back}
         onOpenSvgEditor={() => setSvgEditorOpen(true)}
         approvedActions={approvedActions}
+        logoStyleRef={logoStyleRef}
+        setLogoStyleRef={setLogoStyleRef}
       />
       <div className="logo-lab-page min-h-[calc(100dvh-8rem)] flex flex-col gap-5" data-step={step}>
       <header className="flex items-center justify-between gap-3">
@@ -784,5 +797,6 @@ function formatError(error) {
   if (code === "AUTH_LOGIN_REQUIRED") return "Please sign in to generate and save the logo.";
   if (code === "ASSET_UPLOAD_FAILED") return "The logo was generated but could not be saved.";
   if (code === "GENERATION_FAILED") return "Logo generation failed. Please try again.";
+  if (code.startsWith("LOGO_STYLE_REFERENCE_") || code === "STYLE_REFERENCE_LOAD_FAILED") return "The selected style reference could not be loaded. Choose another one or clear it.";
   return code || "Something went wrong. Please try again.";
 }

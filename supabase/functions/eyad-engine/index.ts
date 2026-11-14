@@ -298,6 +298,8 @@ function buildProfessionalLogoPrompt({
   language,
   variantIndex = 0,
   variantCount = 1,
+  styleReferencePrompt = "",
+  hasStyleReferenceImage = false,
 }: {
   basePrompt: string;
   message: string;
@@ -305,6 +307,8 @@ function buildProfessionalLogoPrompt({
   language: string;
   variantIndex?: number;
   variantCount?: number;
+  styleReferencePrompt?: string;
+  hasStyleReferenceImage?: boolean;
 }) {
   const brief = extractLogoBrief(message);
   // The Logo Studio fields are the source of truth; the regex brief extracted
@@ -373,6 +377,10 @@ function buildProfessionalLogoPrompt({
     "Composition: one centered logo lockup with generous breathing room and a strong visual hierarchy. The mark should occupy the canvas confidently without becoming tiny or floating in excessive empty space.",
     "Background: a plain removable background only for generation. The final pipeline will remove it. Never design any white box, frame, panel, badge, card, or backdrop as part of the logo.",
     "Do not create multiple logos in one image. Create exactly one finished concept per output.",
+    hasStyleReferenceImage
+      ? "STYLE REFERENCE LOGO (the attached image): use it ONLY as a design-language reference. Match its shape language, stroke/weight logic, level of detail, symmetry, corner treatment, symbol-to-text balance, lockup layout and overall mood. Do NOT copy its symbol, lettering, text, name or exact shapes, and do NOT reuse its colors when an approved palette is given above. The symbol and wordmark must be NEW and derived from the brief, so the result is clearly a different logo in a similar style."
+      : "",
+    hasStyleReferenceImage && styleReferencePrompt ? "Style reference notes: " + styleReferencePrompt : "",
     conceptDirection,
     basePrompt ? "Brief context from EYAD: " + basePrompt : "",
   ].filter(Boolean).join("\n");
@@ -1053,6 +1061,11 @@ Deno.serve(async (req: Request) => {
     ...rawDesignOptions,
     ...(Array.isArray(rawDesignOptions.reference_images)
       ? { reference_images: rawDesignOptions.reference_images.map((item: any) => ({ ...item, data_url: item?.data_url ? "[inline-image-omitted]" : null })) }
+      : {}),
+    // The Logo Studio style reference is a rasterized PNG data URL; it is used straight from `body`.
+    ...(rawDesignOptions.style_reference_image && typeof rawDesignOptions.style_reference_image === "object"
+      && String((rawDesignOptions.style_reference_image as any).url || "").startsWith("data:")
+      ? { style_reference_image: { ...(rawDesignOptions.style_reference_image as any), url: "[inline-image-omitted]" } }
       : {}),
   };
   let referenceImage: string | null = null;
@@ -2294,7 +2307,7 @@ The supplied approved logo reference must be used as the actual printed logo on 
 
         // OpenAI handles new logo concepts. We keep the existing EYAD
         // credit/job/finalization flow; Recraft is used after approval for SVG vectorization.
-        if (isLogo && !imageReference && !styleReferenceUrl) {
+        if (isLogo && !imageReference) {
           if (!openAiKey) {
             return json({ error: "OPENAI_CONFIG_ERROR", detail: "OpenAI API key is not configured." }, 500);
           }
@@ -2310,9 +2323,30 @@ The supplied approved logo reference must be used as the actual printed logo on 
               language,
               variantIndex: i,
               variantCount: generationVariantCount,
+              styleReferencePrompt,
+              hasStyleReferenceImage: Boolean(styleReferenceUrl),
             }));
-          const logoResults = await Promise.all(logoPrompts.map(async (variantPrompt) => {
-            const response = await fetchWithTimeout("https://api.openai.com/v1/images/generations", {
+          // With a style reference the Images Edit API is used (the reference travels as an input
+          // image); without one this is the same text-to-image request as before.
+          const requestLogoImage = async (variantPrompt: string, requestSize: string): Promise<Response> => {
+            if (styleReferenceUrl) {
+              const formData = new FormData();
+              formData.append("model", "gpt-image-2.5-sunburst");
+              formData.append("prompt", variantPrompt);
+              formData.append("n", "1");
+              formData.append("quality", "high");
+              formData.append("size", requestSize);
+              formData.append("background", "transparent");
+              formData.append("output_format", "png");
+              const attached = await appendOpenAIImageInput(formData, styleReferenceUrl, "style-reference.png", "image");
+              if (!attached) throw new Error("STYLE_REFERENCE_LOAD_FAILED");
+              return await fetchWithTimeout("https://api.openai.com/v1/images/edits", {
+                method: "POST",
+                headers: { "Authorization": "Bearer " + openAiKey },
+                body: formData,
+              }, 150000);
+            }
+            return await fetchWithTimeout("https://api.openai.com/v1/images/generations", {
               method: "POST",
               headers: {
                 "Authorization": "Bearer " + openAiKey,
@@ -2322,12 +2356,19 @@ The supplied approved logo reference must be used as the actual printed logo on 
                 model: "gpt-image-2.5-sunburst",
                 prompt: variantPrompt,
                 n: 1,
-                size: "2048x2048",
+                size: requestSize,
                 quality: "high",
                 background: "transparent",
                 output_format: "png",
               }),
             }, 150000);
+          };
+          const logoResults = await Promise.all(logoPrompts.map(async (variantPrompt) => {
+            let response = await requestLogoImage(variantPrompt, "2048x2048");
+            if (!response.ok && response.status === 400 && styleReferenceUrl) {
+              const firstRaw = await response.clone().text();
+              if (/size|dimension|resolution/i.test(firstRaw)) response = await requestLogoImage(variantPrompt, "1024x1024");
+            }
             const raw = await response.text();
             let data: any = {};
             try { data = JSON.parse(raw); } catch { }
@@ -2400,7 +2441,7 @@ The supplied approved logo reference must be used as the actual printed logo on 
               kind: "logo",
               name: (project.name || "شعار جديد").trim() + ".png",
               prompt: logoPrompts[index],
-              input: { design_options: designOptions, has_reference_image: false, variant_index: index + 1 },
+              input: { design_options: designOptions, has_reference_image: false, has_style_reference: Boolean(styleReferenceUrl), variant_index: index + 1 },
               metadata: {
                 source: "openai-api",
                 provider: "openai",
