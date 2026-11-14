@@ -1045,7 +1045,16 @@ Deno.serve(async (req: Request) => {
   const streamRequested = body?.stream === true && action === "chat";
   const studioId = normalizeStudioId(body?.studio_id) || detectStudio(message);
   const projectId = body?.project_id || null;
-  const designOptions = body?.design_options && typeof body.design_options === "object" ? body.design_options : {};
+  const rawDesignOptions = body?.design_options && typeof body.design_options === "object" ? body.design_options : {};
+  // Reference photos arrive as base64 data URLs. They are used for generation straight from `body`,
+  // but must not be copied into job payloads / generations rows (multi-MB JSON writes were slow
+  // and could push the request over the edge-function time limit).
+  const designOptions = {
+    ...rawDesignOptions,
+    ...(Array.isArray(rawDesignOptions.reference_images)
+      ? { reference_images: rawDesignOptions.reference_images.map((item: any) => ({ ...item, data_url: item?.data_url ? "[inline-image-omitted]" : null })) }
+      : {}),
+  };
   let referenceImage: string | null = null;
   if (typeof body?.reference_image === "string") {
     const refImg = body.reference_image;

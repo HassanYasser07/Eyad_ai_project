@@ -2,7 +2,7 @@ import { supabase, SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY } from "@/lib/supabase
 import { clearGenerationRequest, getGenerationRequestId, rememberGenerationRequestJob } from "@/services/idempotency";
 
 const ENGINE_URL = `${SUPABASE_URL}/functions/v1/eyad-engine`;
-const REQUEST_TIMEOUT_MS = 120000;
+const REQUEST_TIMEOUT_MS = 150000;
 
 /**
  * Calls the EYAD engine edge function using fetch() directly (not supabase.functions.invoke)
@@ -65,51 +65,60 @@ export async function runEyadEngine({
   body.request_key = requestKey;
 
   const startTime = Date.now();
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-
+  // Large uploads / slow providers can exceed one window. The request key makes a retry
+  // idempotent: the server replays the same job (no second charge), so retry once.
+  const MAX_ATTEMPTS = body.action === "generate" ? 2 : 1;
+  let timeoutId = null;
   let response = null;
 
-  try {
-    console.log("[EYAD Engine] sending request", {
-      url: ENGINE_URL,
-      action: body.action,
-      hasMessage: Boolean(body.message),
-      hasProjectId: Boolean(body.project_id),
-      hasReferenceImage: Boolean(body.reference_image),
-      attachmentCount: attachments?.length || 0,
-      requestId: stableRequestId,
-    });
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+    const controller = new AbortController();
+    timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      console.log("[EYAD Engine] sending request", {
+        url: ENGINE_URL,
+        action: body.action,
+        attempt,
+        hasMessage: Boolean(body.message),
+        hasProjectId: Boolean(body.project_id),
+        hasReferenceImage: Boolean(body.reference_image),
+        attachmentCount: attachments?.length || 0,
+        requestId: stableRequestId,
+      });
 
-    response = await fetch(ENGINE_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "apikey": SUPABASE_PUBLISHABLE_KEY,
-        "Authorization": `Bearer ${accessToken}`,
-      },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
-  } catch (fetchError) {
-    clearTimeout(timeoutId);
-    const elapsed = Date.now() - startTime;
-    const isTimeout = fetchError?.name === "AbortError";
+      response = await fetch(ENGINE_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "apikey": SUPABASE_PUBLISHABLE_KEY,
+          "Authorization": `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+      break;
+    } catch (fetchError) {
+      clearTimeout(timeoutId);
+      const elapsed = Date.now() - startTime;
+      const isTimeout = fetchError?.name === "AbortError";
 
-    console.error("[EYAD Engine] fetch() FAILED", {
-      url: ENGINE_URL,
-      elapsed_ms: elapsed,
-      errorName: fetchError?.name,
-      errorMessage: fetchError?.message,
-      isTimeout,
-      isNetworkError: true,
-      reachedServer: false,
-      hint: isTimeout
-        ? `Request timed out after ${REQUEST_TIMEOUT_MS}ms. The edge function may still be processing on the server — check if a job was created.`
-        : "fetch() threw before any response was received. The connection was never established or was dropped. Check: network connectivity, DNS, TLS, CORS, ad blockers, or the edge function URL.",
-    });
+      console.error("[EYAD Engine] fetch() FAILED", {
+        url: ENGINE_URL,
+        attempt,
+        elapsed_ms: elapsed,
+        errorName: fetchError?.name,
+        errorMessage: fetchError?.message,
+        isTimeout,
+        isNetworkError: true,
+        reachedServer: false,
+        hint: isTimeout
+          ? `Request timed out after ${REQUEST_TIMEOUT_MS}ms. The edge function may still be processing on the server — check if a job was created.`
+          : "fetch() threw before any response was received. Check: network connectivity, DNS, TLS, CORS, ad blockers, or the edge function URL.",
+      });
 
-    throw new Error(isTimeout ? "NETWORK_TIMEOUT" : "NETWORK_ERROR");
+      if (attempt < MAX_ATTEMPTS) continue;
+      throw new Error(isTimeout ? "NETWORK_TIMEOUT" : "NETWORK_ERROR");
+    }
   }
 
   clearTimeout(timeoutId);
