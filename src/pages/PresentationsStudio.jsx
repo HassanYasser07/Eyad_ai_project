@@ -117,7 +117,11 @@ export default function PresentationsStudio() {
       const inheritedPrompt = String(project?.presentation_brief?.topic || "").trim() || extractPresentationTopic(String(project?.initial_prompt || project?.description || ""));
       if (inheritedPrompt) setSettings((prev) => (prev.topic ? prev : { ...prev, topic: inheritedPrompt }));
       const identity = await getBrandIdentity(projectId);
-      if (active) setBrand(identity);
+      // "Approved brand identity connected" is only true when an identity was really approved (logo, palette, fonts or
+      // background). A bare name derived from the chat message must never trigger the banner.
+      const hasApprovedIdentity = Boolean(identity && (identity.logo?.url || identity.palette || identity.typography || identity.background));
+      const savedName = String(project?.project_data?.brand_identity?.brand_name || project?.project_data?.logo_brief?.name || "").trim();
+      if (active) setBrand(hasApprovedIdentity ? { ...identity, brand_name: savedName } : null);
     }).catch(() => {});
     return () => { active = false; };
   }, [projectId]);
@@ -211,7 +215,7 @@ export default function PresentationsStudio() {
         {brand && (
           <div className="mx-auto mb-6 flex max-w-4xl items-center gap-3 rounded-2xl border border-border bg-card p-4 shadow-sm">
             {brand.logo?.url && <img src={brand.logo.url} alt="" className="h-12 w-12 rounded-2xl bg-white object-contain p-2" />}
-            <div><strong className="block text-sm text-foreground">{brand.brand_name}</strong><span className="text-xs text-muted-foreground">{loc({ ar: "الهوية المعتمدة متصلة", en: "Approved brand identity connected" })}</span></div>
+            <div>{brand.brand_name && <strong className="block text-sm text-foreground">{brand.brand_name}</strong>}<span className="text-xs text-muted-foreground">{loc({ ar: "الهوية المعتمدة متصلة", en: "Approved brand identity connected" })}</span></div>
             {profile?.companyName && <span className="ms-auto text-xs font-bold text-muted-foreground">{profile.companyName}</span>}
           </div>
         )}
