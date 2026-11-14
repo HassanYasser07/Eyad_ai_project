@@ -6,6 +6,7 @@ import { useAuth } from "@/lib/AuthContext";
 import { projectService } from "@/services/projectService";
 import { getBrandIdentity } from "@/services/brandService";
 import StudioNextActions from "@/components/studios/StudioNextActions";
+import DesktopShell from "@/components/home/DesktopShell";
 import PromptComposer from "@/components/presentations/PromptComposer";
 import TemplateGallery from "@/components/presentations/TemplateGallery";
 import PresentationResult from "@/components/presentations/PresentationResult";
@@ -185,6 +186,7 @@ export default function PresentationsStudio() {
   const topicError = errors.topic ? fieldMessage(errors.topic === "REQUIRED" ? "TOPIC_REQUIRED" : errors.topic, loc) : "";
 
   return (
+    <DesktopShell>
     <div className="min-h-full bg-[radial-gradient(70%_45%_at_50%_0%,hsl(var(--primary)/0.10),transparent_70%)] px-4 py-3 md:px-8" dir={direction}>
       <div className="mx-auto max-w-6xl">
         <header className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -255,5 +257,6 @@ export default function PresentationsStudio() {
         </PptxEditorLoadBoundary>
       )}
     </div>
+    </DesktopShell>
   );
 }

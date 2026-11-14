@@ -437,7 +437,33 @@ function resolveFallbackImageSize(value: string, fallback = "1024x1024") {
   return key ? AI_IMAGE_ASPECTS[key].fallback : fallback;
 }
 
-async function appendOpenAIImageInput(formData: FormData, source: string, filename: string) {
+// Removes heavy payloads (base64 data URLs, very long strings) from any value
+// before it is serialized into an OpenAI prompt variable / prompt text.
+// OpenAI limits a single prompt variable to 1,048,576 characters, and a few
+// reference images as data URLs are enough to exceed it.
+function sanitizeForPrompt(value: any, depth = 0): any {
+  if (value === null || value === undefined) return value;
+  if (typeof value === "string") {
+    if (value.startsWith("data:")) {
+      const mime = value.slice(5, value.indexOf(";") > 0 ? value.indexOf(";") : 20);
+      return "[omitted data URL: " + mime + ", ~" + Math.round(value.length / 1024) + " KB]";
+    }
+    return value.length > 8000 ? value.slice(0, 8000) + "…[truncated]" : value;
+  }
+  if (typeof value !== "object") return value;
+  if (depth > 8) return "[omitted: too deep]";
+  if (Array.isArray(value)) return value.slice(0, 30).map((item) => sanitizeForPrompt(item, depth + 1));
+  const out: Record<string, any> = {};
+  for (const [key, item] of Object.entries(value)) out[key] = sanitizeForPrompt(item, depth + 1);
+  return out;
+}
+
+// Final safety net: a prompt variable must never exceed the provider limit.
+function capPromptVariable(text: string, max = 900000) {
+  return text.length > max ? text.slice(0, max) : text;
+}
+
+async function appendOpenAIImageInput(formData: FormData, source: string, filename: string, fieldName = "image") {
   if (!source) return false;
   try {
     let blob: Blob;
@@ -451,7 +477,7 @@ async function appendOpenAIImageInput(formData: FormData, source: string, filena
       if (!response.ok) return false;
       blob = await response.blob();
     }
-    formData.append("image", blob, filename);
+    formData.append(fieldName, blob, filename);
     return true;
   } catch {
     return false;
@@ -1067,7 +1093,7 @@ Deno.serve(async (req: Request) => {
       latest_asset_id: project.metadata?.latest_asset_id || latestAssetResult.data?.id || null,
       latest_generation_id: project.metadata?.latest_generation_id || latestGenerationResult.data?.id || null,
       logo_brief: project.metadata?.logo_brief || null,
-      current_design_options: designOptions || {},
+      current_design_options: sanitizeForPrompt(designOptions || {}),
     },
     conversation: {
       id: conversation.id,
@@ -1075,8 +1101,8 @@ Deno.serve(async (req: Request) => {
       status: conversation.status,
       updated_at: conversation.updated_at,
     },
-    latest_asset: latestAssetResult.data || null,
-    latest_generation: latestGenerationResult.data || null,
+    latest_asset: sanitizeForPrompt(latestAssetResult.data || null),
+    latest_generation: sanitizeForPrompt(latestGenerationResult.data || null),
   };
 
   // Detect whether the user is modifying an existing design or starting a new one.
@@ -1213,13 +1239,13 @@ Deno.serve(async (req: Request) => {
   // The published OpenAI Prompt is the source of truth for semantic
   // understanding, entity extraction, clarification, and studio routing.
   // The application remains the execution layer.
-  const runtimeConversationContext = JSON.stringify({
-    recent_messages: history,
+  const runtimeConversationContext = capPromptVariable(JSON.stringify({
+    recent_messages: sanitizeForPrompt(history),
     current_studio_id: studioId,
     current_action: action,
-    current_design_options: designOptions,
-  });
-  const runtimeProjectContext = JSON.stringify(contextCore);
+    current_design_options: sanitizeForPrompt(designOptions),
+  }));
+  const runtimeProjectContext = capPromptVariable(JSON.stringify(sanitizeForPrompt(contextCore)));
 
   // Explicit generation commands from a studio UI keep their existing
   // execution contract. Natural-language chat requests go through the
@@ -1985,7 +2011,8 @@ The supplied approved logo reference must be used as the actual printed logo on 
           if (!logoReference) {
             return json({ error: "MOCKUP_REFERENCE_REQUIRED", detail: "An approved logo reference image is required for mockup generation." }, 400);
           }
-          const logoAttached = await appendReferenceImage(logoReference, "image", "approved-logo.png");
+          const mockupImageField = styleReferenceUrl ? "image[]" : "image";
+          const logoAttached = await appendReferenceImage(logoReference, mockupImageField, "approved-logo.png");
           if (!logoAttached) {
             return json({ error: "MOCKUP_REFERENCE_LOAD_FAILED", detail: "The approved logo reference could not be loaded." }, 502);
           }
@@ -1994,7 +2021,7 @@ The supplied approved logo reference must be used as the actual printed logo on 
           // Other exact-data mockups keep their existing deterministic client-side
           // compositing path for now.
           if (styleReferenceUrl) {
-            await appendReferenceImage(styleReferenceUrl, "image", "style-reference.png");
+            await appendReferenceImage(styleReferenceUrl, mockupImageField, "style-reference.png");
           }
 
           const imageResponse = await fetchWithTimeout("https://api.openai.com/v1/images/edits", {
@@ -2306,12 +2333,15 @@ The supplied approved logo reference must be used as the actual printed logo on 
               formData.append("background", isLogo ? "transparent" : "opaque");
               formData.append("output_format", "png");
 
+              // The Images Edit API accepts several images only as `image[]`.
+              // A repeated plain `image` field is rejected as a duplicate parameter.
+              const imageField = (imageReference && styleReferenceUrl) ? "image[]" : "image";
               if (imageReference) {
-                const attached = await appendOpenAIImageInput(formData, imageReference, "reference-image.png");
+                const attached = await appendOpenAIImageInput(formData, imageReference, "reference-image.png", imageField);
                 if (!attached) throw new Error("IMAGE_REFERENCE_LOAD_FAILED");
               }
               if (styleReferenceUrl) {
-                const attached = await appendOpenAIImageInput(formData, styleReferenceUrl, "style-reference.png");
+                const attached = await appendOpenAIImageInput(formData, styleReferenceUrl, "style-reference.png", imageField);
                 if (!attached) throw new Error("STYLE_REFERENCE_LOAD_FAILED");
               }
 

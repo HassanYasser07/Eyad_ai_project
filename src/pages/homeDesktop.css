@@ -6,6 +6,14 @@
 
 .eyad-dt-shell { display: none; }
 
+/* Shell wrapping a page (e.g. Presentation Studio): below 1024px it is a plain wrapper, sidebars hidden. */
+@media (max-width: 1023px) {
+  .eyad-dt-shell.eyad-dt-shell--page { display: block; }
+  .eyad-dt-shell--page > .eyad-dt-sidebar,
+  .eyad-dt-shell--page .eyad-dt-header,
+  .eyad-dt-shell--page .eyad-dt-rail { display: none; }
+}
+
 @media (min-width: 1024px) {
   .eyad-home--mobile { display: none !important; }
 
