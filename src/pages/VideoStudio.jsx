@@ -9,6 +9,8 @@ import { projectService } from "@/services/projectService";
 import { getProjectContext, saveStudioOutput } from "@/services/projectContextService";
 import StudioNextActions from "@/components/studios/StudioNextActions";
 import "./videoStudio.css";
+import TypewriterHint from "@/components/ui/TypewriterHint";
+import { VIDEO_HINTS } from "@/config/typewriterHints";
 
 const MODELS = [
   { id: "minimax-h3-turbo", name: "MiniMax H3 Max Turbo", quality: "standard", ar: "جودة عادية", en: "Standard", ratios: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"], durations: [5, 6, 8, 10, 12, 15], resolutions: ["480P", "768P", "1080P"], defaultResolution: "768P", maxImages: 5 },
@@ -225,7 +227,7 @@ export default function VideoStudio() {
       <section className="video-studio-controls">
         <div className="video-studio-title"><Wand2 /> {loc({ en: "Describe your video", ar: "اوصف الفيديو" })}<span className="video-studio-required">{loc({ en: "Required", ar: "مطلوب" })}</span></div>
         <div className="video-studio-composer">
-          <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={5} maxLength={2500} placeholder={loc({ en: "Describe the scene, subject, camera movement, lighting and mood…", ar: "اكتب وصف المشهد والعناصر وحركة الكاميرا والإضاءة والأجواء المطلوبة…" })} />
+          <TypewriterHint value={prompt} sentences={VIDEO_HINTS}><textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={5} maxLength={2500} aria-label={loc({ en: "Describe your video", ar: "اوصف الفيديو" })} /></TypewriterHint>
           <div className="video-studio-composer-bar">
             <PillSelect label={loc({ en: "AI Model", ar: "موديل الفيديو" })} valueLabel={selectedModel.name} value={modelId} onChange={changeModel} options={MODELS.map((model) => ({ id: model.id, label: model.name, sub: loc({ en: model.en, ar: model.ar }) }))} />
             <PillSelect label={loc({ en: "Format", ar: "الفورمات" })} valueLabel={aspect} value={aspect} onChange={(id) => setAspect(id)} options={FORMATS.map((item) => ({ id: item.id, label: item.id, sub: loc({ en: item.en, ar: item.ar }), disabled: !selectedModel.ratios.includes(item.id) }))} />

@@ -12,6 +12,8 @@ import Logo from "@/components/Logo";
 import { useI18n } from "@/i18n/I18nContext";
 import { useAuth } from "@/lib/AuthContext";
 import "./logoStudioDesktop.css";
+import TypewriterHint from "@/components/ui/TypewriterHint";
+import { LOGO_HINTS } from "@/config/typewriterHints";
 
 const PRIMARY_NAV = [
   { to: "/home", key: "nav.home", icon: HomeIcon },
@@ -304,7 +306,7 @@ export default function LogoStudioDesktop({
               </label>
             </div>
             <p className="logo-desktop-prompt-sub">{ar ? "وصف إضافي للتصميم (اختياري)" : "Additional design brief (optional)"}</p>
-            <textarea id="logo-desktop-brief" value={brief} onChange={e => { setBrief(e.target.value); setFormError(""); }} placeholder={ar ? "مثال: شعار عصري واضح، مناسب للواجهة والتغليف..." : "Example: A clean modern logo for storefront and packaging..."}/>
+            <TypewriterHint value={brief} sentences={LOGO_HINTS}><textarea id="logo-desktop-brief" value={brief} onChange={e => { setBrief(e.target.value); setFormError(""); }} aria-label={ar ? "وصف إضافي للتصميم" : "Additional design brief"}/></TypewriterHint>
 
             <section className="logo-desktop-choice-section" aria-labelledby="logo-desktop-styles-heading">
               <div className="logo-desktop-choice-heading">

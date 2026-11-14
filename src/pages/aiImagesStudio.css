@@ -33,15 +33,6 @@
 .aiw-prompt:focus-within{border-color:hsl(var(--primary));box-shadow:0 0 0 3px hsl(var(--primary)/.15);background:hsl(var(--card))}
 .aiw-prompt textarea{display:block;width:100%;min-height:92px;resize:none;border:0;outline:0;background:transparent;color:hsl(var(--foreground));padding:13px 14px 4px;font-size:.93rem;line-height:1.7;box-sizing:border-box}
 .aiw-prompt textarea::placeholder{color:hsl(var(--muted-foreground)/.8)}
-.aiw-prompt{position:relative}
-.aiw-field{display:grid}
-.aiw-field>*{grid-area:1/1}
-.aiw-field>textarea{align-self:stretch;height:100%}
-.aiw-typehint-sizer{visibility:hidden;pointer-events:none;padding:13px 14px 4px;box-sizing:border-box;font-size:.93rem;line-height:1.7;overflow-wrap:anywhere;user-select:none}
-.aiw-typehint{align-self:start;padding:13px 14px 4px;box-sizing:border-box;pointer-events:none;color:hsl(var(--muted-foreground)/.8);font-size:.93rem;line-height:1.7;text-align:start;overflow-wrap:anywhere}
-.aiw-typehint-caret{display:inline-block;width:2px;height:1.05em;margin-inline-start:2px;vertical-align:text-bottom;background:hsl(var(--primary));animation:aiw-caret 1s steps(1) infinite}
-@keyframes aiw-caret{50%{opacity:0}}
-@media (prefers-reduced-motion:reduce){.aiw-typehint-caret{animation:none}}
 .aiw-prompt-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 10px 10px}
 .aiw-refs{display:flex;gap:6px;flex-wrap:wrap;min-width:0;direction:ltr}
 .aiw-ref{position:relative;width:38px;height:38px}

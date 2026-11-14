@@ -11,6 +11,8 @@ import { projectService } from "@/services/projectService";
 import { assetService } from "@/services/assetService";
 import { saveStudioOutput } from "@/services/projectContextService";
 import StudioNextActions from "@/components/studios/StudioNextActions";
+import TypewriterHint from "@/components/ui/TypewriterHint";
+import { IMAGE_HINTS } from "@/config/typewriterHints";
 import "./aiImagesStudio.css";
 
 const MIN_PROMPT_LENGTH = 3;
@@ -47,62 +49,6 @@ const ASPECTS = [
   { id: "4:3", w: 4, h: 3, ar: "قياسي", en: "Standard", useAr: "عرض / طباعة", useEn: "Display / Print" },
   { id: "3:4", w: 3, h: 4, ar: "بورتريه", en: "Portrait", useAr: "بوستر / بنترست", useEn: "Poster / Pinterest" },
 ];
-
-// Animated hint shown inside the empty prompt field (typed, held, erased, next one...).
-const HINT_SENTENCES = [
-  "Create a premium luxury perfume product image, with elegant lighting, a dark background, and sophisticated gold details. Ultra-realistic, high-end commercial photography.",
-  "Generate a futuristic modern city at sunset, with stunning architecture, cinematic lighting, realistic details, and a professional 3D render style.",
-  "Create a professional advertising poster for a luxury coffee brand, featuring a beautifully styled coffee cup, warm colors, creative composition, and premium visual quality.",
-  "A beautiful minimalist product photography scene featuring a skincare bottle surrounded by natural flowers and soft sunlight, clean composition, realistic textures, and studio lighting.",
-];
-const LONGEST_HINT = HINT_SENTENCES.reduce((a, b) => (b.length > a.length ? b : a), "");
-const HINT_TYPE_MS = 28;
-const HINT_ERASE_MS = 10;
-const HINT_HOLD_MS = 2000;
-const HINT_GAP_MS = 450;
-
-/**
- * Returns the text to display. While `active` is false (user is typing, hovering or the
- * field is focused) everything stops and the text is cleared; when it becomes active again
- * the current sentence starts typing from the beginning.
- */
-function useTypewriterHint(active, sentences) {
-  const [text, setText] = React.useState("");
-  const indexRef = React.useRef(0);
-  React.useEffect(() => {
-    if (!active) { setText(""); return undefined; }
-    let cancelled = false;
-    let timer = null;
-    const reduceMotion = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-    const later = (fn, ms) => { timer = window.setTimeout(() => { if (!cancelled) fn(); }, ms); };
-
-    const typeSentence = () => {
-      const sentence = sentences[indexRef.current % sentences.length];
-      if (reduceMotion) {
-        setText(sentence);
-        later(() => { indexRef.current += 1; typeSentence(); }, HINT_HOLD_MS * 2);
-        return;
-      }
-      let i = 0;
-      const typeStep = () => {
-        i += 1;
-        setText(sentence.slice(0, i));
-        if (i < sentence.length) later(typeStep, HINT_TYPE_MS);
-        else later(eraseStep, HINT_HOLD_MS);
-      };
-      const eraseStep = () => {
-        i -= 1;
-        setText(sentence.slice(0, Math.max(0, i)));
-        if (i > 0) later(eraseStep, HINT_ERASE_MS);
-        else later(() => { indexRef.current = (indexRef.current + 1) % sentences.length; typeSentence(); }, HINT_GAP_MS);
-      };
-      later(typeStep, HINT_GAP_MS);
-    };
-    typeSentence();
-    return () => { cancelled = true; if (timer) window.clearTimeout(timer); };
-  }, [active, sentences]);
-  return text;
-}
 
 const getAspect = (id) => ASPECTS.find((item) => item.id === id) || null;
 const imageSrc = (image) => image?.data_url || image?.url || "";
@@ -275,8 +221,6 @@ export default function AIImagesStudio() {
   const [referenceImages, setReferenceImages] = React.useState([]);
   const [styleReference, setStyleReference] = React.useState(null);
   const [lightboxSrc, setLightboxSrc] = React.useState(null);
-  const [promptFocused, setPromptFocused] = React.useState(false);
-  const [promptHovered, setPromptHovered] = React.useState(false);
   const [voiceMode, setVoiceMode] = React.useState(false);
   const [voiceRecording, setVoiceRecording] = React.useState(false);
   const [voiceProcessing, setVoiceProcessing] = React.useState(false);
@@ -296,8 +240,6 @@ export default function AIImagesStudio() {
   if (!hasPrompt) missing.push(loc({ en: "describe your image", ar: "وصف الصورة" }));
   if (!aspect) missing.push(loc({ en: "choose an aspect ratio", ar: "نسبة العرض" }));
   const canGenerate = missing.length === 0 && !generating;
-  const hintActive = !prompt && !promptFocused && !promptHovered && !voiceMode;
-  const hintText = useTypewriterHint(hintActive, HINT_SENTENCES);
 
   React.useEffect(() => {
     let active = true;
@@ -586,22 +528,9 @@ export default function AIImagesStudio() {
             </div>
             {!voiceMode ? (
               <div className="aiw-prompt">
-                <div className="aiw-field">
-                <div className="aiw-typehint-sizer" dir="auto" aria-hidden="true">{LONGEST_HINT}</div>
-                <textarea
-                  value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
-                  onFocus={() => setPromptFocused(true)}
-                  onBlur={() => setPromptFocused(false)}
-                  onMouseEnter={() => setPromptHovered(true)}
-                  onMouseLeave={() => setPromptHovered(false)}
-                  aria-label={loc({ en: "Describe your image", ar: "اوصف صورتك" })}
-                  rows={4}
-                />
-                {hintActive && hintText ? (
-                  <div className="aiw-typehint" dir="auto" aria-hidden="true">{hintText}<i className="aiw-typehint-caret" /></div>
-                ) : null}
-                </div>
+                <TypewriterHint value={prompt} sentences={IMAGE_HINTS}>
+                  <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} aria-label={loc({ en: "Describe your image", ar: "اوصف صورتك" })} rows={4} />
+                </TypewriterHint>
                 <div className="aiw-prompt-bar">
                   <div className="aiw-refs">
                     {referenceImages.map((item, index) => (
