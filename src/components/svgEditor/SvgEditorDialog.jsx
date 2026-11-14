@@ -6,12 +6,14 @@ import {
   Copy, Trash2, Group, Ungroup, FileCode2,
   MousePointer2, Type, CircleAlert, CheckCircle2, FileUp,
   Palette, Eye, EyeOff,
-  Image, ChevronLeft, Check, Loader2,
+  Image, ChevronLeft, Check, Loader2, Shapes,
 } from "lucide-react";
 import SvgLayersPanel from "@/components/svgEditor/SvgLayersPanel";
 import SvgPropertiesPanel from "@/components/svgEditor/SvgPropertiesPanel";
 import SvgContextBar from "@/components/svgEditor/SvgContextBar";
 import LogoPalettePicker from "@/components/svgEditor/LogoPalettePicker";
+import IconLibraryPicker from "@/components/shared/IconLibraryPicker";
+import { fetchIconSvgText } from "@/services/iconLibraryService";
 import { ensureEditorFonts } from "@/components/svgEditor/svgEditorControls";
 import {
   LayersIcon, ArrangeIcon, SizeIcon, ColorsIcon, TextIcon, TypographyIcon, BackgroundIcon,
@@ -19,6 +21,7 @@ import {
 } from "@/components/svgEditor/svgEditorIcons";
 import {
   addTextElement,
+  addSvgIconElement,
   cloneSelectedElements,
   deleteSelectedElements,
   editSvgMarkup,
@@ -108,6 +111,13 @@ function getBounds(element) {
   } catch {
     return null;
   }
+}
+
+/** The element a canvas click selects: library icons are one block, so any click inside resolves to the icon's group. */
+function resolveCanvasTarget(node) {
+  const target = node?.closest?.("[data-editor-id]");
+  if (!target) return null;
+  return target.closest("[data-editor-icon]") || target;
 }
 
 function isDomElementLocked(element) {
@@ -350,6 +360,7 @@ export default function SvgEditorDialog({ onClose, direction = "ltr", initialSvg
     return () => cancelAnimationFrame(frame);
   }, [mobileEditorTab, backgroundSubTab]);
   const [palettePickerOpen, setPalettePickerOpen] = React.useState(false);
+  const [iconLibraryOpen, setIconLibraryOpen] = React.useState(false);
   // Extra Google fonts for the font picker (loaded once, one <link> per family).
   React.useEffect(() => { ensureEditorFonts(); }, []);
 
@@ -719,6 +730,23 @@ export default function SvgEditorDialog({ onClose, direction = "ltr", initialSvg
     createTextSelection();
   };
 
+  // Icon library: download the chosen SVG and add it as one editable group.
+  const insertLibraryIcon = async (icon) => {
+    if (!markupRef.current) return;
+    try {
+      const source = await fetchIconSvgText(icon);
+      let newId = null;
+      const succeeded = performEdit(t("iconLibrary.inserted"), (root) => { newId = addSvgIconElement(root, source, icon.name); });
+      if (succeeded && newId) {
+        setSelectedIds([newId]);
+        setIconLibraryOpen(false);
+        setMobileEditorTab(null);
+      }
+    } catch (iconError) {
+      setError(iconError?.code === "ICON_FETCH_FAILED" ? t("iconLibrary.insertFailed") : localizeSvgError(iconError?.message, t));
+    }
+  };
+
   const requestEditText = () => {
     if (!details || !["text", "tspan"].includes(details.tag) || locked) return;
     setMobileTextComposerMode("edit");
@@ -947,7 +975,7 @@ export default function SvgEditorDialog({ onClose, direction = "ltr", initialSvg
     }
 
 
-    const target = event.target.closest?.("[data-editor-id]");
+    const target = resolveCanvasTarget(event.target);
     if (target) {
       const id = target.getAttribute("data-editor-id");
       const isAdditive = event.shiftKey || event.metaKey || event.ctrlKey;
@@ -985,7 +1013,7 @@ export default function SvgEditorDialog({ onClose, direction = "ltr", initialSvg
     // milliseconds after pointer-down, so by pointer-up the pointer is often over empty canvas and the browser
     // reports the click on the canvas itself - which used to clear the selection the user had just made.
     // Deselecting on empty space is handled on pointer-down (beginCanvasInteraction) instead.
-    const target = event.target.closest?.("[data-editor-id]");
+    const target = resolveCanvasTarget(event.target);
     if (!target) return;
     // SVG element selection is performed during pointer-down; this click fallback
     // is only for keyboard-generated activation events.
@@ -1153,8 +1181,19 @@ export default function SvgEditorDialog({ onClose, direction = "ltr", initialSvg
   // Handlers shared by the properties sidebar, the desktop context bar and the mobile sheets.
   const handleSizeCommit = (dimension, value, bounds) => liveCommit(t("svgEditor.dimensionsUpdated"), (root, b) => updateElementSize(root, selectedId, dimension, value, b), bounds);
   const handleSizeLive = (dimension, value, bounds) => livePreview((root, b) => updateElementSize(root, selectedId, dimension, value, b), bounds);
-  const handleAttributeCommit = (name, value) => liveCommit(t("svgEditor.appearanceUpdated"), (root) => updateElementAttribute(root, selectedId, name, value));
-  const handleAttributeLive = (name, value) => livePreview((root) => updateElementAttribute(root, selectedId, name, value));
+  // A colour picker commits when it closes, and clicking the canvas to close it also changes the selection first.
+  // So the item being edited is remembered when the live preview starts and reused for the commit.
+  const liveAttributeTargetRef = React.useRef(null);
+  const handleAttributeCommit = (name, value) => {
+    const targetId = liveRef.current && liveAttributeTargetRef.current ? liveAttributeTargetRef.current : selectedId;
+    liveAttributeTargetRef.current = null;
+    return liveCommit(t("svgEditor.appearanceUpdated"), (root) => updateElementAttribute(root, targetId, name, value));
+  };
+  const handleAttributeLive = (name, value) => {
+    if (!liveRef.current || !liveAttributeTargetRef.current) liveAttributeTargetRef.current = selectedId;
+    const targetId = liveAttributeTargetRef.current;
+    livePreview((root) => updateElementAttribute(root, targetId, name, value));
+  };
 
   // Mobile sheets only exist in the mobile layout; on desktop the sidebar always shows the item's own controls.
   const activeMobileTab = isMobile ? mobileEditorTab : null;
@@ -1193,6 +1232,7 @@ export default function SvgEditorDialog({ onClose, direction = "ltr", initialSvg
             <ToolbarButton icon={Palette} label={t("palette.open")} onClick={() => setPalettePickerOpen(true)} disabled={!svgMarkup} />
             <ToolbarButton icon={previewSelectedHidden ? Eye : EyeOff} label={previewSelectedHidden ? t("palette.showSelectedInEditor") : t("palette.hideSelectedInEditor")} onClick={togglePreviewVisibility} disabled={!selectedIds.length} active={previewSelectedHidden} />
             <ToolbarButton icon={Type} label={t("svgEditor.addText")} onClick={requestAddText} disabled={!svgMarkup} />
+            <ToolbarButton icon={Shapes} label={t("iconLibrary.open")} onClick={() => setIconLibraryOpen(true)} disabled={!svgMarkup} />
             <ToolbarButton
               icon={Image}
               label={t("svgEditor.background") || "Background"}
@@ -1228,6 +1268,15 @@ export default function SvgEditorDialog({ onClose, direction = "ltr", initialSvg
             <section className="svg-editor-palette-dialog" role="dialog" aria-modal="true" aria-label={t("svgEditor.logoPalettesTitle")}>
               <header><div><Palette size={18} /><div><strong>{t("svgEditor.logoPalettesTitle")}</strong><small>{t("svgEditor.logoPalettesHint")}</small></div></div><button type="button" onClick={() => setPalettePickerOpen(false)} aria-label={t("svgEditor.close")}><X size={18} /></button></header>
               <LogoPalettePicker onSelect={choosePalette} selectedPaletteId={selectedPaletteId} t={t} />
+            </section>
+          </div>
+        )}
+
+        {iconLibraryOpen && (
+          <div className="svg-editor-palette-overlay" role="presentation" onPointerDown={(event) => { if (event.target === event.currentTarget) setIconLibraryOpen(false); }}>
+            <section className="svg-editor-palette-dialog" role="dialog" aria-modal="true" aria-label={t("iconLibrary.title")}>
+              <header><div><Shapes size={18} /><div><strong>{t("iconLibrary.title")}</strong><small>{t("iconLibrary.hint")}</small></div></div><button type="button" onClick={() => setIconLibraryOpen(false)} aria-label={t("svgEditor.close")}><X size={18} /></button></header>
+              <IconLibraryPicker onSelect={insertLibraryIcon} />
             </section>
           </div>
         )}
@@ -1400,6 +1449,10 @@ export default function SvgEditorDialog({ onClose, direction = "ltr", initialSvg
             <button type="button" className={`svg-editor-mobile-tab ${mobileEditorTab === "typography" ? "is-active" : ""}`} onClick={() => setMobileEditorTab(prev => prev === "typography" ? null : "typography")} disabled={!selectedIsText} aria-disabled={!selectedIsText} title={selectedIsText ? undefined : (t("svgEditor.typographyDisabled") || "Select a text item to edit its text options")}>
               <TypographyIcon />
               <span>{t("svgEditor.typography") || "Typography"}</span>
+            </button>
+            <button type="button" className="svg-editor-mobile-tab" onClick={() => { setMobileEditorTab(null); setIconLibraryOpen(true); }} disabled={!svgMarkup}>
+              <Shapes size={20} />
+              <span>{t("iconLibrary.tab")}</span>
             </button>
             <span className="svg-editor-mobile-tab-divider" aria-hidden="true" />
             {/* Canvas */}

@@ -68,7 +68,8 @@ export function pickFile({ accept, onPick }) {
   input.click();
 }
 export const PPTX_ACCEPT = `.pptx,${PPTX_MIME}`;
-export const IMAGE_ACCEPT = "image/png,image/jpeg,image/gif,.png,.jpg,.jpeg,.gif";
+export const IMAGE_ACCEPT = "image/png,image/jpeg,image/gif,image/svg+xml,.png,.jpg,.jpeg,.gif,.svg";
+export const isSvgFile = (f) => /svg/i.test(f?.type || "") || /\.svg$/i.test(f?.name || "");
 
 // ---------- drafts (IndexedDB; falls back silently when unavailable) ----------
 const DB = "eyad-pptx-editor", STORE = "drafts", KEY = "current";

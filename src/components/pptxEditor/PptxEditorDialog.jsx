@@ -5,11 +5,11 @@ import {
   ZoomIn, ZoomOut, Maximize, Grid3x3, Magnet, ChevronLeft, ChevronRight, LayoutGrid, MousePointerSquareDashed, RotateCcw, AlertTriangle, SquareDashedMousePointer, Move3d, Info, RectangleHorizontal, Loader2,
   Home, ClipboardCopy, ClipboardPaste, Scissors, FlipHorizontal2, FlipVertical2, AlignStartVertical, AlignCenterVertical, AlignEndVertical,
   Search, Bold, Italic, Underline,
-  Play, List, Strikethrough, Table2, Type as TextIcon, Image as ImageIcon, Save, LogIn,
+  Play, List, Strikethrough, Table2, Type as TextIcon, Image as ImageIcon, Save, LogIn, Smile,
 } from "lucide-react";
 import { useI18n } from "@/i18n/I18nContext";
-import { PptxPackage, PptxError, readPresentation, readSlide, setSlideBackground, setPresentationBackground, capturePresentationBackgrounds, restorePresentationBackgrounds, captureSlidePaletteState, restoreSlidePaletteStates, setBounds, deleteElements, duplicateElements, reorderElements, moveElementToLayer, setElementsHidden, groupElements, ungroupElement, setText, setTextProps, setShapeStyle, setOpacity, addTextBox, addShape, addTable, addPicture, replacePicture, setAltText, tableRows, tableCols, setTableOptions, setTableRangeTextProps, setTableRangeCellFill, copyElements, pasteElements, addSlide, duplicateSlide, deleteSlide, moveSlide, listLayouts, hasSections, computeAlign, computeDistribute, rotatedBox, unionBox, applySlidePalette } from "./engine/index.js";
-import { checkPptxFile, readFile, saveBytes, pickFile, PPTX_ACCEPT, IMAGE_ACCEPT, safeName, saveDraft, loadDraft, clearDraft, imageInfo } from "./fileIO.js";
+import { PptxPackage, PptxError, readPresentation, readSlide, setSlideBackground, setPresentationBackground, capturePresentationBackgrounds, restorePresentationBackgrounds, captureSlidePaletteState, restoreSlidePaletteStates, setBounds, deleteElements, duplicateElements, reorderElements, moveElementToLayer, setElementsHidden, groupElements, ungroupElement, setText, setTextProps, setShapeStyle, setOpacity, addTextBox, addShape, addTable, addPicture, addSvgPicture, setSvgPicture, replacePicture, setAltText, tableRows, tableCols, setTableOptions, setTableRangeTextProps, setTableRangeCellFill, copyElements, pasteElements, addSlide, duplicateSlide, deleteSlide, moveSlide, listLayouts, hasSections, computeAlign, computeDistribute, rotatedBox, unionBox, applySlidePalette } from "./engine/index.js";
+import { checkPptxFile, readFile, saveBytes, pickFile, PPTX_ACCEPT, IMAGE_ACCEPT, isSvgFile, safeName, saveDraft, loadDraft, clearDraft, imageInfo } from "./fileIO.js";
 import { disposeMediaUrls, useMediaUrls } from "./useMediaUrls.js";
 import { PresentationError, savePresentationVersion } from "@/services/presentationService";
 import { errorMessage as presentationErrorMessage } from "@/components/presentations/presentationMessages";
@@ -37,6 +37,9 @@ import SlideView, { collectImagePaths } from "./SlideView.jsx";
 import Inspector from "./Inspector.jsx";
 import PptxLayersPanel from "./PptxLayersPanel.jsx";
 import ColorPalettePicker from "../shared/ColorPalettePicker.jsx";
+import IconLibraryPicker from "../shared/IconLibraryPicker.jsx";
+import { fetchIconSvgText, svgToPng } from "@/services/iconLibraryService";
+import { sanitizeSvgText, listSvgColors, recolorSvg, recolorSvgAll } from "./svgRecolor.js";
 import { PRESENTATION_PALETTES } from "../shared/presentationPalettes.js";
 import { BottomSheet, SlidesPanel, SlidesStrip, useVisualViewport, MobileTextScreen } from "./Sheets.jsx";
 import { IconButton, ColorField, NumberField, SliderField, SelectField } from "./Controls.jsx";
@@ -679,6 +682,14 @@ export default function PptxEditorDialog({ onClose, initialFile = null, onSaved 
     alt: (txt) => run(() => { const image = sel.find((item) => item.kind === "image" && !lockedIds.has(item.id)); if (image) setAltText(pkg, path, image.id, txt); }),
     replaceImage: () => pickFile({ accept: IMAGE_ACCEPT, onPick: async (f) => {
       if (!f) return;
+      if (isSvgFile(f)) {
+        try {
+          const clean = sanitizeSvgText(await f.text());
+          const png = await svgToPng(clean, 1024);
+          run(() => setSvgPicture(pkg, path, ids[0], { svgBytes: new TextEncoder().encode(clean), pngBytes: png.bytes }), t("pptxEditor.imageReplaced"));
+        } catch { setFeedback({ kind: "error", text: t("pptxEditor.err.BAD_IMAGE") }); }
+        return;
+      }
       const info = await imageInfo(f);
       if (!info) { setFeedback({ kind: "error", text: t("pptxEditor.err.BAD_IMAGE") }); return; }
       run(() => replacePicture(pkg, path, ids[0], { bytes: info.bytes, ext: info.ext, naturalRatio: info.w / info.h }), t("pptxEditor.imageReplaced"));
@@ -855,6 +866,11 @@ export default function PptxEditorDialog({ onClose, initialFile = null, onSaved 
   const insertImage = () => pickFile({ accept: IMAGE_ACCEPT, onPick: async (f) => {
     if (!f) return;
     if (f.size > 25 * 1024 * 1024) { setFeedback({ kind: "error", text: t("pptxEditor.err.FILE_TOO_LARGE") }); return; }
+    if (isSvgFile(f)) {
+      try { await insertSvgSource(await f.text(), f.name.replace(/\.svg$/i, "")); }
+      catch { setFeedback({ kind: "error", text: t("pptxEditor.err.BAD_IMAGE") }); }
+      return;
+    }
     const info = await imageInfo(f);
     if (!info) { setFeedback({ kind: "error", text: t("pptxEditor.err.BAD_IMAGE") }); return; }
     run(() => {
@@ -863,6 +879,85 @@ export default function PptxEditorDialog({ onClose, initialFile = null, onSaved 
       setSelection([addPicture(pkg, path, { bytes: info.bytes, ext: info.ext, ...center(w, h), w, h, name: safeName(f.name, "Picture") })]);
     });
   } });
+  // SVG pictures (library icons or uploaded .svg files) are stored as real SVG plus a PNG fallback, so their colours stay editable.
+  const insertSvgSource = async (svgText, name) => {
+    if (!pkg || !path || !okModel) return;
+    const clean = sanitizeSvgText(svgText);
+    const png = await svgToPng(clean, 1024);
+    run(() => {
+      const target = Math.min(okModel.size.w * 0.22, okModel.size.h * 0.3);
+      const k = target / Math.max(png.w, png.h);
+      const w = png.w * k, h = png.h * k;
+      setSelection([addSvgPicture(pkg, path, { svgBytes: new TextEncoder().encode(clean), pngBytes: png.bytes, ...center(w, h), w, h, name: safeName(name, "Icon") })]);
+      setActiveRibbon("image");
+      setSheet(null);
+    });
+  };
+  const insertIcon = async (icon) => {
+    try { await insertSvgSource(await fetchIconSvgText(icon), icon.name); setFeedback({ kind: "ok", text: t("iconLibrary.inserted") }); }
+    catch { setFeedback({ kind: "error", text: t("iconLibrary.insertFailed") }); }
+  };
+  // Recolouring a selected SVG picture. Dragging in the colour picker previews live on the canvas (a small temporary PNG),
+  // and the final colour is committed once: SVG rewritten, PNG fallback re-rendered, both media parts swapped (one undo step).
+  const svgRecolor = React.useRef({ epoch: 0, live: { running: false, pending: null }, commit: { running: false, pending: null }, cache: { path: null, text: "" } });
+  const svgSourceText = async (svgPath) => {
+    const c = svgRecolor.current.cache;
+    if (c.path !== svgPath) { c.text = new TextDecoder().decode(await pkg.bytes(svgPath)); c.path = svgPath; }
+    return c.text;
+  };
+  const applyChange = (text, change) => (typeof change === "string" ? recolorSvgAll(text, change) : recolorSvg(text, change));
+  const dropLiveSvgUrl = (id) => {
+    const cache = pkg?.urlCache; const key = `live:svg:${id}`;
+    const old = cache?.get(key);
+    if (old) { URL.revokeObjectURL(old); cache.delete(key); }
+  };
+  const liveRecolorSvgPicture = (change) => {
+    const el = sel.length === 1 ? sel[0] : null;
+    if (!pkg || !el?.svgPath) return;
+    const state = svgRecolor.current, queue = state.live, epoch = state.epoch, id = el.id, svgPath = el.svgPath;
+    queue.pending = change;
+    if (queue.running) return;
+    queue.running = true;
+    (async () => {
+      try {
+        while (queue.pending) {
+          const next = queue.pending; queue.pending = null;
+          try {
+            const png = await svgToPng(applyChange(await svgSourceText(svgPath), next), 512);
+            if (state.epoch !== epoch) break; // committed / cancelled meanwhile
+            const cache = (pkg.urlCache ||= new Map()); const key = `live:svg:${id}`;
+            const old = cache.get(key);
+            cache.set(key, URL.createObjectURL(new Blob([png.bytes], { type: "image/png" })));
+            if (old) URL.revokeObjectURL(old);
+            pkg.urlListeners?.forEach((fn) => fn());
+            setLivePreview({ ids: [id], fn: (e) => ({ ...e, imagePath: key }) });
+          } catch { /* ignore transient values while dragging */ }
+        }
+      } finally { queue.running = false; }
+    })();
+  };
+  const recolorSvgPicture = (change) => {
+    const el = sel.length === 1 ? sel[0] : null;
+    if (!pkg || !path || !el?.svgPath) return;
+    const state = svgRecolor.current, queue = state.commit;
+    state.epoch += 1; state.live.pending = null; // drop any preview still rendering
+    queue.pending = { change, id: el.id, svgPath: el.svgPath };
+    if (queue.running) return;
+    queue.running = true;
+    (async () => {
+      try {
+        while (queue.pending) {
+          const job = queue.pending; queue.pending = null;
+          try {
+            const next = applyChange(await svgSourceText(job.svgPath), job.change);
+            const png = await svgToPng(next, 1024);
+            run(() => setSvgPicture(pkg, path, job.id, { svgBytes: new TextEncoder().encode(next), pngBytes: png.bytes }));
+          } catch { setFeedback({ kind: "error", text: t("pptxEditor.err.generic") }); }
+          dropLiveSvgUrl(job.id);
+        }
+      } finally { queue.running = false; }
+    })();
+  };
   const undo = () => { pkg.undo(); };
   const redo = () => { pkg.redo(); };
   const exportNow = async () => {
@@ -1015,6 +1110,14 @@ export default function PptxEditorDialog({ onClose, initialFile = null, onSaved 
     : selectedEl?.fill?.type === "gradient"
       ? (selectedEl.fill.stops?.[0]?.alpha ?? selectedEl.line?.alpha ?? 1)
       : (selectedEl?.fill?.alpha ?? selectedEl?.line?.alpha ?? 1);
+  const svgPicPath = selectedEl?.kind === "image" && sel.length === 1 ? (selectedEl.svgPath || null) : null;
+  const [svgColors, setSvgColors] = React.useState([]);
+  React.useEffect(() => {
+    if (!pkg || !svgPicPath) { setSvgColors([]); return undefined; }
+    let stale = false;
+    pkg.bytes(svgPicPath).then((bytes) => { if (!stale && bytes) { try { setSvgColors(listSvgColors(new TextDecoder().decode(bytes))); } catch { setSvgColors([]); } } }).catch(() => {});
+    return () => { stale = true; };
+  }, [pkg, svgPicPath]);
   React.useEffect(() => { setAltTextDraft(selectedEl?.kind === "image" ? (selectedEl.alt || "") : ""); }, [selectedEl?.id, selectedEl?.kind, selectedEl?.alt]);
   const ribbonColors = okModel ? ["accent1", "accent2", "accent3", "accent4", "accent5", "accent6", "dk2", "lt2"].map((k) => okModel.theme.colors[k]).filter(Boolean) : [];
   const textStyle = selectedEl?.text?.paragraphs?.find((p) => p.runs.length)?.runs[0]?.style || selectedEl?.text?.paragraphs?.[0]?.end || null;
@@ -1059,6 +1162,7 @@ export default function PptxEditorDialog({ onClose, initialFile = null, onSaved 
       <RibbonGroup art={objectsArt} title={t("pptxEditor.ribbon.group.objects")}>
         <RibbonButton icon={Type} label={t("pptxEditor.addText")} onClick={insertText} testId="pptx-add-text" />
         <RibbonButton icon={ImagePlus} label={t("pptxEditor.addImage")} onClick={insertImage} testId="pptx-add-image" />
+        <RibbonButton icon={Smile} label={t("iconLibrary.open")} onClick={() => setSheet("icons")} testId="pptx-add-icon" />
         <RibbonButton icon={Copy} label={t("pptxEditor.duplicate")} onClick={a.duplicate} disabled={!ids.length || sel.every((e) => lockedIds.has(e.id) || e.readOnlyGeometry)} testId="pptx-duplicate" />
         <RibbonButton icon={Trash2} label={t("pptxEditor.delete")} onClick={a.remove} disabled={!ids.length || sel.every((e) => lockedIds.has(e.id) || e.readOnlyGeometry)} danger testId="pptx-delete" />
       </RibbonGroup>
@@ -1072,7 +1176,7 @@ export default function PptxEditorDialog({ onClose, initialFile = null, onSaved 
         <RibbonButton icon={Circle} label={t("pptxEditor.shape.ellipse")} onClick={() => insertShape("ellipse")} testId="pptx-add-ellipse" />
         <RibbonButton icon={Minus} label={t("pptxEditor.shape.line")} onClick={() => insertShape("line")} testId="pptx-add-line" />
       </RibbonGroup>
-      <RibbonGroup art={mediaArt} title={t("pptxEditor.ribbon.group.media")}><RibbonButton icon={Type} label={t("pptxEditor.addText")} onClick={insertText} /><RibbonButton icon={ImagePlus} label={t("pptxEditor.addImage")} onClick={insertImage} /></RibbonGroup>
+      <RibbonGroup art={mediaArt} title={t("pptxEditor.ribbon.group.media")}><RibbonButton icon={Type} label={t("pptxEditor.addText")} onClick={insertText} /><RibbonButton icon={ImagePlus} label={t("pptxEditor.addImage")} onClick={insertImage} /><RibbonButton icon={Smile} label={t("iconLibrary.open")} onClick={() => setSheet("icons")} testId="pptx-add-icon-insert" /></RibbonGroup>
     </>;
     if (activeRibbon === "design") return <>
       <RibbonGroup art={slideBackgroundArt} title={t("pptxEditor.ribbon.group.background")}>
@@ -1152,6 +1256,14 @@ export default function PptxEditorDialog({ onClose, initialFile = null, onSaved 
         <RibbonButton icon={FlipHorizontal2} label={t("pptxEditor.flipH")} onClick={a.flipH} disabled={flipDisabled} />
         <RibbonButton icon={FlipVertical2} label={t("pptxEditor.flipV")} onClick={a.flipV} disabled={flipDisabled} />
       </RibbonGroup>
+      {svgPicPath && <RibbonGroup art={colorPaletteArt} title={t("pptxEditor.svgColors")}>
+        <ColorField label={t("pptxEditor.svgRecolorAll")} value={null} themeColors={ribbonColors} testId="pptx-svg-recolor-all" customColorLabel={t("pptxEditor.customColor")} disabled={imageDisabled}
+          onLive={(hex) => liveRecolorSvgPicture(`#${String(hex).replace(/^#/, "")}`)} onChange={(hex) => recolorSvgPicture(`#${String(hex).replace(/^#/, "")}`)} />
+        {svgColors.map((color, index) => (
+          <ColorField key={`${color}-${index}`} label={t("pptxEditor.svgColorN", { n: index + 1 })} value={color.slice(1).toUpperCase()} themeColors={ribbonColors} testId={`pptx-svg-color-${index}`} customColorLabel={t("pptxEditor.customColor")} disabled={imageDisabled}
+            onLive={(hex) => liveRecolorSvgPicture(new Map([[color, `#${String(hex).replace(/^#/, "")}`]]))} onChange={(hex) => recolorSvgPicture(new Map([[color, `#${String(hex).replace(/^#/, "")}`]]))} />
+        ))}
+      </RibbonGroup>}
       <RibbonGroup art={appearanceArt} title={t("pptxEditor.section.appearance")}>
         {disabledField(imageDisabled, <SliderField label={t("pptxEditor.opacity")} value={Math.round(selectedOpacity * 100)} onLive={(v) => a.live.opacity(v / 100)} onLiveCancel={a.live.cancel} onCommit={(v) => a.opacity(v / 100)} testId="pptx-image-opacity" />)}
       </RibbonGroup>
@@ -1369,6 +1481,11 @@ export default function PptxEditorDialog({ onClose, initialFile = null, onSaved 
                 })}
                 {!SHAPES.some(([prst, , key]) => `${prst} ${t(`pptxEditor.shape.${key}`)}`.toLowerCase().includes(shapeQuery.trim().toLowerCase())) && <p className="pe-note">{t("pptxEditor.noShapesFound")}</p>}
               </div>
+            </BottomSheet>
+          )}
+          {shownSheet === "icons" && (
+            <BottomSheet closing={sheetClosing} closingBottom={chrome.bottom} title={t("iconLibrary.title")} onClose={() => setSheet(null)} testId="pptx-icon-sheet" tall>
+              <IconLibraryPicker onSelect={insertIcon} />
             </BottomSheet>
           )}
           {shownSheet === "palettes" && (
