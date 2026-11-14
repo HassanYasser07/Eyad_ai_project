@@ -144,13 +144,15 @@
     align-items: stretch;
     justify-content: space-around;
     gap: 2px;
-    border-top: 1px solid rgba(0, 0, 0, 0.06);
+    /* Sits at the top of the choices panel, above the options and the Start Design button */
+    border-bottom: 1px solid rgba(0, 0, 0, 0.06);
     background: rgba(255, 255, 255, 0.96);
     backdrop-filter: blur(18px);
     -webkit-backdrop-filter: blur(18px);
     padding: 4px 6px;
-    padding-bottom: calc(4px + env(safe-area-inset-bottom, 0px));
-    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.04);
+    margin: 0 8px 8px;
+    border-radius: 16px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
   }
 
   .logo-mobile-tab {
@@ -235,4 +237,12 @@
   body:has(.logo-lab-page[data-step="choices"]) .eyad-bottom-nav {
     display: none !important;
   }
-}
+}
+
+/* Generating screen: progress + message animation */
+.logo-gen-progress { width: min(260px, 70%); height: 6px; border-radius: 999px; background: rgba(37, 99, 235, 0.12); overflow: hidden; position: relative; }
+.logo-gen-progress > span { position: absolute; top: 0; bottom: 0; width: 40%; border-radius: 999px; background: linear-gradient(90deg, #22d3ee, #2563eb, #8b5cf6); animation: logo-gen-slide 1.5s ease-in-out infinite; }
+@keyframes logo-gen-slide { 0% { left: -40%; } 100% { left: 100%; } }
+.logo-gen-message { animation: logo-gen-fade .5s ease both; }
+@keyframes logo-gen-fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .logo-gen-progress > span, .logo-gen-message { animation-duration: 3s; } }

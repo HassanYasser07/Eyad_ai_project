@@ -15,6 +15,7 @@ import StudioNextActions from "@/components/studios/StudioNextActions";
 import "./logoStudio.css";
 import LogoStudioDesktop from "@/pages/LogoStudioDesktop";
 import SvgEditorDialog from "@/components/svgEditor/SvgEditorDialog";
+import EyadOrb from "@/components/chat/EyadOrb";
 
 const OPTIONS = {
   style: [
@@ -646,6 +647,23 @@ export default function LogoStudio() {
                 </button>
               </div>
             </div>
+            <nav className="logo-mobile-tabbar" aria-label={ar ? "تبويبات التصميم" : "Design tabs"}>
+              <button type="button" className={`logo-mobile-tab ${mobileTab === "style" ? "is-active" : ""}`} onClick={() => setMobileTab("style")}>
+                <Sparkles className="w-5 h-5" />
+                <span>{ar ? "الأسلوب" : "Style"}</span>
+                {selections.style && <i className="logo-mobile-tab-dot" />}
+              </button>
+              <button type="button" className={`logo-mobile-tab ${mobileTab === "colors" ? "is-active" : ""}`} onClick={() => setMobileTab("colors")}>
+                <Palette className="w-5 h-5" />
+                <span>{ar ? "الألوان" : "Colors"}</span>
+                {selections.colors && <i className="logo-mobile-tab-dot" />}
+              </button>
+              <button type="button" className={`logo-mobile-tab ${mobileTab === "logo-type" ? "is-active" : ""}`} onClick={() => setMobileTab("logo-type")}>
+                <Badge className="w-5 h-5" />
+                <span>{ar ? "النوع" : "Type"}</span>
+                {selections.logo_type && <i className="logo-mobile-tab-dot" />}
+              </button>
+            </nav>
             <ChoiceGroup title={ar ? "الأسلوب (ستايل)" : "Style"} items={OPTIONS.style} value={selections.style} onChange={(v) => updateSelection("style", v)} ar={ar} type="style" />
             <ChoiceGroup title={ar ? "ألوان الشعار" : "Logo colors"} items={OPTIONS.colors} value={selections.colors} onChange={(v) => updateSelection("colors", v)} ar={ar} type="colors" />
             <ChoiceGroup title={ar ? "نوع الشعار" : "Logo type"} items={OPTIONS.logo_type} value={selections.logo_type} onChange={(v) => updateSelection("logo_type", v)} ar={ar} type="logo-type" />
@@ -657,16 +675,7 @@ export default function LogoStudio() {
           </div>
         )}
 
-        {step === "generating" && (
-          <div className="card-glass rounded-[28px] p-8 sm:p-12 min-h-[480px] flex flex-col items-center justify-center text-center gap-6">
-            <div className="logo-generation-orb"><div /><div /><div /><div /><div /><div /><div /><div /><div /></div>
-            <div>
-              <h1 className="text-xl font-extrabold text-slate-900">{ar ? "إياد يصمم الشعار الآن" : "EYAD is designing the logo"}</h1>
-              <p className="mt-2 text-sm text-slate-500">{ar ? "سيتم إنشاء فكرتين مختلفتين بناءً على اختياراتك." : "Two distinct concepts are being created from your choices."}</p>
-            </div>
-            <div className="flex items-center gap-2 text-xs font-bold text-primary"><Loader2 className="w-4 h-4 animate-spin" /> {ar ? "جاري التنفيذ…" : "Generating…"}</div>
-          </div>
-        )}
+        {step === "generating" && <LogoGeneratingView ar={ar} />}
 
         {step === "results" && (
           <div className="flex flex-col gap-6">
@@ -726,29 +735,39 @@ export default function LogoStudio() {
           <div className="mt-4 rounded-2xl border border-red-200 bg-red-50/80 p-4 text-sm font-semibold text-red-700">{error}</div>
         )}
       </main>
-      {step === "choices" && (
-        <nav className="logo-mobile-tabbar" aria-label={ar ? "تبويبات التصميم" : "Design tabs"}>
-          <button type="button" className={`logo-mobile-tab ${mobileTab === "style" ? "is-active" : ""}`} onClick={() => setMobileTab("style")}>
-            <Sparkles className="w-5 h-5" />
-            <span>{ar ? "الأسلوب" : "Style"}</span>
-            {selections.style && <i className="logo-mobile-tab-dot" />}
-          </button>
-          <button type="button" className={`logo-mobile-tab ${mobileTab === "colors" ? "is-active" : ""}`} onClick={() => setMobileTab("colors")}>
-            <Palette className="w-5 h-5" />
-            <span>{ar ? "الألوان" : "Colors"}</span>
-            {selections.colors && <i className="logo-mobile-tab-dot" />}
-          </button>
-          <button type="button" className={`logo-mobile-tab ${mobileTab === "logo-type" ? "is-active" : ""}`} onClick={() => setMobileTab("logo-type")}>
-            <Badge className="w-5 h-5" />
-            <span>{ar ? "النوع" : "Type"}</span>
-            {selections.logo_type && <i className="logo-mobile-tab-dot" />}
-          </button>
-        </nav>
-      )}
     </div>
       {svgEditorOpen && <SvgEditorDialog onClose={() => setSvgEditorOpen(false)} direction={direction} />}
       {editorSource && <SvgEditorDialog key={editorSource.url} onClose={() => setEditorSource(null)} direction={direction} initialSvgUrl={editorSource.url} initialName={editorSource.name} />}
     </>
+  );
+}
+
+const GENERATING_MESSAGES = {
+  ar: ["إياد يحلل اسم العلامة ونشاطها…", "يختار الأسلوب والألوان المناسبة…", "يرسم الفكرة الأولى للشعار…", "يرسم الفكرة الثانية بتوجه مختلف…", "يراجع التفاصيل ويضبط اللمسات الأخيرة…"],
+  en: ["EYAD is analysing your brand and activity…", "Matching the style and colors…", "Sketching the first concept…", "Sketching a different second concept…", "Refining details and final touches…"],
+};
+
+/** Live "model is working" screen: animated orb, rotating status text, indeterminate progress and an elapsed timer. */
+function LogoGeneratingView({ ar }) {
+  const messages = GENERATING_MESSAGES[ar ? "ar" : "en"];
+  const [i, setI] = React.useState(0);
+  const [seconds, setSeconds] = React.useState(0);
+  React.useEffect(() => {
+    const m = setInterval(() => setI((n) => Math.min(n + 1, messages.length - 1)), 4500);
+    const t = setInterval(() => setSeconds((n) => n + 1), 1000);
+    return () => { clearInterval(m); clearInterval(t); };
+  }, [messages.length]);
+  return (
+    <div className="card-glass rounded-[28px] p-8 sm:p-12 min-h-[480px] flex flex-col items-center justify-center text-center gap-6" role="status" aria-live="polite">
+      <EyadOrb state="thinking" size={150} />
+      <div>
+        <h1 className="text-xl font-extrabold text-slate-900">{ar ? "إياد يصمم الشعار الآن" : "EYAD is designing the logo"}</h1>
+        <p key={i} className="logo-gen-message mt-2 text-sm font-semibold text-primary min-h-[20px]">{messages[i]}</p>
+        <p className="mt-1 text-xs text-slate-500">{ar ? "سيتم إنشاء فكرتين مختلفتين بناءً على اختياراتك." : "Two distinct concepts are being created from your choices."}</p>
+      </div>
+      <div className="logo-gen-progress" aria-hidden="true"><span /></div>
+      <p className="text-xs font-bold text-slate-400 tabular-nums">{ar ? `قد يستغرق ذلك حتى دقيقة · ${seconds} ث` : `This can take up to a minute · ${seconds}s`}</p>
+    </div>
   );
 }
 
