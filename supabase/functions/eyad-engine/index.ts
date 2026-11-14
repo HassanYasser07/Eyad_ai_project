@@ -1176,6 +1176,18 @@ Deno.serve(async (req: Request) => {
   isModification = isModificationRequest(message);
   isExplicitNewDesign = isNewDesignRequest(message);
 
+  // A "generate" command sent from the AI Images studio UI is ALWAYS a generation,
+  // even if the brief contains edit-like words (غير/بدل/ضيف/تعديل/change/add...)
+  // or comes with a reference photo. The chat-only planner can never return a
+  // "generate" action, so treating it as a modification only produced a text reply
+  // ("تمام، هنفّذ نسخة مشابهة...") and no image.
+  const isStudioImageGenerate = action === "generate"
+    && String(studioId || body?.studioId || "").trim() === "ai-images";
+  if (isStudioImageGenerate) {
+    isModification = false;
+    isExplicitNewDesign = false;
+  }
+
   // If the user explicitly asks for a NEW design, discard any old reference image
   // sent by the frontend so generation starts from scratch.
   if (isExplicitNewDesign) {
@@ -1316,18 +1328,14 @@ Deno.serve(async (req: Request) => {
   // execution contract. Natural-language chat requests go through the
   // published intelligence prompt below.
   const explicitBrandProfilePageGeneration = action === "generate"
-    && Boolean(designOptions?.brand_profile_page)
-    && !isModification;
+    && Boolean(designOptions?.brand_profile_page);
 
   const explicitMockupGeneration = action === "generate"
-    && Boolean(designOptions?.mockup_type)
-    && !isModification;
+    && Boolean(designOptions?.mockup_type);
   const explicitLogoGeneration = action === "generate"
     && Boolean(designOptions?.style || designOptions?.colors || designOptions?.logo_type)
     && !isModification;
-  const explicitImageGeneration = action === "generate"
-    && String(studioId || body?.studioId || "").trim() === "ai-images"
-    && !isModification;
+  const explicitImageGeneration = isStudioImageGenerate;
 
   decision = undefined;
   plannerAi = {};
@@ -1394,8 +1402,12 @@ Deno.serve(async (req: Request) => {
       }, 400);
     }
     const styleReferencePrompt = String(designOptions?.style_reference_prompt || "").trim();
+    const hasContentReference = Boolean(referenceImage || imageAttachment?.dataUrl)
+      || (Array.isArray(designOptions?.reference_images) && designOptions.reference_images.some((item: any) => item?.data_url));
     const imagePromptParts = [
-      "Create the requested image exactly from the user's brief.",
+      hasContentReference
+        ? "Generate a NEW image based on the attached reference image(s). Keep the main subject's identity, face, features and key characteristics recognizable, and apply the changes requested in the brief (clothing, setting, style, etc.). Do not just return the reference unchanged."
+        : "Create the requested image exactly from the user's brief.",
       "User brief: " + message,
       "Aspect ratio: " + aspectRatio + " (" + AI_IMAGE_ASPECTS[aspectRatio].label + "). Compose the scene natively for this exact frame and fill it edge to edge.",
       styleReferencePrompt ? "Style reference direction: " + styleReferencePrompt : "",
@@ -1958,14 +1970,21 @@ The supplied approved logo reference must be used as the actual printed logo on 
               ? `You are a senior brand designer creating a professional logo. Task: ${imagePrompt}\n\nDESIGN REQUIREMENTS — produce a single, polished, production-ready logo mark:\n- Clean, precise vector-style geometry with smooth curves and sharp edges. No jagged lines, no pixelation, no random dots, specks, noise, or stray artifacts.\n- Strong visual hierarchy: the company/brand name is the HERO text and must be clearly larger, heavier, and more visually dominant. The logo contains ONLY the brand name as text; the business activity must NOT be written anywhere in the logo (no descriptor line, no tagline).\n- Typography must be crisp, legible, and professionally kerned. Render the company name exactly as supplied and nothing else. Never render the business activity or industry name as text. Never distort, stretch, overlap, duplicate, translate, or invent text.\n- Centered composition with generous, balanced negative space around the mark. The logo must read clearly and look professional at any scale.\n- Use only the requested color palette. Solid, confident color blocks — no muddy gradients, no accidental fills, no semi-transparent haze.\n- Flat, iconic, brand-mark aesthetic. Think modern tech, luxury, or corporate identity — not illustration, not clipart, not a poster.\n- Transparent background. No backdrop, no scene, no shadow, no glow, no frame, no paper texture, no business card, no mockup, no wall sign, no presentation slide. The logo floats on a fully transparent canvas.\n- If a reference logo is provided, preserve its core identity, colors, and lettering while applying the requested refinements.\n- Deliver ONE clean logo only. Do not generate multiple variants, explorations, or layout options in a single image.`
               : `Create/edit a premium ${studioName} visual for the user's request: ${imagePrompt}. ${aiImageDirection} Produce a polished standalone creative image with no UI, no mockup, and no explanatory text.`
         const imageReference = effectiveReferenceImage || imageAttachment?.dataUrl || null;
+        const extraReferenceImages: string[] = Array.isArray(body?.design_options?.reference_images)
+          ? body.design_options.reference_images
+              .map((item: any) => String(item?.data_url || ""))
+              .filter((src: string) => (src.startsWith("data:image/") || src.startsWith("http")) && src !== imageReference)
+              .slice(0, 4)
+          : [];
         const styleReferenceUrl = String(styleReference?.url || '').trim() || null;
         const buildImageInput = (textPrompt: string) => {
           const content: any[] = [{ type: "input_text", text: textPrompt }];
           if (imageReference) content.push({ type: "input_text", text: "Content/reference image: use this for the referenced subject or visual elements when applicable. Do not treat it as the style reference." }, { type: "input_image", image_url: imageReference, detail: "high" });
+          for (const extra of extraReferenceImages) content.push({ type: "input_text", text: "Additional content reference image for the same subject." }, { type: "input_image", image_url: extra, detail: "high" });
           if (styleReferenceUrl) content.push({ type: "input_text", text: "Style reference image: use this image ONLY as the visual style reference. Match its lighting, palette, contrast, texture, composition language and overall art direction, but do not copy its subject matter." }, { type: "input_image", image_url: styleReferenceUrl, detail: "high" });
           return [{ role: "user", content }];
         };
-        const imageInput = (imageReference || styleReferenceUrl) ? buildImageInput(finalPrompt) : finalPrompt;
+        const imageInput = (imageReference || extraReferenceImages.length || styleReferenceUrl) ? buildImageInput(finalPrompt) : finalPrompt;
 
         // Mockups use the synchronous Images Edit API: the approved logo is
         // a reference image and the API returns the finished PNG directly.
@@ -2452,7 +2471,7 @@ The supplied approved logo reference must be used as the actual printed logo on 
           let data: any = {};
 
           const requestImage = async (requestSize: string): Promise<Response> => {
-            if (imageReference || styleReferenceUrl) {
+            if (imageReference || extraReferenceImages.length || styleReferenceUrl) {
               const formData = new FormData();
               formData.append("model", "gpt-image-2.5-sunburst");
               formData.append("prompt", variantPrompt);
@@ -2464,9 +2483,14 @@ The supplied approved logo reference must be used as the actual printed logo on 
 
               // The Images Edit API accepts several images only as `image[]`.
               // A repeated plain `image` field is rejected as a duplicate parameter.
-              const imageField = (imageReference && styleReferenceUrl) ? "image[]" : "image";
+              const imageCount = (imageReference ? 1 : 0) + extraReferenceImages.length + (styleReferenceUrl ? 1 : 0);
+              const imageField = imageCount > 1 ? "image[]" : "image";
               if (imageReference) {
                 const attached = await appendOpenAIImageInput(formData, imageReference, "reference-image.png", imageField);
+                if (!attached) throw new Error("IMAGE_REFERENCE_LOAD_FAILED");
+              }
+              for (let i = 0; i < extraReferenceImages.length; i++) {
+                const attached = await appendOpenAIImageInput(formData, extraReferenceImages[i], "reference-image-" + (i + 2) + ".png", imageField);
                 if (!attached) throw new Error("IMAGE_REFERENCE_LOAD_FAILED");
               }
               if (styleReferenceUrl) {
