@@ -26,6 +26,7 @@ import { useI18n } from "@/i18n/I18nContext";
 import { useAuth } from "@/lib/AuthContext";
 import DesktopHomeContent from "@/components/home/DesktopHomeContent";
 import DesktopRightPanel from "@/components/home/DesktopRightPanel";
+import "@/pages/homeDesktop.css";
 
 const PRIMARY_NAV = [
   { to: "/home", key: "nav.home", icon: HomeIcon },
@@ -41,16 +42,21 @@ const SECONDARY_NAV = [
   { to: "/studios", key: "nav.more", icon: MoreHorizontal },
 ];
 
-export default function DesktopShell() {
+/**
+ * With no children it renders the Home content (unchanged). Other pages (e.g. the Presentation Studio) pass their
+ * page as children and get the same sidebar + right rail; below 1024px the shell collapses to a plain wrapper.
+ */
+export default function DesktopShell({ children }) {
   const { t, direction, language, toggleLanguage } = useI18n();
   const { user } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
-  const isActive = (to) => location.pathname === to;
+  const isPage = children !== undefined && children !== null;
+  const isActive = (to, includeChildren = false) => location.pathname === to || (includeChildren && to === "/studios" && location.pathname.startsWith("/studios/"));
   const profileInitial = (user?.full_name || user?.email || "EYAD").charAt(0).toUpperCase();
 
   return (
-    <div className="eyad-dt-shell" dir={direction}>
+    <div className={`eyad-dt-shell ${isPage ? "eyad-dt-shell--page" : ""}`} dir={direction}>
       {/* Sidebar — leading edge: left in English, right in Arabic */}
       <aside className="eyad-dt-sidebar" dir={direction}>
         <Link to="/home" className="eyad-dt-sidebar-logo" aria-label="EYAD AI">
@@ -64,7 +70,7 @@ export default function DesktopShell() {
               <Link
                 key={item.key}
                 to={item.to}
-                className={`eyad-dt-nav-item ${isActive(item.to) ? "is-active" : ""}`}
+                className={`eyad-dt-nav-item ${isActive(item.to, true) ? "is-active" : ""}`}
               >
                 <Icon className="eyad-dt-nav-icon" />
                 <span>{t(item.key)}</span>
@@ -141,7 +147,7 @@ export default function DesktopShell() {
 
         <div className="eyad-dt-content">
           <div className="eyad-dt-workspace">
-            <DesktopHomeContent />
+            {isPage ? children : <DesktopHomeContent />}
           </div>
           <aside className="eyad-dt-rail">
             <DesktopRightPanel />

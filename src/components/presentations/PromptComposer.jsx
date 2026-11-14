@@ -6,6 +6,8 @@ import {
 import { extractFileText } from "@/services/fileTextService";
 import { fileErrorMessage } from "./presentationMessages";
 import { FILE_ACCEPT_ATTR, LIMITS } from "@/config/presentationOptions";
+import TypewriterHint from "@/components/ui/TypewriterHint";
+import { PRESENTATION_HINTS } from "@/config/typewriterHints";
 
 const pillClass = "group inline-flex h-9 w-full min-w-0 items-center gap-1.5 rounded-xl border border-border bg-card px-2.5 text-[13px] font-semibold text-foreground shadow-sm transition-all hover:border-primary/40 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60 data-[state=open]:border-primary/50 data-[state=open]:bg-primary/10";
 
@@ -80,13 +82,14 @@ export default function PromptComposer({
       className={`overflow-hidden rounded-2xl border bg-card shadow-[var(--shadow-float)] transition-colors focus-within:border-primary/40 focus-within:ring-4 focus-within:ring-primary/10 ${dragging ? "border-primary ring-2 ring-primary/30" : error ? "border-destructive" : "border-border"}`}
     >
       <label htmlFor="topic" className="sr-only">{loc({ ar: "موضوع العرض التقديمي", en: "Presentation topic" })}</label>
-      <textarea
-        id="topic" data-field="topic" rows={3} maxLength={LIMITS.topicMax} value={settings.topic} disabled={busy}
-        onChange={(event) => onChange("topic", event.target.value)} onKeyDown={onKeyDown}
-        aria-invalid={Boolean(error)} aria-describedby={error ? "topic-error" : undefined}
-        placeholder={loc({ ar: "صف ما تريد إنشاءه", en: "Describe what you'd like to make" })}
-        className="block min-h-[84px] w-full resize-none bg-transparent px-4 pb-1 pt-3.5 text-[15px] leading-6 text-foreground placeholder:text-muted-foreground focus-visible:outline-none disabled:opacity-60"
-      />
+      <TypewriterHint value={settings.topic} sentences={PRESENTATION_HINTS} disabled={busy}>
+        <textarea
+          id="topic" data-field="topic" rows={3} maxLength={LIMITS.topicMax} value={settings.topic} disabled={busy}
+          onChange={(event) => onChange("topic", event.target.value)} onKeyDown={onKeyDown}
+          aria-invalid={Boolean(error)} aria-describedby={error ? "topic-error" : undefined}
+          className="block min-h-[84px] w-full resize-none bg-transparent px-4 pb-1 pt-3.5 text-[15px] leading-6 text-foreground placeholder:text-muted-foreground focus-visible:outline-none disabled:opacity-60"
+        />
+      </TypewriterHint>
 
       <div className="px-4 pb-2 text-end">
         <span className="text-[11px] tabular-nums text-muted-foreground" dir="ltr" aria-live="off">{settings.topic.length}/{LIMITS.topicMax}</span>

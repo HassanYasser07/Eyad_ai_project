@@ -12,12 +12,77 @@ const ROUTES = [
   { studio: "logo", patterns: [/logo|شعار|لوجو|علامة تجارية/i] },
   { studio: "brand-kit", patterns: [/brand identity|visual identity|brand kit|هوية بصرية|هوية|براند|brand/i] },
   { studio: "company-profile", patterns: [/company profile|corporate profile|بروفايل|ملف الشركة/i] },
+  { studio: "presentations", patterns: [/presentation|slides?\b|عرض تقديمي|عروض تقديمية|بر[يى]?زنت[يى]?ش[يى]?ن|بريزنتيشن|ب[او]?ور ?بوينت|سلايدات|pptx|power ?point/i] },
   { studio: "ai-images", patterns: [/image|images|photo|picture|صورة|صور/i] },
   { studio: "video", patterns: [/video|فيديو|ريل|reel|motion/i] },
-  { studio: "presentations", patterns: [/presentation|عرض تقديمي|برزنتيشن|باوربوينت|pptx|powerpoint/i] },
   { studio: "templates", patterns: [/template|poster|بوستر|فلاير|منشور|social post|flyer/i] },
   { studio: "marketplace", patterns: [/marketplace|سوق|متجر/i] },
 ];
+
+// The managed router prompt may return a loose studio id ("presentation", "powerpoint", ...). Always map it to a real one.
+const STUDIO_ID_ALIASES: Record<string, string> = {
+  presentation: "presentations", "presentation-studio": "presentations", presentation_studio: "presentations",
+  slides: "presentations", deck: "presentations", pptx: "presentations", powerpoint: "presentations", ppt: "presentations",
+  logos: "logo", "logo-studio": "logo", logo_studio: "logo",
+  brand: "brand-kit", "brand-identity": "brand-kit", brand_identity: "brand-kit", "visual-identity": "brand-kit", visual_identity: "brand-kit", brandkit: "brand-kit", brand_kit: "brand-kit",
+  company_profile: "company-profile", companyprofile: "company-profile",
+  image: "ai-images", images: "ai-images", ai_images: "ai-images", "ai-image": "ai-images",
+  videos: "video", template: "templates",
+};
+function normalizeStudioId(value: unknown): string | null {
+  const key = String(value ?? "").trim().toLowerCase();
+  if (!key || key === "null" || key === "none") return null;
+  return STUDIO_ID_ALIASES[key] || key;
+}
+
+// ── Presentation intent helpers ─────────────────────────────────────────────────────────────────────────────
+// Same idea as the logo flow (brand name + activity): a presentation needs a TOPIC before Chat hands over to the
+// Presentation Studio, and a plain QUESTION about presentations ("is it available? how do I make one?") must be
+// answered in chat instead of routing.
+const PRES_L = "\\p{L}\\p{M}";
+const PRES_NOUN = "(?:ال)?(?:عرض(?:\\s+ال)?\\s*تقديمي|عروض\\s+تقديمية|بر[يى]?زنت[يى]?ش[يى]?ن|بريزنتيشن|بور\\s?بوينت|باور\\s?بوينت|سلايدات|اسلايدات|شرائح|power\\s?point|presentations?|slide\\s?deck|slides?|deck|pptx?)";
+const PRES_NOUN_RE = new RegExp(`(?<![${PRES_L}])${PRES_NOUN}(?![${PRES_L}])`, "iu");
+const PRES_CONNECTOR_RE = new RegExp(`^(?:(?:عن|حول|بخصوص|عن\\s+موضوع|في\\s+موضوع|موضوعه|موضوعها|يتكلم\\s+عن|يتحدث\\s+عن|about|on|regarding|covering|for|of|to)(?![${PRES_L}])\\s*[:\\-–—،,]?\\s*)+`, "iu");
+const PRES_PLACEHOLDER_RE = /^(?:كذا|كده|كدا|موضوع|something|xyz|x)?$/iu;
+const PRES_QUESTION_RE = new RegExp(`(؟|\\?)|(?<![${PRES_L}])(?:هل|ازاي|إزاي|ازاى|كيف|كيفية|فين|اين|أين|امتى|متى|ايه|إيه|ما\\s+هو|ما\\s+هي|متوفر[ةه]?|متاح[ةه]?|موجود[ةه]?|how|where|what|when|is\\s+there|are\\s+there|do\\s+you|does|is\\s+it|available)(?![${PRES_L}])`, "iu");
+const PRES_DESIRE_RE = new RegExp(`(?<![${PRES_L}])(?:عايز|عاوز|عايزه|عايزة|محتاج|محتاجة|ابغى|أبغى|ابي|أبي|اريد|أريد|نفسي|i\\s+want|i\\s+need|i'd\\s+like|i\\s+would\\s+like)(?![${PRES_L}])`, "iu");
+// "How do I…", "is it available…", "where can I find…": asking about the feature, not asking for a deck.
+const PRES_HOWTO_RE = new RegExp(`(?<![${PRES_L}])(?:ازاي|إزاي|ازاى|كيف|كيفية|فين|اين|أين|متوفر[ةه]?|متاح[ةه]?|موجود[ةه]?|هل\\s+(?:في|فيه|يوجد|عندكم|عندك|تتوفر|متوفر)|how|where|is\\s+there|are\\s+there|do\\s+you\\s+have|available)(?![${PRES_L}])`, "iu");
+const PRES_MAKE_RE = new RegExp(`(?<![${PRES_L}])(?:اعمل|اعملي|اعملى|اعمللي|صمم|صممي|انشئ|أنشئ|سوي|جهز|جهزي|تعمل|تعملي|تصمم|تصممي|تجهز|تقدر|make|create|build|generate|design|prepare)(?![${PRES_L}])`, "iu");
+
+function cleanPresentationTopic(rest: string): string {
+  const trimmed = String(rest || "").trim()
+    .replace(PRES_CONNECTOR_RE, "")
+    .replace(/^[\s:\-–—،,.]+|[\s:\-–—،,؟?!.]+$/gu, "")
+    .trim();
+  const core = trimmed.replace(/[^\p{L}\p{N}\s]/gu, "").replace(/\s+/g, " ").trim();
+  if (core.length < 3 || PRES_PLACEHOLDER_RE.test(core)) return "";
+  return trimmed;
+}
+
+/** "عايز اعمل بريزنتيشن عن X" -> "X". Returns "" when the message is only a command with no real topic. */
+function extractPresentationTopicFromMessage(text = ""): string {
+  const input = String(text || "").replace(/\s+/g, " ").trim();
+  if (!input) return "";
+  const m = PRES_NOUN_RE.exec(input);
+  if (!m) return "";
+  return cleanPresentationTopic(input.slice(m.index + m[0].length));
+}
+
+/** A question ABOUT presentations (how do I make one? is it available on the website?), not a request to make one. */
+function isPresentationInfoQuestion(text = ""): boolean {
+  const input = String(text || "");
+  if (!PRES_NOUN_RE.test(input)) return false;
+  const topic = extractPresentationTopicFromMessage(input);
+  // How-to / availability wording ("ازاي", "متوفرة", "how", "is there") means a question about the feature,
+  // even when the sentence also contains "اعمل" / "make". A desire verb with a concrete topic is a real request.
+  if (PRES_HOWTO_RE.test(input)) return !(PRES_DESIRE_RE.test(input) && topic && !PRES_HOWTO_RE.test(topic));
+  // Other questions ("هل ...؟") are questions unless they ask Claude to make one ("هل ممكن تعملي ...").
+  if (PRES_QUESTION_RE.test(input)) return !(PRES_DESIRE_RE.test(input) || PRES_MAKE_RE.test(input));
+  return false;
+}
+
+const PRES_ACK_RE = /^(?:تمام|ايوه|أيوه|اه|آه|ماشي|نعم|اوكي|أوكي|ok|okay|yes|sure|yep)[\s!.،]*$/iu;
 
 const STUDIO_NAMES = {
   logo: { ar: "ستوديو الشعارات", en: "Logo Studio" },
@@ -437,7 +502,33 @@ function resolveFallbackImageSize(value: string, fallback = "1024x1024") {
   return key ? AI_IMAGE_ASPECTS[key].fallback : fallback;
 }
 
-async function appendOpenAIImageInput(formData: FormData, source: string, filename: string) {
+// Removes heavy payloads (base64 data URLs, very long strings) from any value
+// before it is serialized into an OpenAI prompt variable / prompt text.
+// OpenAI limits a single prompt variable to 1,048,576 characters, and a few
+// reference images as data URLs are enough to exceed it.
+function sanitizeForPrompt(value: any, depth = 0): any {
+  if (value === null || value === undefined) return value;
+  if (typeof value === "string") {
+    if (value.startsWith("data:")) {
+      const mime = value.slice(5, value.indexOf(";") > 0 ? value.indexOf(";") : 20);
+      return "[omitted data URL: " + mime + ", ~" + Math.round(value.length / 1024) + " KB]";
+    }
+    return value.length > 8000 ? value.slice(0, 8000) + "…[truncated]" : value;
+  }
+  if (typeof value !== "object") return value;
+  if (depth > 8) return "[omitted: too deep]";
+  if (Array.isArray(value)) return value.slice(0, 30).map((item) => sanitizeForPrompt(item, depth + 1));
+  const out: Record<string, any> = {};
+  for (const [key, item] of Object.entries(value)) out[key] = sanitizeForPrompt(item, depth + 1);
+  return out;
+}
+
+// Final safety net: a prompt variable must never exceed the provider limit.
+function capPromptVariable(text: string, max = 900000) {
+  return text.length > max ? text.slice(0, max) : text;
+}
+
+async function appendOpenAIImageInput(formData: FormData, source: string, filename: string, fieldName = "image") {
   if (!source) return false;
   try {
     let blob: Blob;
@@ -451,7 +542,7 @@ async function appendOpenAIImageInput(formData: FormData, source: string, filena
       if (!response.ok) return false;
       blob = await response.blob();
     }
-    formData.append("image", blob, filename);
+    formData.append(fieldName, blob, filename);
     return true;
   } catch {
     return false;
@@ -952,9 +1043,18 @@ Deno.serve(async (req: Request) => {
   const language = detectLanguage(message, requestedLanguage);
   // Streaming is an additive fast path for normal chat only. Image generation keeps the existing durable-job path.
   const streamRequested = body?.stream === true && action === "chat";
-  const studioId = body?.studio_id || detectStudio(message);
+  const studioId = normalizeStudioId(body?.studio_id) || detectStudio(message);
   const projectId = body?.project_id || null;
-  const designOptions = body?.design_options && typeof body.design_options === "object" ? body.design_options : {};
+  const rawDesignOptions = body?.design_options && typeof body.design_options === "object" ? body.design_options : {};
+  // Reference photos arrive as base64 data URLs. They are used for generation straight from `body`,
+  // but must not be copied into job payloads / generations rows (multi-MB JSON writes were slow
+  // and could push the request over the edge-function time limit).
+  const designOptions = {
+    ...rawDesignOptions,
+    ...(Array.isArray(rawDesignOptions.reference_images)
+      ? { reference_images: rawDesignOptions.reference_images.map((item: any) => ({ ...item, data_url: item?.data_url ? "[inline-image-omitted]" : null })) }
+      : {}),
+  };
   let referenceImage: string | null = null;
   if (typeof body?.reference_image === "string") {
     const refImg = body.reference_image;
@@ -1067,7 +1167,7 @@ Deno.serve(async (req: Request) => {
       latest_asset_id: project.metadata?.latest_asset_id || latestAssetResult.data?.id || null,
       latest_generation_id: project.metadata?.latest_generation_id || latestGenerationResult.data?.id || null,
       logo_brief: project.metadata?.logo_brief || null,
-      current_design_options: designOptions || {},
+      current_design_options: sanitizeForPrompt(designOptions || {}),
     },
     conversation: {
       id: conversation.id,
@@ -1075,8 +1175,8 @@ Deno.serve(async (req: Request) => {
       status: conversation.status,
       updated_at: conversation.updated_at,
     },
-    latest_asset: latestAssetResult.data || null,
-    latest_generation: latestGenerationResult.data || null,
+    latest_asset: sanitizeForPrompt(latestAssetResult.data || null),
+    latest_generation: sanitizeForPrompt(latestGenerationResult.data || null),
   };
 
   // Detect whether the user is modifying an existing design or starting a new one.
@@ -1084,6 +1184,18 @@ Deno.serve(async (req: Request) => {
   hasExistingAsset = Boolean(contextCore.project.latest_asset_id || latestAssetResult.data?.id);
   isModification = isModificationRequest(message);
   isExplicitNewDesign = isNewDesignRequest(message);
+
+  // A "generate" command sent from the AI Images studio UI is ALWAYS a generation,
+  // even if the brief contains edit-like words (غير/بدل/ضيف/تعديل/change/add...)
+  // or comes with a reference photo. The chat-only planner can never return a
+  // "generate" action, so treating it as a modification only produced a text reply
+  // ("تمام، هنفّذ نسخة مشابهة...") and no image.
+  const isStudioImageGenerate = action === "generate"
+    && String(studioId || body?.studioId || "").trim() === "ai-images";
+  if (isStudioImageGenerate) {
+    isModification = false;
+    isExplicitNewDesign = false;
+  }
 
   // If the user explicitly asks for a NEW design, discard any old reference image
   // sent by the frontend so generation starts from scratch.
@@ -1213,30 +1325,26 @@ Deno.serve(async (req: Request) => {
   // The published OpenAI Prompt is the source of truth for semantic
   // understanding, entity extraction, clarification, and studio routing.
   // The application remains the execution layer.
-  const runtimeConversationContext = JSON.stringify({
-    recent_messages: history,
+  const runtimeConversationContext = capPromptVariable(JSON.stringify({
+    recent_messages: sanitizeForPrompt(history),
     current_studio_id: studioId,
     current_action: action,
-    current_design_options: designOptions,
-  });
-  const runtimeProjectContext = JSON.stringify(contextCore);
+    current_design_options: sanitizeForPrompt(designOptions),
+  }));
+  const runtimeProjectContext = capPromptVariable(JSON.stringify(sanitizeForPrompt(contextCore)));
 
   // Explicit generation commands from a studio UI keep their existing
   // execution contract. Natural-language chat requests go through the
   // published intelligence prompt below.
   const explicitBrandProfilePageGeneration = action === "generate"
-    && Boolean(designOptions?.brand_profile_page)
-    && !isModification;
+    && Boolean(designOptions?.brand_profile_page);
 
   const explicitMockupGeneration = action === "generate"
-    && Boolean(designOptions?.mockup_type)
-    && !isModification;
+    && Boolean(designOptions?.mockup_type);
   const explicitLogoGeneration = action === "generate"
     && Boolean(designOptions?.style || designOptions?.colors || designOptions?.logo_type)
     && !isModification;
-  const explicitImageGeneration = action === "generate"
-    && String(studioId || body?.studioId || "").trim() === "ai-images"
-    && !isModification;
+  const explicitImageGeneration = isStudioImageGenerate;
 
   decision = undefined;
   plannerAi = {};
@@ -1303,8 +1411,12 @@ Deno.serve(async (req: Request) => {
       }, 400);
     }
     const styleReferencePrompt = String(designOptions?.style_reference_prompt || "").trim();
+    const hasContentReference = Boolean(referenceImage || imageAttachment?.dataUrl)
+      || (Array.isArray(designOptions?.reference_images) && designOptions.reference_images.some((item: any) => item?.data_url));
     const imagePromptParts = [
-      "Create the requested image exactly from the user's brief.",
+      hasContentReference
+        ? "Generate a NEW image based on the attached reference image(s). Keep the main subject's identity, face, features and key characteristics recognizable, and apply the changes requested in the brief (clothing, setting, style, etc.). Do not just return the reference unchanged."
+        : "Create the requested image exactly from the user's brief.",
       "User brief: " + message,
       "Aspect ratio: " + aspectRatio + " (" + AI_IMAGE_ASPECTS[aspectRatio].label + "). Compose the scene natively for this exact frame and fill it edge to edge.",
       styleReferencePrompt ? "Style reference direction: " + styleReferencePrompt : "",
@@ -1409,6 +1521,7 @@ Deno.serve(async (req: Request) => {
               "Return action=route and route_action=route with the correct studio_id, and provide a short spoken_handoff_text when appropriate.",
               "For logo work, when the brand/company name and business activity are already known and the user indicates that they want to start/design the logo, immediately route to Logo Studio.",
               "This is a semantic workflow rule, not a keyword or hard-coded company/industry rule.",
+              "For presentations: route to the Presentation Studio ONLY when the user wants to CREATE a presentation AND its topic/subject is already known (from this message or earlier ones). If the topic is missing, use action=clarify and ask ONE short question: what is the presentation about? If the user is only asking a QUESTION about presentations (how to make one, whether it is available on the website, pricing, features), answer it with action=respond and do NOT route. When known, also return presentation_topic = the subject only, without words like 'I want to make a presentation about'.",
               "",
               "CURRENT USER MESSAGE:",
               message,
@@ -1466,7 +1579,7 @@ Deno.serve(async (req: Request) => {
       ...decision,
       action: intelligenceAction === "route" ? "respond" : intelligenceAction === "clarify" ? "ask" : "respond",
       reply: String(decision.response || decision.reply || ""),
-      studio_id: decision.studio_id ? String(decision.studio_id) : null,
+      studio_id: normalizeStudioId(decision.studio_id),
       choices: Array.isArray(decision.choices) ? decision.choices : [],
       image_prompt: decision.image_prompt || null,
       route_action: intelligenceAction === "route"
@@ -1489,7 +1602,70 @@ Deno.serve(async (req: Request) => {
     else pendingDeltas.push(String(decision.reply));
   }
 
-  resolvedStudio = decision.studio_id || studioId;
+  resolvedStudio = normalizeStudioId(decision.studio_id) || studioId;
+
+  // ── Presentation guard (mirrors the logo flow: ask for what is missing, never route blindly) ───────────────
+  if (resolvedStudio === "presentations" || isPresentationInfoQuestion(message)) {
+    const isAr = language === "ar";
+    const wantsToLeave = decision.route_action === "route" || decision.route_action === "continue";
+    if (isPresentationInfoQuestion(message)) {
+      // A question about presentations: answer it in chat, do NOT open the studio.
+      decision = {
+        ...decision,
+        action: "respond",
+        route_action: "chat",
+        studio_id: null,
+        mode: null,
+        intent: "chat",
+        spoken_handoff_text: null,
+        reply: wantsToLeave || !decision.reply || /ستوديو|studio|هنقل|نقلك|open|opening/i.test(String(decision.reply))
+          ? (isAr
+            ? "أيوه، ستوديو العروض التقديمية متاح في إياد. تقدر تعمل منه عرض كامل بالذكاء الاصطناعي وتعدّل شرائحه بعد كده. اكتب لي موضوع العرض اللي عايزه وأنا أفتحه لك، أو افتحه من صفحة الاستوديوهات."
+            : "Yes, the Presentation Studio is available in EYAD. You can generate a full deck with AI and edit its slides afterwards. Tell me the topic of your presentation and I will open it for you, or open it from the Studios page.")
+          : String(decision.reply),
+      };
+      resolvedStudio = null;
+    } else if (wantsToLeave) {
+      // A real request to make a presentation: it needs a topic first.
+      const historyText = (history || []).map((item: any) => String(item?.content || ""));
+      const previousBrief = project.metadata?.presentation_brief?.topic ? String(project.metadata.presentation_brief.topic) : "";
+      const fromModel = typeof decision.presentation_topic === "string" ? cleanPresentationTopic(decision.presentation_topic) : "";
+      let topic = extractPresentationTopicFromMessage(message) || fromModel;
+      if (!topic && !PRES_NOUN_RE.test(message)) {
+        // A follow-up answer ("عن الذكاء الاصطناعي في التعليم") to the earlier "what is the topic?" question.
+        const inPresentationFlow = project.studio_type === "presentations" || historyText.some((t: string) => PRES_NOUN_RE.test(t));
+        const candidate = cleanPresentationTopic(String(message).replace(/\s+/g, " ").trim());
+        if (inPresentationFlow && candidate && !PRES_ACK_RE.test(candidate)) topic = candidate;
+      }
+      topic = topic || previousBrief;
+      // Editing/continuing an existing presentation project never needs the topic again; only a NEW request does.
+      if (!topic && decision.route_action !== "continue") {
+        decision = {
+          ...decision,
+          action: "ask",
+          route_action: "clarify",
+          studio_id: null,
+          mode: null,
+          intent: "clarify",
+          spoken_handoff_text: null,
+          choices: [],
+          reply: isAr ? "تمام، هنعمل العرض التقديمي. إيه موضوع العرض؟ ولو تحب قولي كمان الجهة اللي هتقدمه ليها." : "Great, let's build your presentation. What is it about? You can also tell me who it is for.",
+        };
+        resolvedStudio = null;
+      } else {
+        project.metadata = {
+          ...(project.metadata || {}),
+          presentation_brief: { topic: topic.slice(0, 500) },
+        };
+        if (project.id) {
+          const { data: briefProject } = await admin.from("projects")
+            .update({ metadata: project.metadata, updated_at: new Date().toISOString() })
+            .eq("id", project.id).eq("owner_id", user.id).select("*").single();
+          if (briefProject) project = briefProject;
+        }
+      }
+    }
+  }
 
   // Phase 2: EYAD Chat Router — structured routing metadata.
   // The planner returns route_action (chat|route|clarify|continue) plus
@@ -1803,14 +1979,21 @@ The supplied approved logo reference must be used as the actual printed logo on 
               ? `You are a senior brand designer creating a professional logo. Task: ${imagePrompt}\n\nDESIGN REQUIREMENTS — produce a single, polished, production-ready logo mark:\n- Clean, precise vector-style geometry with smooth curves and sharp edges. No jagged lines, no pixelation, no random dots, specks, noise, or stray artifacts.\n- Strong visual hierarchy: the company/brand name is the HERO text and must be clearly larger, heavier, and more visually dominant. The logo contains ONLY the brand name as text; the business activity must NOT be written anywhere in the logo (no descriptor line, no tagline).\n- Typography must be crisp, legible, and professionally kerned. Render the company name exactly as supplied and nothing else. Never render the business activity or industry name as text. Never distort, stretch, overlap, duplicate, translate, or invent text.\n- Centered composition with generous, balanced negative space around the mark. The logo must read clearly and look professional at any scale.\n- Use only the requested color palette. Solid, confident color blocks — no muddy gradients, no accidental fills, no semi-transparent haze.\n- Flat, iconic, brand-mark aesthetic. Think modern tech, luxury, or corporate identity — not illustration, not clipart, not a poster.\n- Transparent background. No backdrop, no scene, no shadow, no glow, no frame, no paper texture, no business card, no mockup, no wall sign, no presentation slide. The logo floats on a fully transparent canvas.\n- If a reference logo is provided, preserve its core identity, colors, and lettering while applying the requested refinements.\n- Deliver ONE clean logo only. Do not generate multiple variants, explorations, or layout options in a single image.`
               : `Create/edit a premium ${studioName} visual for the user's request: ${imagePrompt}. ${aiImageDirection} Produce a polished standalone creative image with no UI, no mockup, and no explanatory text.`
         const imageReference = effectiveReferenceImage || imageAttachment?.dataUrl || null;
+        const extraReferenceImages: string[] = Array.isArray(body?.design_options?.reference_images)
+          ? body.design_options.reference_images
+              .map((item: any) => String(item?.data_url || ""))
+              .filter((src: string) => (src.startsWith("data:image/") || src.startsWith("http")) && src !== imageReference)
+              .slice(0, 4)
+          : [];
         const styleReferenceUrl = String(styleReference?.url || '').trim() || null;
         const buildImageInput = (textPrompt: string) => {
           const content: any[] = [{ type: "input_text", text: textPrompt }];
           if (imageReference) content.push({ type: "input_text", text: "Content/reference image: use this for the referenced subject or visual elements when applicable. Do not treat it as the style reference." }, { type: "input_image", image_url: imageReference, detail: "high" });
+          for (const extra of extraReferenceImages) content.push({ type: "input_text", text: "Additional content reference image for the same subject." }, { type: "input_image", image_url: extra, detail: "high" });
           if (styleReferenceUrl) content.push({ type: "input_text", text: "Style reference image: use this image ONLY as the visual style reference. Match its lighting, palette, contrast, texture, composition language and overall art direction, but do not copy its subject matter." }, { type: "input_image", image_url: styleReferenceUrl, detail: "high" });
           return [{ role: "user", content }];
         };
-        const imageInput = (imageReference || styleReferenceUrl) ? buildImageInput(finalPrompt) : finalPrompt;
+        const imageInput = (imageReference || extraReferenceImages.length || styleReferenceUrl) ? buildImageInput(finalPrompt) : finalPrompt;
 
         // Mockups use the synchronous Images Edit API: the approved logo is
         // a reference image and the API returns the finished PNG directly.
@@ -1985,7 +2168,8 @@ The supplied approved logo reference must be used as the actual printed logo on 
           if (!logoReference) {
             return json({ error: "MOCKUP_REFERENCE_REQUIRED", detail: "An approved logo reference image is required for mockup generation." }, 400);
           }
-          const logoAttached = await appendReferenceImage(logoReference, "image", "approved-logo.png");
+          const mockupImageField = styleReferenceUrl ? "image[]" : "image";
+          const logoAttached = await appendReferenceImage(logoReference, mockupImageField, "approved-logo.png");
           if (!logoAttached) {
             return json({ error: "MOCKUP_REFERENCE_LOAD_FAILED", detail: "The approved logo reference could not be loaded." }, 502);
           }
@@ -1994,7 +2178,7 @@ The supplied approved logo reference must be used as the actual printed logo on 
           // Other exact-data mockups keep their existing deterministic client-side
           // compositing path for now.
           if (styleReferenceUrl) {
-            await appendReferenceImage(styleReferenceUrl, "image", "style-reference.png");
+            await appendReferenceImage(styleReferenceUrl, mockupImageField, "style-reference.png");
           }
 
           const imageResponse = await fetchWithTimeout("https://api.openai.com/v1/images/edits", {
@@ -2296,7 +2480,7 @@ The supplied approved logo reference must be used as the actual printed logo on 
           let data: any = {};
 
           const requestImage = async (requestSize: string): Promise<Response> => {
-            if (imageReference || styleReferenceUrl) {
+            if (imageReference || extraReferenceImages.length || styleReferenceUrl) {
               const formData = new FormData();
               formData.append("model", "gpt-image-2.5-sunburst");
               formData.append("prompt", variantPrompt);
@@ -2306,12 +2490,20 @@ The supplied approved logo reference must be used as the actual printed logo on 
               formData.append("background", isLogo ? "transparent" : "opaque");
               formData.append("output_format", "png");
 
+              // The Images Edit API accepts several images only as `image[]`.
+              // A repeated plain `image` field is rejected as a duplicate parameter.
+              const imageCount = (imageReference ? 1 : 0) + extraReferenceImages.length + (styleReferenceUrl ? 1 : 0);
+              const imageField = imageCount > 1 ? "image[]" : "image";
               if (imageReference) {
-                const attached = await appendOpenAIImageInput(formData, imageReference, "reference-image.png");
+                const attached = await appendOpenAIImageInput(formData, imageReference, "reference-image.png", imageField);
+                if (!attached) throw new Error("IMAGE_REFERENCE_LOAD_FAILED");
+              }
+              for (let i = 0; i < extraReferenceImages.length; i++) {
+                const attached = await appendOpenAIImageInput(formData, extraReferenceImages[i], "reference-image-" + (i + 2) + ".png", imageField);
                 if (!attached) throw new Error("IMAGE_REFERENCE_LOAD_FAILED");
               }
               if (styleReferenceUrl) {
-                const attached = await appendOpenAIImageInput(formData, styleReferenceUrl, "style-reference.png");
+                const attached = await appendOpenAIImageInput(formData, styleReferenceUrl, "style-reference.png", imageField);
                 if (!attached) throw new Error("STYLE_REFERENCE_LOAD_FAILED");
               }
 

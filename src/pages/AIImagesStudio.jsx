@@ -11,6 +11,8 @@ import { projectService } from "@/services/projectService";
 import { assetService } from "@/services/assetService";
 import { saveStudioOutput } from "@/services/projectContextService";
 import StudioNextActions from "@/components/studios/StudioNextActions";
+import TypewriterHint from "@/components/ui/TypewriterHint";
+import { IMAGE_HINTS } from "@/config/typewriterHints";
 import "./aiImagesStudio.css";
 
 const MIN_PROMPT_LENGTH = 3;
@@ -84,6 +86,49 @@ async function cropToAspect(src, w, h) {
   canvas.getContext("2d").drawImage(el, sx, sy, sw, sh, 0, 0, sw, sh);
   const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
   return blob ? URL.createObjectURL(blob) : null;
+}
+
+const MAX_REFERENCE_SIDE = 1600;
+const SKIP_COMPRESS_BELOW_BYTES = 600 * 1024;
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+/**
+ * Large phone photos (5-15MB) become 7-20MB of base64 in the request body and
+ * make the generation request time out. Downscale to <=1600px and re-encode as
+ * JPEG (~200-500KB) before upload; this is plenty for a reference image.
+ * Falls back to the original file if the browser cannot decode it.
+ */
+async function prepareReferenceImage(file) {
+  const original = await readFileAsDataUrl(file);
+  if (file.size <= SKIP_COMPRESS_BELOW_BYTES) return { name: file.name, type: file.type, data_url: original };
+  try {
+    const el = await loadImageElement(original);
+    const scale = Math.min(1, MAX_REFERENCE_SIDE / Math.max(el.naturalWidth, el.naturalHeight));
+    const w = Math.max(1, Math.round(el.naturalWidth * scale));
+    const h = Math.max(1, Math.round(el.naturalHeight * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, w, h);
+    ctx.drawImage(el, 0, 0, w, h);
+    const compressed = canvas.toDataURL("image/jpeg", 0.85);
+    if (compressed.length < original.length) {
+      return { name: file.name.replace(/\.[^.]+$/, "") + ".jpg", type: "image/jpeg", data_url: compressed };
+    }
+  } catch {
+    // keep original
+  }
+  return { name: file.name, type: file.type, data_url: original };
 }
 
 async function downloadImage(src, filename) {
@@ -318,7 +363,9 @@ export default function AIImagesStudio() {
           brand_identity: brand || null,
           approved_logo_url: brand?.logo?.url || null,
           brand_name: brand?.brand_name || "",
-          reference_images: referenceImages.map((item, index) => ({ index: index + 1, name: item.name || `reference-${index + 1}`, type: item.type || "image", data_url: item.data_url || item.url || null })),
+          // The first reference travels once, in `referenceImage`. Only the extra ones carry data here
+          // (sending it twice doubled the body size and caused connection timeouts).
+          reference_images: referenceImages.map((item, index) => ({ index: index + 1, name: item.name || `reference-${index + 1}`, type: item.type || "image", data_url: index === 0 ? null : (item.data_url || item.url || null) })),
           reference_image: referenceImages[0] ? { name: referenceImages[0].name || "reference-image", type: referenceImages[0].type || "image", has_data: Boolean(referenceImages[0].data_url || referenceImages[0].url) } : null,
           style_reference_image: styleReference ? { id: styleReference.id, name: styleReference.en, url: styleReference.url, prompt: styleReference.prompt } : null,
           style_reference_prompt: styleReference?.prompt || "",
@@ -439,12 +486,7 @@ export default function AIImagesStudio() {
       event.target.value = "";
       return;
     }
-    Promise.all(accepted.map((file) => new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve({ name: file.name, type: file.type, data_url: String(reader.result || "") });
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    }))).then((loaded) => {
+    Promise.all(accepted.map((file) => prepareReferenceImage(file))).then((loaded) => {
       setReferenceImages((prev) => [...prev, ...loaded].slice(0, MAX_REFERENCES));
       setError(accepted.length < files.length ? loc({ en: "Only 5 reference images can be added.", ar: "يمكن إضافة 5 صور مرجعية فقط." }) : "");
     }).catch(() => setError(loc({ en: "Could not load the reference images.", ar: "تعذر تحميل الصور المرجعية." })));
@@ -486,7 +528,9 @@ export default function AIImagesStudio() {
             </div>
             {!voiceMode ? (
               <div className="aiw-prompt">
-                <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder={loc({ en: "e.g. A cup of Arabic coffee on a marble table at sunrise…", ar: "مثال: فنجان قهوة عربية على طاولة رخام وقت الشروق…" })} rows={4} />
+                <TypewriterHint value={prompt} sentences={IMAGE_HINTS}>
+                  <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} aria-label={loc({ en: "Describe your image", ar: "اوصف صورتك" })} rows={4} />
+                </TypewriterHint>
                 <div className="aiw-prompt-bar">
                   <div className="aiw-refs">
                     {referenceImages.map((item, index) => (
