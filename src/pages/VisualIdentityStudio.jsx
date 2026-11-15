@@ -65,6 +65,7 @@ export default function VisualIdentityStudio() {
     setBrandName,
     saveBrandName,
     uploadLogo,
+    selectExistingLogo,
   } = useBrandState({ projectId, initialAssetId: assetId });
 
   const guard = (fn) => (...args) => {
@@ -87,6 +88,13 @@ export default function VisualIdentityStudio() {
 
   const handleUploadLogo = async (file) => {
     const result = await uploadLogo(file);
+    if (result?.projectId && result.projectId !== projectId) {
+      navigate(`/studios/brand-kit?project=${encodeURIComponent(result.projectId)}&asset=${encodeURIComponent(result.id)}`, { replace: true });
+    }
+  };
+
+  const handlePickExistingLogo = async (asset) => {
+    const result = await selectExistingLogo(asset);
     if (result?.projectId && result.projectId !== projectId) {
       navigate(`/studios/brand-kit?project=${encodeURIComponent(result.projectId)}&asset=${encodeURIComponent(result.id)}`, { replace: true });
     }
@@ -171,6 +179,8 @@ export default function VisualIdentityStudio() {
           onSaveName={guard(saveBrandName)}
           onUploadLogo={handleUploadLogo}
           onUploadRequest={() => handleUploadRequest(() => document.querySelector(".vi-hidden-file-input")?.click())}
+          onPickExistingLogo={handlePickExistingLogo}
+          onPickRequest={(openPicker) => handleUploadRequest(openPicker)}
           saving={saving}
           uploading={uploading}
           projectId={projectId}

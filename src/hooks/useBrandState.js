@@ -234,6 +234,34 @@ export function useBrandState({ projectId, initialAssetId } = {}) {
     }
   }, [projectId, brand?.brand_name]);
 
+  // Use an image the user already owns (any project) as the approved logo.
+  const selectExistingLogo = useCallback(async (asset) => {
+    if (!asset?.id || !asset?.url) return null;
+    setUploading(true);
+    try {
+      let targetProjectId = projectId;
+      if (!targetProjectId) {
+        const created = await projectService.create({
+          title: brand?.brand_name || asset.name?.replace(/\.[^.]+$/, "") || "Visual Identity",
+          studio_type: "brand-kit",
+          status: "draft",
+          language: "ar",
+          project_data: { brand_identity: { brand_name: brand?.brand_name || "" } },
+        });
+        targetProjectId = created.id;
+      }
+      const saved = await assetService.setApprovedLogoFromAsset({ projectId: targetProjectId, asset });
+      setBrand((b) => ({
+        ...(b || {}),
+        logo: { asset_id: asset.id, url: asset.url, name: asset.name || null },
+      }));
+      setApprovedAssetId(asset.id);
+      return { ...saved, projectId: targetProjectId };
+    } finally {
+      setUploading(false);
+    }
+  }, [projectId, brand?.brand_name]);
+
   const saveBrandName = useCallback(async () => {
     if (!projectId || !brand?.brand_name) return;
     setSaving(true);
@@ -272,6 +300,7 @@ export function useBrandState({ projectId, initialAssetId } = {}) {
     setBrandName,
     saveBrandName,
     uploadLogo,
+    selectExistingLogo,
   };
 }
 
