@@ -15,12 +15,12 @@ const rows = [
 ];
 
 const cards = [
-  { id: "logo", icon: Palette, image: "https://images.unsplash.com/photo-1626785774573-4b7996242425?auto=format&fit=crop&w=1000&q=85", title: "home.compare.logoTitle", body: "home.compare.logoBody", action: "home.compare.logoAction" },
+  { id: "logo", icon: Palette, image: "/images/studios/logo-studio.png", title: "home.compare.logoTitle", body: "home.compare.logoBody", action: "home.compare.logoAction" },
   { id: "brand-kit", icon: Layers3, image: "https://images.unsplash.com/photo-1561070791-2526d30994b5?auto=format&fit=crop&w=1000&q=85", title: "home.compare.identityTitle", body: "home.compare.identityBody", action: "home.compare.identityAction" },
   { id: "ai-images", icon: ImageIcon, image: "https://images.unsplash.com/photo-1519608487953-e999c86e7455?auto=format&fit=crop&w=1000&q=85", title: "home.compare.imageTitle", body: "home.compare.imageBody", action: "home.compare.imageAction" },
   { id: "video", icon: Video, image: "https://images.unsplash.com/photo-1485846234645-a62644f84728?auto=format&fit=crop&w=1000&q=85", title: "home.compare.videoTitle", body: "home.compare.videoBody", action: "home.compare.videoAction" },
   { id: "company-profile", icon: BriefcaseBusiness, image: "https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=1000&q=85", title: "home.compare.profileTitle", body: "home.compare.profileBody", action: "home.compare.profileAction" },
-  { id: "presentations", icon: Presentation, image: "https://images.unsplash.com/photo-1556761175-b413da4baf72?auto=format&fit=crop&w=1000&q=85", title: "home.compare.presentationTitle", body: "home.compare.presentationBody", action: "home.compare.presentationAction" },
+  { id: "presentations", icon: Presentation, image: "/images/studios/presentation.jpeg", title: "home.compare.presentationTitle", body: "home.compare.presentationBody", action: "home.compare.presentationAction" },
 ];
 
 export default function HomeCompare() {
@@ -52,7 +52,7 @@ export default function HomeCompare() {
             <div className="eyad-home__compare-row" key={id}>
               <span className="eyad-home__compare-feature">{t(key)}</span>
               <strong className="eyad-home__compare-yes"><span>✓</span>{t("home.compare.eyad")}</strong>
-              <span className="eyad-home__compare-neutral">{t(traditionalKey)}</span>
+              <span className="eyad-home__compare-neutral"><em className="eyad-home__compare-trad-label">{t("home.compare.traditional")}</em>{t(traditionalKey)}</span>
             </div>
           ))}
         </div>

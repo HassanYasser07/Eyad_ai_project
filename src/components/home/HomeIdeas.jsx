@@ -2,10 +2,13 @@ import React from "react";
 import { useNavigate } from "react-router-dom";
 import { useI18n } from "@/i18n/I18nContext";
 
+const FALLBACK_IMAGE = "/images/studios/visual-identity.png";
+
 const IDEAS = [
   {
     key: "home.ideas.cafe",
-    image: null,
+    image:
+      "https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?auto=format&fit=crop&w=800&q=85",
   },
   {
     key: "home.ideas.company",
@@ -32,7 +35,18 @@ export default function HomeIdeas() {
           className="eyad-home__idea-card"
           onClick={() => navigate("/studios")}
         >
-          {idea.image && <img src={idea.image} alt="" loading="lazy" />}
+          {idea.image && (
+            <img
+              src={idea.image}
+              alt=""
+              loading="lazy"
+              onError={(e) => {
+                if (e.currentTarget.dataset.fallback) return;
+                e.currentTarget.dataset.fallback = "1";
+                e.currentTarget.src = FALLBACK_IMAGE;
+              }}
+            />
+          )}
           <div className="eyad-home__idea-card-body">
             <strong>{t(idea.key)}</strong>
             <small>{t("home.ideas.use")}</small>

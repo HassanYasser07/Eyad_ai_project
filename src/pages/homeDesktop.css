@@ -240,53 +240,70 @@
   }
   .eyad-dt-home { width: 100%; }
 
-  /* ── Hero banner ── */
+  /* ── Hero banner ──
+     Artwork is a full-bleed background (1600x533, 3:1). It occupies one side and
+     leaves the other side empty; the text sits in that empty side.
+     English: artwork left / text right.  Arabic (mirrored): artwork right / text left. */
   .eyad-dt-hero-banner {
     position: relative;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 20px;
-    padding: 32px 32px;
+    container-type: inline-size;
+    width: 100%;
+    aspect-ratio: 1600 / 533;
     border-radius: 20px;
     overflow: hidden;
-    background: linear-gradient(135deg, #1e1b4b 0%, #312e81 30%, #4338ca 60%, #7c3aed 100%);
+    background: #1e1b4b;
     box-shadow: 0 10px 30px rgba(30, 27, 75, 0.3);
     margin-bottom: 24px;
   }
-  .eyad-dt-hero-banner::before {
-    content: "";
+  .eyad-dt-hero-banner-bg {
     position: absolute;
     inset: 0;
-    background: radial-gradient(ellipse at 85% 15%, rgba(255, 255, 255, 0.1), transparent 50%);
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    user-select: none;
     pointer-events: none;
   }
-  .eyad-dt-hero-banner-content { position: relative; z-index: 1; flex: 1 1 0%; min-width: 0; }
+  .eyad-dt-hero-banner-content {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 42%;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0;
+  }
+  .eyad-dt-hero-banner.is-en .eyad-dt-hero-banner-content { right: 4%; left: auto; align-items: flex-start; text-align: left; }
+  .eyad-dt-hero-banner.is-ar .eyad-dt-hero-banner-content { left: 4%; right: auto; align-items: flex-start; text-align: right; }
   .eyad-dt-hero-banner-content h1 {
-    margin: 0 0 8px;
-    font-size: 1.6rem;
+    margin: 0 0 1.4cqw;
+    font-size: clamp(1.15rem, 3.1cqw, 2.1rem);
     font-weight: 900;
     line-height: 1.2;
     color: #ffffff;
     letter-spacing: -0.01em;
+    text-shadow: 0 2px 14px rgba(15, 12, 60, 0.45);
   }
   .eyad-dt-hero-banner-content p {
-    margin: 0 0 20px;
-    font-size: 0.88rem;
-    color: rgba(255, 255, 255, 0.8);
+    margin: 0 0 2cqw;
+    font-size: clamp(0.72rem, 1.45cqw, 0.98rem);
+    color: rgba(255, 255, 255, 0.85);
     line-height: 1.6;
-    max-width: 460px;
+    max-width: 100%;
   }
-  .eyad-dt-hero-banner-ctas { display: flex; gap: 10px; flex-wrap: wrap; }
+  .eyad-dt-hero-banner-ctas { display: flex; gap: 0.9cqw; flex-wrap: wrap; }
   .eyad-dt-hero-btn {
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    height: 40px;
-    padding: 0 18px;
+    height: clamp(32px, 4.2cqw, 42px);
+    padding: 0 clamp(12px, 1.7cqw, 18px);
     border: 0;
     border-radius: 10px;
-    font-size: 0.82rem;
+    font-size: clamp(0.7rem, 1.2cqw, 0.84rem);
     font-weight: 700;
     cursor: pointer;
     white-space: nowrap;
@@ -305,18 +322,6 @@
     border: 1px solid rgba(255, 255, 255, 0.3);
   }
   .eyad-dt-hero-btn.is-ghost:hover { background: rgba(255, 255, 255, 0.2); }
-  .eyad-dt-hero-banner-visual {
-    position: relative;
-    z-index: 1;
-    flex: 0 0 180px;
-    width: 180px;
-    height: 130px;
-    border-radius: 14px;
-    overflow: hidden;
-    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.3);
-    background: rgba(255, 255, 255, 0.06);
-  }
-  .eyad-dt-hero-banner-visual img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
   /* ── Sections ── */
   .eyad-dt-section { margin-top: 28px; }
@@ -594,32 +599,158 @@
     .eyad-dt-workspace { padding: 24px 28px 40px; }
     .eyad-dt-quick-row { grid-template-columns: repeat(4, minmax(0, 1fr)); }
     .eyad-dt-projects-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-    .eyad-dt-hero-banner { padding: 36px 36px; }
-    .eyad-dt-hero-banner-content h1 { font-size: 1.75rem; }
-    .eyad-dt-hero-banner-visual { flex-basis: 200px; width: 200px; height: 140px; }
     .eyad-dt-search { max-width: 520px; }
   }
   @media (min-width: 1440px) {
     .eyad-dt-sidebar { width: 264px; flex-basis: 264px; }
     .eyad-dt-rail { flex-basis: 320px; }
-    .eyad-dt-hero-banner { padding: 40px 40px; }
-    .eyad-dt-hero-banner-content h1 { font-size: 1.9rem; }
-    .eyad-dt-hero-banner-visual { flex-basis: 220px; width: 220px; height: 160px; }
   }
   @media (min-width: 1600px) {
     .eyad-dt-workspace { padding: 28px 36px 44px; }
     .eyad-dt-rail { flex-basis: 340px; padding-block: 28px 44px; padding-inline: 0 24px; }
-    .eyad-dt-hero-banner { padding: 44px 44px; }
-    .eyad-dt-hero-banner-content h1 { font-size: 2rem; }
   }
   @media (max-width: 1100px) {
     .eyad-dt-sidebar { width: 220px; flex-basis: 220px; padding: 16px 10px 10px; }
     .eyad-dt-workspace { padding: 18px 16px 36px; }
     .eyad-dt-rail { flex-basis: 240px; padding-block: 18px 36px; padding-inline: 0 12px; }
     .eyad-dt-header { padding: 0 16px; }
-    .eyad-dt-hero-banner { padding: 24px 22px; }
-    .eyad-dt-hero-banner-visual { flex-basis: 140px; width: 140px; height: 100px; }
-    .eyad-dt-hero-banner-content h1 { font-size: 1.35rem; }
     .eyad-dt-profile-name { display: none; }
   }
+}
+
+
+/* ═══════════════════════════════════════════════════════════
+   Desktop Home fixes — extra sections (marketplace → compare)
+   ═══════════════════════════════════════════════════════════ */
+
+/* Quick Create: Logo / Visual-identity PNGs fill edge to edge (tune --studio-zoom) */
+.eyad-dt-quick-card.is-zoom { --studio-zoom: 1.35; }
+.eyad-dt-quick-card.is-zoom img { transform: scale(var(--studio-zoom)); transform-origin: center; }
+
+/* Measure the real column width (sidebar + rail eat space), not the viewport */
+.eyad-dt-extra {
+  container-type: inline-size;
+  container-name: dtextra;
+  font-family: inherit;
+}
+
+/* Text follows the page direction in every shared section */
+.eyad-dt-extra .eyad-home__market-card,
+.eyad-dt-extra .eyad-home__idea-card,
+.eyad-dt-extra .eyad-home__compare-card,
+.eyad-dt-extra .eyad-home__compare-chat,
+.eyad-dt-extra .eyad-home__feature {
+  text-align: start;
+}
+.eyad-dt-extra .eyad-home__market-card-content,
+.eyad-dt-extra .eyad-home__idea-card-body,
+.eyad-dt-extra .eyad-home__compare-chat-copy,
+.eyad-dt-extra .eyad-home__compare-cta-head > div {
+  text-align: start;
+  align-items: flex-start;
+}
+.eyad-dt-extra .eyad-home__project-card-body { direction: inherit; }
+
+/* Back-arrows point the reading direction in English */
+[dir="ltr"] .eyad-dt-extra svg.lucide-arrow-left { transform: scaleX(-1); }
+
+/* "Your creativity, from idea to result" — padding was zeroed by the shared reset */
+.eyad-dt-extra .eyad-home__feature {
+  padding: 36px 40px;
+  border-radius: 24px;
+}
+.eyad-dt-extra .eyad-home__feature-label { font-size: 0.82rem; margin-bottom: 10px; }
+.eyad-dt-extra .eyad-home__feature-title {
+  max-width: 760px;
+  margin-bottom: 12px;
+  font-size: 1.6rem;
+  line-height: 1.35;
+}
+.eyad-dt-extra .eyad-home__feature-body {
+  max-width: 780px;
+  margin-bottom: 26px;
+  font-size: 0.92rem;
+  line-height: 1.75;
+}
+.eyad-dt-extra .eyad-home__feature-grid {
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 14px;
+}
+.eyad-dt-extra .eyad-home__feature-item { padding: 18px 16px; gap: 12px; }
+.eyad-dt-extra .eyad-home__feature-item span { font-size: 0.88rem; }
+
+/* Marketplace card: fixed-size image, not 42% of a wide row */
+.eyad-dt-extra .eyad-home__market-card { min-height: 150px; }
+.eyad-dt-extra .eyad-home__market-card img { width: 280px; flex: 0 0 280px; }
+.eyad-dt-extra .eyad-home__market-card-content { padding: 22px 26px; }
+.eyad-dt-extra .eyad-home__market-card-content strong { font-size: 1.15rem; }
+.eyad-dt-extra .eyad-home__market-card-content small { font-size: 0.86rem; }
+.eyad-dt-extra .eyad-home__market-card-link { font-size: 0.84rem; }
+.eyad-dt-extra .eyad-home__pills-section { margin-top: 20px; }
+
+/* Create section */
+.eyad-dt-extra .eyad-home__create-strip { margin-bottom: 22px; padding: 14px 24px; }
+.eyad-dt-extra .eyad-home__create-title { font-size: 1.5rem; }
+.eyad-dt-extra .eyad-home__create-desc { max-width: 680px; margin-inline: auto; margin-bottom: 22px; font-size: 0.9rem; }
+.eyad-dt-extra .eyad-home__create-card,
+.eyad-dt-extra .eyad-home__create-card-content { min-height: 270px; }
+.eyad-dt-extra .eyad-home__create-card-content { padding: 28px 32px; }
+.eyad-dt-extra .eyad-home__create-card-content strong { font-size: 1.3rem; }
+.eyad-dt-extra .eyad-home__create-card-content p { max-width: 520px; font-size: 0.9rem; }
+
+/* Ideas: fluid columns; the image-less card gets a soft fill */
+.eyad-dt-extra .eyad-home__ideas {
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+.eyad-dt-extra .eyad-home__idea-card { display: flex; flex-direction: column; }
+.eyad-dt-extra .eyad-home__idea-card img { height: 140px; }
+.eyad-dt-extra .eyad-home__idea-card-body { padding: 16px 18px; }
+.eyad-dt-extra .eyad-home__idea-card:not(:has(img)) {
+  justify-content: center;
+  background: linear-gradient(145deg, #eaf5ff, #ffffff);
+}
+
+/* Compare: cards 2-up in a narrow column, 3-up when there is room */
+.eyad-dt-extra .eyad-home__compare-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@container dtextra (min-width: 780px) {
+  .eyad-dt-extra .eyad-home__compare-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+/* Compare table → stacked cards when the column is too narrow (no horizontal scroll) */
+@container dtextra (max-width: 719px) {
+  .eyad-dt-extra .eyad-home__compare-table-wrap {
+    overflow: visible; border: 0; border-radius: 0; background: none;
+    box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none;
+  }
+  .eyad-dt-extra .eyad-home__compare-table {
+    min-width: 0; display: flex; flex-direction: column; gap: 10px;
+  }
+  .eyad-dt-extra .eyad-home__compare-head { display: none; }
+  .eyad-dt-extra .eyad-home__compare-row {
+    grid-template-columns: minmax(0, 1fr); gap: 10px; min-height: 0; padding: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.95); border-radius: 18px;
+    background: rgba(255, 255, 255, 0.8); box-shadow: 0 8px 22px rgba(43, 83, 120, 0.07);
+  }
+  .eyad-dt-extra .eyad-home__compare-feature {
+    font-size: 0.88rem; font-weight: 800; line-height: 1.5; text-align: start;
+  }
+  .eyad-dt-extra .eyad-home__compare-yes {
+    justify-self: stretch; padding: 9px 12px; border-radius: 12px;
+    background: rgba(16, 185, 129, 0.08); font-size: 0.78rem;
+  }
+  .eyad-dt-extra .eyad-home__compare-neutral {
+    display: flex; flex-direction: column; gap: 3px; padding: 9px 12px;
+    border-radius: 12px; background: rgba(112, 142, 168, 0.08);
+    font-size: 0.74rem; text-align: start;
+  }
+  .eyad-dt-extra .eyad-home__compare-trad-label {
+    display: block; color: #5f7488; font-size: 0.68rem; font-style: normal; font-weight: 800;
+  }
+}
+
+/* Narrow column: tighter feature block */
+@container dtextra (max-width: 620px) {
+  .eyad-dt-extra .eyad-home__feature { padding: 26px 22px; }
+  .eyad-dt-extra .eyad-home__feature-title { font-size: 1.3rem; }
+  .eyad-dt-extra .eyad-home__market-card img { width: 38%; flex-basis: 38%; }
 }

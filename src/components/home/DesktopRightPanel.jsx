@@ -11,8 +11,8 @@ import Logo from "@/components/Logo";
 
 const TEMPLATE_THUMBS = [
   "/images/studios/visual-identity.png",
-  "https://images.unsplash.com/photo-1545235617-9465d2a55698?auto=format&fit=crop&w=400&q=80",
-  "https://images.unsplash.com/photo-1556761175-b413da4baf72?auto=format&fit=crop&w=400&q=80",
+  "/images/studios/templates.jpeg",
+  "/images/studios/presentation.jpeg",
 ];
 
 const TOOLS = [

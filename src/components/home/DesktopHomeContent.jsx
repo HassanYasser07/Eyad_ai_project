@@ -19,8 +19,12 @@ import HomeCreateSection from "@/components/home/HomeCreateSection";
 import HomeIdeas from "@/components/home/HomeIdeas";
 import HomeCompare from "@/components/home/HomeCompare";
 
-const HERO_VISUAL =
-  "/images/studios/logo-studio.png";
+// Banner artwork per language. The artwork sits on one side and leaves the
+// other side empty for the text: English = empty on the right, Arabic (mirrored) = empty on the left.
+const HERO_BANNERS = {
+  en: "/images/studios/bnr.jpeg",
+  ar: "/images/studios/banner_exact_horizontal_mirror.png",
+};
 
 const PASTEL = {
   logo: "#E0F2FE",
@@ -57,7 +61,7 @@ const QUICK_CREATE_STUDIOS = QUICK_CREATE_IDS
   .filter(Boolean);
 
 export default function DesktopHomeContent() {
-  const { t, loc } = useI18n();
+  const { t, loc, language } = useI18n();
   const navigate = useNavigate();
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -77,7 +81,13 @@ export default function DesktopHomeContent() {
   return (
     <div className="eyad-dt-home">
       {/* ── Hero banner ── */}
-      <section className="eyad-dt-hero-banner">
+      <section className={`eyad-dt-hero-banner ${language === "ar" ? "is-ar" : "is-en"}`}>
+        <img
+          className="eyad-dt-hero-banner-bg"
+          src={HERO_BANNERS[language] || HERO_BANNERS.en}
+          alt=""
+          draggable={false}
+        />
         <div className="eyad-dt-hero-banner-content">
           <h1>{t("home.desktop.heroTitle")}</h1>
           <p>{t("home.desktop.heroDesc")}</p>
@@ -89,9 +99,6 @@ export default function DesktopHomeContent() {
               <Wand2 /> {t("home.desktop.heroDesign")}
             </button>
           </div>
-        </div>
-        <div className="eyad-dt-hero-banner-visual">
-          <img src={HERO_VISUAL} alt="" />
         </div>
       </section>
 
@@ -109,7 +116,7 @@ export default function DesktopHomeContent() {
               <button
                 key={studio.id}
                 type="button"
-                className="eyad-dt-quick-card"
+                className={`eyad-dt-quick-card ${studio.id === "logo" || studio.id === "brand-kit" ? "is-zoom" : ""}`}
                 onClick={() => navigate(studio.route)}
               >
                 {img ? (
