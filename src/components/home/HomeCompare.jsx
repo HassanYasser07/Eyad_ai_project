@@ -52,7 +52,7 @@ export default function HomeCompare() {
             <div className="eyad-home__compare-row" key={id}>
               <span className="eyad-home__compare-feature">{t(key)}</span>
               <strong className="eyad-home__compare-yes"><span>✓</span>{t("home.compare.eyad")}</strong>
-              <span className="eyad-home__compare-neutral">{t(traditionalKey)}</span>
+              <span className="eyad-home__compare-neutral"><em className="eyad-home__compare-trad-label">{t("home.compare.traditional")}</em>{t(traditionalKey)}</span>
             </div>
           ))}
         </div>

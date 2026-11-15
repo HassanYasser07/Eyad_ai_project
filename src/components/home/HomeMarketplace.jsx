@@ -17,7 +17,7 @@ export default function HomeMarketplace() {
         onClick={() => navigate("/studios/marketplace")}
       >
         <img
-          src="https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?auto=format&fit=crop&w=800&q=85"
+          src="/images/studios/market.jpeg"
           alt=""
           loading="lazy"
         />

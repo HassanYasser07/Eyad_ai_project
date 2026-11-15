@@ -1094,3 +1094,111 @@
   .eyad-home__compare-head,
   .eyad-home__compare-row { grid-template-columns: 200px 105px 145px; }
 }
+
+/* ═══════════════════════════════════════════════════════════
+   Mobile Home fixes (scoped to .eyad-home--mobile only —
+   desktop / tablet layouts that reuse these classes are untouched)
+   ═══════════════════════════════════════════════════════════ */
+
+/* 1/3/4/6/8 — text follows the page direction (left in EN, right in AR) */
+.eyad-home--mobile .eyad-home__chat,
+.eyad-home--mobile .eyad-home__suggest-text,
+.eyad-home--mobile .eyad-home__studio-card,
+.eyad-home--mobile .eyad-home__market-card,
+.eyad-home--mobile .eyad-home__idea-card,
+.eyad-home--mobile .eyad-home__compare-card,
+.eyad-home--mobile .eyad-home__compare-chat {
+  text-align: start;
+}
+.eyad-home--mobile .eyad-home__chat-copy,
+.eyad-home--mobile .eyad-home__studio-copy,
+.eyad-home--mobile .eyad-home__market-card-content,
+.eyad-home--mobile .eyad-home__idea-card-body,
+.eyad-home--mobile .eyad-home__compare-chat-copy,
+.eyad-home--mobile .eyad-home__compare-cta-head > div {
+  text-align: start;
+  align-items: flex-start;
+}
+.eyad-home--mobile .eyad-home__studio-copy small,
+.eyad-home--mobile .eyad-home__market-card-content small {
+  text-align: start;
+}
+
+/* 2 — Logo / Visual-identity PNGs: fill the whole card (blurred copy behind, cover on top) */
+.eyad-home--mobile .eyad-home__studio-card.has-backdrop::before {
+  content: "";
+  position: absolute;
+  inset: -12%;
+  background: var(--studio-img) center / cover no-repeat;
+  filter: blur(18px) saturate(1.15);
+}
+.eyad-home--mobile .eyad-home__studio-card.has-backdrop img {
+  object-fit: cover;
+  object-position: center;
+}
+
+/* 5 — flip the arrow next to "Start creating" in English */
+.eyad-home__content[dir="ltr"] .eyad-home__mywork-empty-btn svg {
+  transform: scaleX(-1);
+}
+
+/* 7 — "What you need" table → stacked cards on phones (no horizontal scroll) */
+.eyad-home__compare-trad-label { display: none; }
+@media (max-width: 719px) {
+  .eyad-home--mobile .eyad-home__compare-table-wrap {
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .eyad-home--mobile .eyad-home__compare-table {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .eyad-home--mobile .eyad-home__compare-head { display: none; }
+  .eyad-home--mobile .eyad-home__compare-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+    min-height: 0;
+    padding: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.95);
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.8);
+    box-shadow: 0 8px 22px rgba(43, 83, 120, 0.07);
+  }
+  .eyad-home--mobile .eyad-home__compare-feature {
+    font-size: 0.88rem;
+    font-weight: 800;
+    line-height: 1.5;
+    text-align: start;
+  }
+  .eyad-home--mobile .eyad-home__compare-yes {
+    justify-self: stretch;
+    padding: 9px 12px;
+    border-radius: 12px;
+    background: rgba(16, 185, 129, 0.08);
+    font-size: 0.78rem;
+  }
+  .eyad-home--mobile .eyad-home__compare-neutral {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 9px 12px;
+    border-radius: 12px;
+    background: rgba(112, 142, 168, 0.08);
+    font-size: 0.74rem;
+    text-align: start;
+  }
+  .eyad-home--mobile .eyad-home__compare-trad-label {
+    display: block;
+    color: #5f7488;
+    font-size: 0.68rem;
+    font-style: normal;
+    font-weight: 800;
+  }
+}

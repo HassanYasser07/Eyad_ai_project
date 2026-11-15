@@ -56,6 +56,11 @@ export const STUDIO_VISUALS = {
     title: "home.studio.templates.title",
     line: "home.studio.templates.line",
   },
+  marketplace: {
+    image: "/images/studios/market.jpeg",
+    title: "home.marketplace.title",
+    line: "home.marketplace.line",
+  },
 };
 
 export default function HomeStudios({ studios, studioIds = HOME_STUDIO_IDS }) {
@@ -82,7 +87,8 @@ export default function HomeStudios({ studios, studioIds = HOME_STUDIO_IDS }) {
               key={studio.id}
               type="button"
               onClick={() => navigate(studio.route)}
-              className={`eyad-home__studio-card ${featured ? "is-featured" : ""}`}
+              className={`eyad-home__studio-card ${featured ? "is-featured" : ""} ${visual.image?.startsWith("/") ? "has-backdrop" : ""}`}
+              style={visual.image?.startsWith("/") ? { "--studio-img": `url("${visual.image}")` } : undefined}
             >
               <img src={visual.image} alt="" loading="lazy" />
               <span className="eyad-home__studio-shade" />
