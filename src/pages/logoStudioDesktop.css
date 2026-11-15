@@ -2020,3 +2020,60 @@
     grid-template-columns: repeat(4, minmax(0, 1fr))
   }
 }
+
+/* ═══ Logo Studio (desktop) — round 2 polish ═══ */
+@media (min-width:1024px) {
+  /* "Start with a quick idea": follow the page direction (was hard-coded right) */
+  .logo-desktop-section-title h2,
+  .logo-desktop-section-title p { text-align: start }
+
+  /* Brief form: one soft panel instead of full-width stretched controls */
+  .logo-desktop-form-panel {
+    margin-top: 14px;
+    padding: 22px;
+    border: 1px solid #e6edf7;
+    border-radius: 16px;
+    background: linear-gradient(180deg, #f8faff, #f3f7fd);
+  }
+  .logo-desktop-form-panel .logo-desktop-brand-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px 20px;
+    margin: 0 0 18px;
+  }
+  .logo-desktop-form-panel .logo-desktop-brand-field { gap: 8px }
+  .logo-desktop-form-panel .logo-desktop-brand-field > span,
+  .logo-desktop-form-panel .logo-desktop-field-label {
+    margin: 0;
+    color: #25324d;
+    font-size: .78rem;
+    font-weight: 800;
+    text-align: start;
+  }
+  .logo-desktop-form-panel .logo-desktop-brand-field input {
+    height: 48px;
+    padding: 0 16px;
+    border: 1.5px solid #dfe7f3;
+    border-radius: 12px;
+    box-shadow: 0 1px 2px rgba(35, 49, 80, .04);
+    text-align: start;
+  }
+  .logo-desktop-form-panel .logo-desktop-brand-field input::placeholder { color: #a3aec2 }
+  .logo-desktop-form-panel .logo-desktop-field-label { display: block; margin-bottom: 8px }
+  .logo-desktop-form-panel textarea {
+    height: 104px;
+    border: 1.5px solid #dfe7f3;
+    box-shadow: 0 1px 2px rgba(35, 49, 80, .04);
+    text-align: start;
+  }
+  @media (max-width: 1180px) {
+    .logo-desktop-form-panel { padding: 18px }
+    .logo-desktop-form-panel .logo-desktop-brand-fields { gap: 14px }
+  }
+
+  /* "More than a logo" — in Arabic the image sits on the right, so the fade must run toward the text (left) */
+  .logo-desktop-main[dir="rtl"] .logo-desktop-why-image:after {
+    background: linear-gradient(270deg, rgba(5, 16, 42, .05), #091838);
+  }
+  .logo-desktop-main[dir="rtl"] .logo-desktop-why-copy { text-align: right }
+  .logo-desktop-main[dir="ltr"] .logo-desktop-why-copy { text-align: left }
+}

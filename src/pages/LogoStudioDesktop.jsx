@@ -290,6 +290,7 @@ export default function LogoStudioDesktop({
               <span>{brief.length}</span>
             </div>
             <p className="logo-desktop-prompt-sub">{ar ? "راجع بيانات العلامة وعدّلها قبل إنشاء الشعار." : "Review your brand details and edit them before generating the logo."}</p>
+            <div className="logo-desktop-form-panel" dir={direction}>
             <div className="logo-desktop-brand-fields" dir={direction}>
               <label className="logo-desktop-brand-field" htmlFor="logo-desktop-brand-name">
                 <span>{ar ? "اسم الشركة / العلامة التجارية" : "Company / brand name"}</span>
@@ -300,8 +301,9 @@ export default function LogoStudioDesktop({
                 <input id="logo-desktop-activity" value={activity} onChange={e => { setActivity(e.target.value); setIndustry(""); setFormError(""); }} placeholder={ar ? "مثال: الدجاج والوجبات" : "e.g. Chicken & food"}/>
               </label>
             </div>
-            <p className="logo-desktop-prompt-sub">{ar ? "وصف إضافي للتصميم (اختياري)" : "Additional design brief (optional)"}</p>
+            <p className="logo-desktop-prompt-sub logo-desktop-field-label">{ar ? "وصف إضافي للتصميم (اختياري)" : "Additional design brief (optional)"}</p>
             <TypewriterHint value={brief} sentences={LOGO_HINTS}><textarea id="logo-desktop-brief" value={brief} onChange={e => { setBrief(e.target.value); setFormError(""); }} aria-label={ar ? "وصف إضافي للتصميم" : "Additional design brief"}/></TypewriterHint>
+            </div>
 
             <section className="logo-desktop-choice-section" aria-labelledby="logo-desktop-styles-heading">
               <div className="logo-desktop-choice-heading">

@@ -46,13 +46,13 @@ export const STUDIO_VISUALS = {
   },
   presentations: {
     image:
-      "https://images.unsplash.com/photo-1556761175-b413da4baf72?auto=format&fit=crop&w=1200&q=85",
+      "/images/studios/presentation.jpeg",
     title: "home.studio.presentations.title",
     line: "home.studio.presentations.line",
   },
   templates: {
     image:
-      "https://images.unsplash.com/photo-1545235617-9465d2a55698?auto=format&fit=crop&w=1200&q=85",
+      "/images/studios/templates.jpeg",
     title: "home.studio.templates.title",
     line: "home.studio.templates.line",
   },
@@ -87,8 +87,8 @@ export default function HomeStudios({ studios, studioIds = HOME_STUDIO_IDS }) {
               key={studio.id}
               type="button"
               onClick={() => navigate(studio.route)}
-              className={`eyad-home__studio-card ${featured ? "is-featured" : ""} ${visual.image?.startsWith("/") ? "has-backdrop" : ""}`}
-              style={visual.image?.startsWith("/") ? { "--studio-img": `url("${visual.image}")` } : undefined}
+              className={`eyad-home__studio-card ${featured ? "is-featured" : ""} ${studio.id === "logo" || studio.id === "brand-kit" ? "has-backdrop" : ""}`}
+              style={studio.id === "logo" || studio.id === "brand-kit" ? { "--studio-img": `url("${visual.image}")` } : undefined}
             >
               <img src={visual.image} alt="" loading="lazy" />
               <span className="eyad-home__studio-shade" />
