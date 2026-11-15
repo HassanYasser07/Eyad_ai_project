@@ -9,7 +9,7 @@ const TABS = ["home.mywork.tabs.all", "home.mywork.tabs.logos", "home.mywork.tab
 
 export default function HomeMyWork() {
   const navigate = useNavigate();
-  const { t, loc } = useI18n();
+  const { t, loc, direction } = useI18n();
   const [projects, setProjects] = useState([]);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
@@ -119,7 +119,7 @@ export default function HomeMyWork() {
 
       {deleteTarget && (
         <div className="eyad-home__delete-overlay" role="dialog" aria-modal="true" onClick={() => !deleting && setDeleteTarget(null)}>
-          <div className="eyad-home__delete-dialog" onClick={(event) => event.stopPropagation()} dir="rtl">
+          <div className="eyad-home__delete-dialog" onClick={(event) => event.stopPropagation()} dir={direction}>
             <div className="eyad-home__delete-icon"><Trash2 /></div>
             <h3>{loc({ ar: "حذف المشروع؟", en: "Delete project?" })}</h3>
             <p>{loc({ ar: "هل أنت متأكد من حذف «" + deleteTarget.title + "»؟ لا يمكن التراجع عن هذا الإجراء.", en: "Are you sure you want to delete “" + deleteTarget.title + "”? This action cannot be undone." })}</p>

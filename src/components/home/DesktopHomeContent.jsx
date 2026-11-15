@@ -116,7 +116,7 @@ export default function DesktopHomeContent() {
               <button
                 key={studio.id}
                 type="button"
-                className="eyad-dt-quick-card"
+                className={`eyad-dt-quick-card ${studio.id === "logo" || studio.id === "brand-kit" ? "is-zoom" : ""}`}
                 onClick={() => navigate(studio.route)}
               >
                 {img ? (

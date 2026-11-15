@@ -617,3 +617,140 @@
     .eyad-dt-profile-name { display: none; }
   }
 }
+
+
+/* ═══════════════════════════════════════════════════════════
+   Desktop Home fixes — extra sections (marketplace → compare)
+   ═══════════════════════════════════════════════════════════ */
+
+/* Quick Create: Logo / Visual-identity PNGs fill edge to edge (tune --studio-zoom) */
+.eyad-dt-quick-card.is-zoom { --studio-zoom: 1.35; }
+.eyad-dt-quick-card.is-zoom img { transform: scale(var(--studio-zoom)); transform-origin: center; }
+
+/* Measure the real column width (sidebar + rail eat space), not the viewport */
+.eyad-dt-extra {
+  container-type: inline-size;
+  container-name: dtextra;
+  font-family: inherit;
+}
+
+/* Text follows the page direction in every shared section */
+.eyad-dt-extra .eyad-home__market-card,
+.eyad-dt-extra .eyad-home__idea-card,
+.eyad-dt-extra .eyad-home__compare-card,
+.eyad-dt-extra .eyad-home__compare-chat,
+.eyad-dt-extra .eyad-home__feature {
+  text-align: start;
+}
+.eyad-dt-extra .eyad-home__market-card-content,
+.eyad-dt-extra .eyad-home__idea-card-body,
+.eyad-dt-extra .eyad-home__compare-chat-copy,
+.eyad-dt-extra .eyad-home__compare-cta-head > div {
+  text-align: start;
+  align-items: flex-start;
+}
+.eyad-dt-extra .eyad-home__project-card-body { direction: inherit; }
+
+/* Back-arrows point the reading direction in English */
+[dir="ltr"] .eyad-dt-extra svg.lucide-arrow-left { transform: scaleX(-1); }
+
+/* "Your creativity, from idea to result" — padding was zeroed by the shared reset */
+.eyad-dt-extra .eyad-home__feature {
+  padding: 36px 40px;
+  border-radius: 24px;
+}
+.eyad-dt-extra .eyad-home__feature-label { font-size: 0.82rem; margin-bottom: 10px; }
+.eyad-dt-extra .eyad-home__feature-title {
+  max-width: 760px;
+  margin-bottom: 12px;
+  font-size: 1.6rem;
+  line-height: 1.35;
+}
+.eyad-dt-extra .eyad-home__feature-body {
+  max-width: 780px;
+  margin-bottom: 26px;
+  font-size: 0.92rem;
+  line-height: 1.75;
+}
+.eyad-dt-extra .eyad-home__feature-grid {
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 14px;
+}
+.eyad-dt-extra .eyad-home__feature-item { padding: 18px 16px; gap: 12px; }
+.eyad-dt-extra .eyad-home__feature-item span { font-size: 0.88rem; }
+
+/* Marketplace card: fixed-size image, not 42% of a wide row */
+.eyad-dt-extra .eyad-home__market-card { min-height: 150px; }
+.eyad-dt-extra .eyad-home__market-card img { width: 280px; flex: 0 0 280px; }
+.eyad-dt-extra .eyad-home__market-card-content { padding: 22px 26px; }
+.eyad-dt-extra .eyad-home__market-card-content strong { font-size: 1.15rem; }
+.eyad-dt-extra .eyad-home__market-card-content small { font-size: 0.86rem; }
+.eyad-dt-extra .eyad-home__market-card-link { font-size: 0.84rem; }
+.eyad-dt-extra .eyad-home__pills-section { margin-top: 20px; }
+
+/* Create section */
+.eyad-dt-extra .eyad-home__create-strip { margin-bottom: 22px; padding: 14px 24px; }
+.eyad-dt-extra .eyad-home__create-title { font-size: 1.5rem; }
+.eyad-dt-extra .eyad-home__create-desc { max-width: 680px; margin-inline: auto; margin-bottom: 22px; font-size: 0.9rem; }
+.eyad-dt-extra .eyad-home__create-card,
+.eyad-dt-extra .eyad-home__create-card-content { min-height: 270px; }
+.eyad-dt-extra .eyad-home__create-card-content { padding: 28px 32px; }
+.eyad-dt-extra .eyad-home__create-card-content strong { font-size: 1.3rem; }
+.eyad-dt-extra .eyad-home__create-card-content p { max-width: 520px; font-size: 0.9rem; }
+
+/* Ideas: fluid columns; the image-less card gets a soft fill */
+.eyad-dt-extra .eyad-home__ideas {
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+.eyad-dt-extra .eyad-home__idea-card { display: flex; flex-direction: column; }
+.eyad-dt-extra .eyad-home__idea-card img { height: 140px; }
+.eyad-dt-extra .eyad-home__idea-card-body { padding: 16px 18px; }
+.eyad-dt-extra .eyad-home__idea-card:not(:has(img)) {
+  justify-content: center;
+  background: linear-gradient(145deg, #eaf5ff, #ffffff);
+}
+
+/* Compare: cards 2-up in a narrow column, 3-up when there is room */
+.eyad-dt-extra .eyad-home__compare-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@container dtextra (min-width: 780px) {
+  .eyad-dt-extra .eyad-home__compare-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+/* Compare table → stacked cards when the column is too narrow (no horizontal scroll) */
+@container dtextra (max-width: 719px) {
+  .eyad-dt-extra .eyad-home__compare-table-wrap {
+    overflow: visible; border: 0; border-radius: 0; background: none;
+    box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none;
+  }
+  .eyad-dt-extra .eyad-home__compare-table {
+    min-width: 0; display: flex; flex-direction: column; gap: 10px;
+  }
+  .eyad-dt-extra .eyad-home__compare-head { display: none; }
+  .eyad-dt-extra .eyad-home__compare-row {
+    grid-template-columns: minmax(0, 1fr); gap: 10px; min-height: 0; padding: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.95); border-radius: 18px;
+    background: rgba(255, 255, 255, 0.8); box-shadow: 0 8px 22px rgba(43, 83, 120, 0.07);
+  }
+  .eyad-dt-extra .eyad-home__compare-feature {
+    font-size: 0.88rem; font-weight: 800; line-height: 1.5; text-align: start;
+  }
+  .eyad-dt-extra .eyad-home__compare-yes {
+    justify-self: stretch; padding: 9px 12px; border-radius: 12px;
+    background: rgba(16, 185, 129, 0.08); font-size: 0.78rem;
+  }
+  .eyad-dt-extra .eyad-home__compare-neutral {
+    display: flex; flex-direction: column; gap: 3px; padding: 9px 12px;
+    border-radius: 12px; background: rgba(112, 142, 168, 0.08);
+    font-size: 0.74rem; text-align: start;
+  }
+  .eyad-dt-extra .eyad-home__compare-trad-label {
+    display: block; color: #5f7488; font-size: 0.68rem; font-style: normal; font-weight: 800;
+  }
+}
+
+/* Narrow column: tighter feature block */
+@container dtextra (max-width: 620px) {
+  .eyad-dt-extra .eyad-home__feature { padding: 26px 22px; }
+  .eyad-dt-extra .eyad-home__feature-title { font-size: 1.3rem; }
+  .eyad-dt-extra .eyad-home__market-card img { width: 38%; flex-basis: 38%; }
+}

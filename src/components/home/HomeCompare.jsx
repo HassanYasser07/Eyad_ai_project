@@ -15,7 +15,7 @@ const rows = [
 ];
 
 const cards = [
-  { id: "logo", icon: Palette, image: "https://images.unsplash.com/photo-1626785774573-4b7996242425?auto=format&fit=crop&w=1000&q=85", title: "home.compare.logoTitle", body: "home.compare.logoBody", action: "home.compare.logoAction" },
+  { id: "logo", icon: Palette, image: "/images/studios/logo-studio.png", title: "home.compare.logoTitle", body: "home.compare.logoBody", action: "home.compare.logoAction" },
   { id: "brand-kit", icon: Layers3, image: "https://images.unsplash.com/photo-1561070791-2526d30994b5?auto=format&fit=crop&w=1000&q=85", title: "home.compare.identityTitle", body: "home.compare.identityBody", action: "home.compare.identityAction" },
   { id: "ai-images", icon: ImageIcon, image: "https://images.unsplash.com/photo-1519608487953-e999c86e7455?auto=format&fit=crop&w=1000&q=85", title: "home.compare.imageTitle", body: "home.compare.imageBody", action: "home.compare.imageAction" },
   { id: "video", icon: Video, image: "https://images.unsplash.com/photo-1485846234645-a62644f84728?auto=format&fit=crop&w=1000&q=85", title: "home.compare.videoTitle", body: "home.compare.videoBody", action: "home.compare.videoAction" },
