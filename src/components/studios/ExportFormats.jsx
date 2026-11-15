@@ -1,8 +1,14 @@
 import React, { useState } from "react";
 import { Download } from "lucide-react";
-import { exportImagePng, exportImagePdf, exportImageSvg, exportImagePptx, safeFilename } from "@/services/exportService";
+import { exportImagePng, exportImagePdf, safeFilename } from "@/services/exportService";
 
-export default function ExportFormats({ sourceUrl, filenameBase = "eyad-export", trueSvgUrl = null, onPrepareSvg = null, ar = true, includePng = true }) {
+/**
+ * Export buttons for a generated result. Only PNG and PDF are offered.
+ *
+ * `prepareSource` (optional) is an async function returning the exact image to
+ * export — used by the Mockup studio to export the user's cropped version.
+ */
+export default function ExportFormats({ sourceUrl, filenameBase = "eyad-export", prepareSource = null, ar = true, includePng = true }) {
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [activeFormat, setActiveFormat] = useState("");
@@ -15,13 +21,9 @@ export default function ExportFormats({ sourceUrl, filenameBase = "eyad-export",
     setError("");
     try {
       const base = safeFilename(filenameBase);
-      if (format === "png") await exportImagePng(sourceUrl, base + ".png");
-      if (format === "pdf") await exportImagePdf(sourceUrl, base + ".pdf");
-      if (format === "svg") {
-        const preparedSvgUrl = trueSvgUrl || (onPrepareSvg ? await onPrepareSvg() : null);
-        await exportImageSvg(sourceUrl, base + ".svg", preparedSvgUrl);
-      }
-      if (format === "pptx") await exportImagePptx(sourceUrl, base + ".pptx", base);
+      const source = prepareSource ? await prepareSource() : sourceUrl;
+      if (format === "png") await exportImagePng(source, base + ".png");
+      if (format === "pdf") await exportImagePdf(source, base + ".pdf");
     } catch (caughtError) {
       const detail = caughtError instanceof Error ? caughtError.message : String(caughtError || "UNKNOWN_ERROR");
       console.error("[EYAD Export] failed", { format, filenameBase, detail, error: caughtError });
@@ -31,11 +33,11 @@ export default function ExportFormats({ sourceUrl, filenameBase = "eyad-export",
     }
   };
 
-  const formats = includePng ? [["png", "PNG"], ["pdf", "PDF"], ["svg", "SVG"], ["pptx", "PPTX"]] : [["pdf", "PDF"], ["svg", "SVG"], ["pptx", "PPTX"]];
+  const formats = includePng ? [["png", "PNG"], ["pdf", "PDF"]] : [["pdf", "PDF"]];
   return (
     <div className="eyad-export-formats" dir={ar ? "rtl" : "ltr"}>
       <div className="eyad-export-title">{ar ? "تصدير النتيجة" : "Export result"}</div>
-      <div className="eyad-export-grid">
+      <div className="eyad-export-grid eyad-export-grid--two">
         {formats.map(([format, label]) => (
           <button key={format} type="button" className={activeFormat === format ? "is-active" : ""} onClick={() => run(format)} disabled={Boolean(busy)}>
             {busy === format ? <span className="eyad-export-spinner" /> : <Download className="w-4 h-4" />}

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Coffee, PenLine, FileText, ShoppingBag, Package, Store, Smartphone, Monitor,
   Car, Shirt, BookOpen, HardHat, ShieldCheck, BriefcaseBusiness,
@@ -13,6 +13,9 @@ import { useAuth } from "@/lib/AuthContext";
 import { MOCKUP_IMAGES } from "./mockupImages";
 import { MOCKUP_HERO_IMAGE } from "./mockupHeroImage";
 import ExportFormats from "@/components/studios/ExportFormats";
+import ImageCropper, { cropImageSource } from "./ImageCropper";
+import { exportImagePdf, safeFilename } from "@/services/exportService";
+import { ensureRasterLogoUrl } from "@/services/logoImageService";
 
 const MOCKUP_TYPES = [
   { id: "business-card", ar: "كارت شخصي", en: "Business Card", icon: BriefcaseBusiness },
@@ -71,126 +74,6 @@ function getBusinessDataFields(info = {}) {
   ].filter(([, value]) => value.trim());
 }
 
-const PRINT_SIZE_PRESETS = {
-  "business-card": [90, 50],
-  "official-documents": [210, 297],
-  "paper-bag": [250, 350],
-  vehicle: [3000, 1200],
-  letterhead: [210, 297],
-  agenda: [148, 210],
-  brochure: [210, 297],
-  "restaurant-menu": [210, 297],
-  "company-stamp": [40, 40],
-  cup: [220, 90],
-  pen: [120, 8],
-  tshirt: [300, 350],
-  cap: [100, 60],
-  "safety-vest": [250, 300],
-  "safety-helmet": [180, 100],
-  packaging: [200, 150],
-  social: [1080, 1080],
-  website: [1440, 900],
-  signboard: [1000, 500],
-  "worker-uniform": [300, 350],
-};
-
-function xmlEscape(value) {
-  return String(value ?? "").replace(/[&<>"']/g, (char) => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;",
-  }[char]));
-}
-
-function toDataUrl(blob) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ""));
-    reader.onerror = () => reject(new Error("PRINT_LOGO_EMBED_FAILED"));
-    reader.readAsDataURL(blob);
-  });
-}
-
-async function resolvePrintLogo(brand = {}) {
-  const candidates = [
-    brand?.logo?.svg_url,
-    brand?.logo?.svgUrl,
-    brand?.logo?.url,
-  ].filter(Boolean);
-  for (const url of candidates) {
-    try {
-      const response = await fetch(url, { mode: "cors" });
-      if (!response.ok) continue;
-      const blob = await response.blob();
-      const mimeType = String(blob.type || "").toLowerCase();
-      if (mimeType.includes("image/") || mimeType.includes("octet-stream")) {
-        return await toDataUrl(blob);
-      }
-    } catch {
-      // Continue to the next approved logo source.
-    }
-  }
-  return candidates[candidates.length - 1] || "";
-}
-
-function buildEditablePrintSvg({ mockupId, width, height, bleed, brand, palette, info, logoHref }) {
-  const w = Math.max(1, Number(width) || 90);
-  const h = Math.max(1, Number(height) || 50);
-  const b = Math.max(0, Math.min(20, Number(bleed) || 0));
-  const totalW = w + b * 2;
-  const totalH = h + b * 2;
-  const name = String(info?.companyName || brand?.brand_name || "Brand Name").trim();
-  const primary = /^#[0-9a-f]{3,8}$/i.test(palette?.primary || "") ? palette.primary : "#123E9B";
-  const secondary = /^#[0-9a-f]{3,8}$/i.test(palette?.secondary || "") ? palette.secondary : "#2B78F6";
-  const surface = /^#[0-9a-f]{3,8}$/i.test(palette?.surface || "") ? palette.surface : "#FFFFFF";
-  const type = MOCKUP_TYPES.find((item) => item.id === mockupId);
-  const isCard = mockupId === "business-card";
-  const fields = [
-    info?.phone,
-    info?.email,
-    info?.address,
-    info?.website,
-    info?.instagram,
-  ].filter((value) => String(value || "").trim());
-  const safeName = xmlEscape(name);
-  const logo = logoHref
-    ? `<image href="${xmlEscape(logoHref)}" x="${b + w * 0.06}" y="${b + h * 0.14}" width="${w * 0.27}" height="${h * 0.32}" preserveAspectRatio="xMidYMid meet"/>`
-    : "";
-  const titleX = b + w * (isCard ? 0.94 : 0.06);
-  const titleAnchor = isCard ? "end" : "start";
-  const fontSize = Math.max(2.4, Math.min(h * 0.14, w * 0.075));
-  const detailStartY = b + h * (isCard ? 0.54 : 0.42);
-  const detailStep = Math.max(3.2, Math.min(h * 0.105, 8));
-  const details = fields.map((value, index) => {
-    const rtl = /[\u0600-\u06FF]/.test(String(value));
-    const x = rtl ? b + w * 0.94 : b + w * 0.06;
-    const anchor = rtl ? "end" : "start";
-    const label = "";
-    return `<text x="${x}" y="${detailStartY + index * detailStep}" text-anchor="${anchor}" font-family="Arial, sans-serif" font-size="${Math.max(2, Math.min(h * 0.055, 4.5))}" fill="${primary}" direction="${rtl ? "rtl" : "ltr"}">${label}${xmlEscape(value)}</text>`;
-  }).join("");
-  const content = isCard
-    ? `<rect x="${b}" y="${b}" width="${w}" height="${h}" rx="${Math.min(2, h * 0.035)}" fill="${surface}"/>
-       <path d="M ${b} ${b + h * 0.82} L ${b + w * 0.22} ${b + h} L ${b} ${b + h} Z" fill="${secondary}" opacity=".9"/>
-       <path d="M ${b + w * 0.82} ${b} L ${b + w} ${b} L ${b + w} ${b + h * 0.2} Z" fill="${primary}"/>
-       ${logo}
-       <text x="${titleX}" y="${b + h * 0.39}" text-anchor="${titleAnchor}" font-family="Arial, sans-serif" font-size="${fontSize}" font-weight="700" fill="${primary}" direction="${/[\u0600-\u06FF]/.test(name) ? "rtl" : "ltr"}">${safeName}</text>
-       ${details}`
-    : `<rect x="${b}" y="${b}" width="${w}" height="${h}" fill="${surface}"/>
-       <rect x="${b}" y="${b}" width="${w}" height="${Math.max(2, h * 0.12)}" fill="${primary}"/>
-       ${logo}
-       <text x="${titleX}" y="${b + h * 0.28}" text-anchor="${titleAnchor}" font-family="Arial, sans-serif" font-size="${fontSize}" font-weight="700" fill="${primary}" direction="${/[\u0600-\u06FF]/.test(name) ? "rtl" : "ltr"}">${safeName}</text>
-       ${details}`;
-  const bleedGuide = b > 0
-    ? `<rect x="${b}" y="${b}" width="${w}" height="${h}" fill="none" stroke="#ff00aa" stroke-width="0.15" stroke-dasharray="1 1"/>`
-    : "";
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${totalW}mm" height="${totalH}mm" viewBox="0 0 ${totalW} ${totalH}">
-  <title>${safeName} — ${xmlEscape(type?.en || mockupId)} print artwork</title>
-  <desc>Editable SVG artwork. Trim size: ${w} x ${h} mm. Bleed: ${b} mm each side. Text and layout shapes are vector elements; logo is embedded when browser access permits.</desc>
-  <rect width="${totalW}" height="${totalH}" fill="${secondary}"/>
-  ${content}
-  ${bleedGuide}
-</svg>`;
-}
-
 function loadImageForComposition(source) {
   return new Promise((resolve, reject) => {
     const image = new Image();
@@ -231,7 +114,8 @@ async function composeBusinessCardArtwork(source, info = {}, brand = {}, palette
   const primary = palette?.primary || "#5B21B6";
   const secondary = palette?.secondary || "#7C3AED";
   const surface = palette?.surface || "#FFFFFF";
-  const logoUrl = brand?.logo?.url || "";
+  // SVG logos are converted to PNG so canvas drawing always has real dimensions.
+  const logoUrl = (await ensureRasterLogoUrl(brand?.logo)) || "";
 
   ctx.save();
   ctx.shadowColor = "rgba(0,0,0,0.20)";
@@ -492,11 +376,9 @@ export default function MockupEngine({ brand, palette, background, projectId, on
   const [finalMockupImage, setFinalMockupImage] = useState(null);
   const [compositing, setCompositing] = useState(false);
   const [generationError, setGenerationError] = useState("");
-  const [printWidth, setPrintWidth] = useState(90);
-  const [printHeight, setPrintHeight] = useState(50);
-  const [printBleed, setPrintBleed] = useState(3);
-  const [creatingPrintFile, setCreatingPrintFile] = useState(false);
-  const [printFileError, setPrintFileError] = useState("");
+  const [crop, setCrop] = useState({ rect: null, natural: { w: 0, h: 0 }, active: false });
+  const [creatingPdf, setCreatingPdf] = useState(false);
+  const [pdfError, setPdfError] = useState("");
   const { isAnonymous, requireAccount } = useAuth();
 
   const MOCKUP_MAX_WAIT_MS = 240000;
@@ -551,10 +433,7 @@ export default function MockupEngine({ brand, palette, background, projectId, on
       return;
     }
     setSelected(id);
-    const printSize = PRINT_SIZE_PRESETS[id] || [90, 50];
-    setPrintWidth(printSize[0]);
-    setPrintHeight(printSize[1]);
-    setPrintFileError("");
+    setPdfError("");
     setGeneratedImage(null);
     setFinalMockupImage(null);
     setGenerationError("");
@@ -604,17 +483,20 @@ export default function MockupEngine({ brand, palette, background, projectId, on
     setStep("generating");
     try {
       const type = MOCKUP_TYPES.find((item) => item.id === mockupId);
+      // The image model only accepts raster images. SVG logos are converted to a
+      // transparent PNG here so they behave exactly like PNG logos.
+      const logoForGeneration = (await ensureRasterLogoUrl(brand?.logo)) || null;
       const data = await runEyadEngine({
         message: ar ? `أنشئ موك أب واقعي احترافي لـ${type?.ar || "هذا المنتج"} باستخدام الشعار المعتمد.` : `Create a photorealistic professional ${type?.en || "brand mockup"} using the approved logo.`,
         projectId: projectId || null,
         studioId: "ai-images",
         language: ar ? "ar" : "en",
         action: "generate",
-        referenceImage: brand?.logo?.url || null,
+        referenceImage: logoForGeneration,
         designOptions: {
           mockup_type: mockupId,
           mockup_name: type?.en || mockupId,
-          approved_logo_url: brand?.logo?.url || null,
+          approved_logo_url: logoForGeneration,
           brand_name: brand?.brand_name || businessInfo.companyName || "",
           palette,
           background,
@@ -772,47 +654,30 @@ export default function MockupEngine({ brand, palette, background, projectId, on
     setBusinessInfo((prev) => ({ ...prev, [key]: value }));
   };
 
-  const createPrintFile = async () => {
-    if (!selected || creatingPrintFile) return;
-    const width = Number(printWidth);
-    const height = Number(printHeight);
-    const bleed = Number(printBleed);
-    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0 || width > 10000 || height > 10000) {
-      setPrintFileError(ar ? "أدخل مقاسًا صحيحًا أكبر من صفر وبحد أقصى 10000 مم." : "Enter valid dimensions greater than zero and no larger than 10000 mm.");
-      return;
-    }
-    if (!Number.isFinite(bleed) || bleed < 0 || bleed > 20) {
-      setPrintFileError(ar ? "قيمة النزيف يجب أن تكون بين 0 و20 مم." : "Bleed must be between 0 and 20 mm.");
-      return;
-    }
-    setCreatingPrintFile(true);
-    setPrintFileError("");
+  // The image the user wants to export: the crop (if any) of the generated mockup.
+  const exportSourceUrl = finalMockupImage || generatedImage?.data_url || generatedImage?.url || null;
+  const handleCropChange = useCallback((next) => setCrop(next), []);
+
+  const prepareExportSource = async () => {
+    if (!exportSourceUrl) throw new Error("EXPORT_SOURCE_MISSING");
+    return crop.active && crop.rect ? cropImageSource(exportSourceUrl, crop.rect) : exportSourceUrl;
+  };
+
+  // Main download button — identical to the bottom "PDF" button (same exporter,
+  // same file name, same cropped source).
+  const downloadPdf = async () => {
+    if (!exportSourceUrl || creatingPdf) return;
+    setCreatingPdf(true);
+    setPdfError("");
     try {
-      const logoHref = await resolvePrintLogo(brand);
-      const svg = buildEditablePrintSvg({
-        mockupId: selected,
-        width,
-        height,
-        bleed,
-        brand,
-        palette,
-        info: { ...businessInfo, companyName: brand?.brand_name || businessInfo.companyName },
-        logoHref,
-      });
-      const blob = new Blob([svg], { type: "image/svg+xml;charset=utf-8" });
-      const objectUrl = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = objectUrl;
-      anchor.download = `eyad-${selected}-print-${width}x${height}mm.svg`;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
+      const source = await prepareExportSource();
+      await exportImagePdf(source, safeFilename("eyad-" + selected + "-mockup") + ".pdf");
     } catch (error) {
-      console.error("EYAD print SVG creation failed", error);
-      setPrintFileError(ar ? "تعذر إنشاء ملف الطباعة. حاول مرة أخرى." : "Could not create the print file. Please try again.");
+      console.error("EYAD mockup PDF export failed", error);
+      const detail = error instanceof Error ? error.message : String(error || "UNKNOWN_ERROR");
+      setPdfError(ar ? `خطأ PDF: ${detail}` : `PDF error: ${detail}`);
     } finally {
-      setCreatingPrintFile(false);
+      setCreatingPdf(false);
     }
   };
 
@@ -976,53 +841,39 @@ export default function MockupEngine({ brand, palette, background, projectId, on
                   </div>
                 ) : generatedImage ? (
                   <>
-                    <div className="mockup-ai-image-wrap">
-                      <img src={finalMockupImage || generatedImage.data_url || generatedImage.url} alt={ar ? current.ar : current.en} />
-                    </div>
+                    <ImageCropper
+                      src={exportSourceUrl}
+                      alt={ar ? current.ar : current.en}
+                      ar={ar}
+                      onChange={handleCropChange}
+                    />
 
                     <div className="mockup-ai-result-copy">
                       <strong>{ar ? `موك أب ${current.ar} جاهز` : `${current.en} mockup is ready`}</strong>
                       <span>{ar ? "EYAD يستخدم الشعار المعتمد وبيانات نشاطك لإنشاء موك أب احترافي وواقعي." : "EYAD uses your approved logo and business data to create a professional, photorealistic mockup."}</span>
                     </div>
 
-                    <section
-                      className="mockup-print-file-panel"
-                      style={{ margin: "16px 0", padding: 16, border: "1px solid #dbe4ef", borderRadius: 18, background: "rgba(255,255,255,.88)" }}
-                      aria-label={ar ? "إنشاء ملف الطباعة" : "Create print file"}
-                    >
-                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                    <section className="mockup-print-file-panel" aria-label={ar ? "تنزيل الموك أب" : "Download mockup"}>
+                      <div className="mockup-print-file-head">
                         <Printer size={22} color="#2875d0" />
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <strong style={{ display: "block", fontSize: 17, color: "#18324c" }}>{ar ? "إنشاء ملف الطباعة" : "Create print file"}</strong>
-                          <span style={{ display: "block", fontSize: 12, color: "#64748b", marginTop: 3 }}>
-                            {ar ? "ملف SVG بعناصر متجهة ونصوص قابلة للتحرير — وليس صورة الموك أب." : "Editable SVG artwork with vector shapes and text — not the mockup photo."}
+                        <div>
+                          <strong>{ar ? "تنزيل الموك أب" : "Download mockup"}</strong>
+                          <span>
+                            {crop.active
+                              ? (ar ? "سيتم تنزيل الجزء المحدد داخل إطار القص فقط." : "Only the area inside the crop frame will be downloaded.")
+                              : (ar ? "سيتم تنزيل الصورة كاملة. استخدم أداة القص أعلاه لاقتصاص جزء منها." : "The full image will be downloaded. Use the crop tool above to clip part of it.")}
                           </span>
                         </div>
                       </div>
-                      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8, marginBottom: 12 }}>
-                        <label style={{ display: "grid", gap: 5, fontSize: 12, color: "#526579" }}>
-                          {ar ? "العرض (مم)" : "Width (mm)"}
-                          <input type="number" min="1" max="10000" step="1" value={printWidth} onChange={(event) => setPrintWidth(event.target.value)} style={{ width: "100%", minWidth: 0, padding: "10px 8px", border: "1px solid #d7e0ea", borderRadius: 10, background: "#fff", color: "#18324c" }} />
-                        </label>
-                        <label style={{ display: "grid", gap: 5, fontSize: 12, color: "#526579" }}>
-                          {ar ? "الارتفاع (مم)" : "Height (mm)"}
-                          <input type="number" min="1" max="10000" step="1" value={printHeight} onChange={(event) => setPrintHeight(event.target.value)} style={{ width: "100%", minWidth: 0, padding: "10px 8px", border: "1px solid #d7e0ea", borderRadius: 10, background: "#fff", color: "#18324c" }} />
-                        </label>
-                        <label style={{ display: "grid", gap: 5, fontSize: 12, color: "#526579" }}>
-                          {ar ? "النزيف (مم)" : "Bleed (mm)"}
-                          <input type="number" min="0" max="20" step="0.5" value={printBleed} onChange={(event) => setPrintBleed(event.target.value)} style={{ width: "100%", minWidth: 0, padding: "10px 8px", border: "1px solid #d7e0ea", borderRadius: 10, background: "#fff", color: "#18324c" }} />
-                        </label>
-                      </div>
-                      {printFileError && <p role="alert" style={{ color: "#b42318", fontSize: 13, margin: "0 0 10px" }}>{printFileError}</p>}
+                      {pdfError && <p role="alert" className="mockup-print-file-error">{pdfError}</p>}
                       <button
                         type="button"
-                        onClick={createPrintFile}
-                        disabled={creatingPrintFile}
-                        className="vi-apply-btn"
-                        style={{ width: "100%", justifyContent: "center", minHeight: 54, opacity: creatingPrintFile ? 0.7 : 1 }}
+                        onClick={downloadPdf}
+                        disabled={creatingPdf}
+                        className="vi-apply-btn mockup-print-file-btn"
                       >
-                        {creatingPrintFile ? <Loader2 className="w-5 h-5 animate-spin" /> : <Download className="w-5 h-5" />}
-                        {creatingPrintFile ? (ar ? "جاري إنشاء ملف الطباعة..." : "Creating print file...") : (ar ? "إنشاء ملف الطباعة" : "Create print file")}
+                        {creatingPdf ? <Loader2 className="w-5 h-5 animate-spin" /> : <Download className="w-5 h-5" />}
+                        {creatingPdf ? (ar ? "جاري إنشاء ملف PDF..." : "Creating PDF...") : (ar ? "تنزيل PDF" : "Download PDF")}
                       </button>
                     </section>
 
@@ -1032,7 +883,8 @@ export default function MockupEngine({ brand, palette, background, projectId, on
                         <button type="button" className="vi-apply-btn mockup-save-btn" onClick={save}><Save className="w-4 h-4" /> {saved ? (ar ? "تم الحفظ" : "Saved") : (ar ? "اعتماد وحفظ" : "Approve & Save")}</button>
                         <div className="mockup-export-holder">
                           <ExportFormats
-                            sourceUrl={finalMockupImage || generatedImage.data_url || generatedImage.url}
+                            sourceUrl={exportSourceUrl}
+                            prepareSource={prepareExportSource}
                             filenameBase={"eyad-" + selected + "-mockup"}
                             ar={ar}
                             includePng={true}

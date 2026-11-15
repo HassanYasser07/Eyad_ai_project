@@ -73,8 +73,11 @@ export const assetService = {
     const id = crypto.randomUUID();
     const safeName = (file.name || "uploaded-logo").replace(/[^a-zA-Z0-9._-]/g, "-");
     const path = user.id + "/" + projectId + "/logos/" + id + "-" + safeName;
+    // Some browsers report an empty MIME type for .svg files; make sure SVG logos
+    // are always stored (and later served) as image/svg+xml.
+    const logoMime = file.type || (/\.svg$/i.test(safeName) ? "image/svg+xml" : "application/octet-stream");
     const { error: uploadError } = await supabase.storage.from("eyad-assets").upload(path, file, {
-      contentType: file.type || "application/octet-stream",
+      contentType: logoMime,
       cacheControl: "31536000",
       upsert: false,
     });
@@ -88,7 +91,7 @@ export const assetService = {
       kind: "logo",
       name: safeName,
       storage_path: path,
-      mime_type: file.type || null,
+      mime_type: logoMime === "application/octet-stream" ? (file.type || null) : logoMime,
       size_bytes: file.size || null,
       metadata: { source: "visual-identity-upload", asset_url: url },
     }).select("*").single();
@@ -112,6 +115,64 @@ export const assetService = {
     const { error: projectError } = await supabase.from("projects").update({ metadata: nextMetadata, updated_at: new Date().toISOString() }).eq("id", projectId).eq("owner_id", user.id);
     if (projectError) throw projectError;
     return { ...asset, url };
+  },
+
+  /**
+   * Lists every image asset the signed-in user owns across all projects
+   * (logos, generated images, mockups, uploads) for the "My Images" picker.
+   */
+  async listUserImages(limit = 300) {
+    const user = await requireUser();
+    const { data, error } = await supabase.from("assets")
+      .select("id,project_id,kind,name,storage_path,mime_type,width,height,metadata,created_at")
+      .eq("owner_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(limit);
+    if (error) throw error;
+    const IMAGE_EXT = /\.(png|jpe?g|webp|gif|svg|avif)$/i;
+    const NON_IMAGE_KINDS = new Set(["video", "audio", "presentation", "pptx", "document", "pdf", "zip", "template"]);
+    return (data || [])
+      .map((item) => {
+        const url = item.storage_path
+          ? supabase.storage.from("eyad-assets").getPublicUrl(item.storage_path).data.publicUrl
+          : item.metadata?.asset_url || null;
+        return { ...item, url };
+      })
+      .filter((item) => {
+        if (!item.url) return false;
+        const mime = String(item.mime_type || "").toLowerCase();
+        if (mime) return mime.startsWith("image/");
+        if (NON_IMAGE_KINDS.has(String(item.kind || "").toLowerCase())) return false;
+        return IMAGE_EXT.test(String(item.name || "")) || IMAGE_EXT.test(String(item.storage_path || "")) || ["logo", "image", "mockup"].includes(String(item.kind || "").toLowerCase());
+      });
+  },
+
+  /**
+   * Makes an existing image asset the approved logo of a project — the same
+   * project-metadata update performed after uploading a new logo file.
+   */
+  async setApprovedLogoFromAsset({ projectId, asset }) {
+    const user = await requireUser();
+    if (!projectId || !asset?.id || !asset?.url) throw new Error("LOGO_ASSET_REQUIRED");
+    const { id, url } = asset;
+    const name = asset.name || "logo";
+    const { data: project } = await supabase.from("projects").select("metadata")
+      .eq("id", projectId).eq("owner_id", user.id).maybeSingle();
+    const currentProjectData = project?.metadata?.project_data || {};
+    const nextProjectData = {
+      ...currentProjectData,
+      brand_identity: {
+        ...(currentProjectData.brand_identity || {}),
+        logo: { asset_id: id, url, name },
+      },
+      approved_asset_id: id,
+      latest_asset_id: id,
+      latest_asset_url: url,
+    };
+    const nextMetadata = { ...(project?.metadata || {}), project_data: nextProjectData, latest_asset_id: id, latest_asset_url: url };
+    const { error: projectError } = await supabase.from("projects").update({ metadata: nextMetadata, updated_at: new Date().toISOString() }).eq("id", projectId).eq("owner_id", user.id);
+    if (projectError) throw projectError;
+    return { ...asset, projectId };
   },
 
   async uploadImageAsset({ projectId, file, name = "mockup.png", metadata = {} }) {

@@ -2014,19 +2014,23 @@ The supplied approved logo reference must be used as the actual printed logo on 
         // that was timing out on mockups. The existing logo path below is
         // unchanged.
         if (isBrandProfilePageGeneration) {
-          const imageForm = new FormData();
-          imageForm.append("model", "gpt-image-2.5-sunburst");
-          imageForm.append("prompt", finalPrompt);
-          imageForm.append("n", "1");
-          imageForm.append("quality", "high");
-          imageForm.append("size", "1024x1536");
-          imageForm.append("background", "opaque");
-          imageForm.append("output_format", "png");
-
+          // The Images *generations* endpoint only accepts application/json
+          // (multipart/form-data is only valid for /images/edits).
           const imageResponse = await fetchWithTimeout("https://api.openai.com/v1/images/generations", {
             method: "POST",
-            headers: { "Authorization": "Bearer " + openAiKey },
-            body: imageForm,
+            headers: {
+              "Authorization": "Bearer " + openAiKey,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model: "gpt-image-2.5-sunburst",
+              prompt: finalPrompt,
+              n: 1,
+              quality: "high",
+              size: "1024x1536",
+              background: "opaque",
+              output_format: "png",
+            }),
           }, 150000);
           const raw = await imageResponse.text();
           let imageData: any = {};

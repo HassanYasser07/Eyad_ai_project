@@ -1,6 +1,10 @@
 import React from "react";
 import { createPortal } from "react-dom";
+import { useNavigate } from "react-router-dom";
 import { useI18n } from "@/i18n/I18nContext";
+import { useAuth } from "@/lib/AuthContext";
+import { projectService } from "@/services/projectService";
+import { assetService } from "@/services/assetService";
 import {
   X, Upload, Download, Undo2, Redo2, RotateCcw,
   Copy, Trash2, Group, Ungroup, FileCode2,
@@ -323,8 +327,11 @@ function rootPointInParent(svg, parent, x, y) {
 // `initialSvgUrl` (optional) opens the editor with an existing SVG already loaded
 // (for example a Recraft-vectorized logo). Without it the editor behaves exactly
 // as before and starts with the upload screen.
-export default function SvgEditorDialog({ onClose, direction = "ltr", initialSvgUrl = null, initialName = "" }) {
+export default function SvgEditorDialog({ onClose, direction = "ltr", initialSvgUrl = null, initialName = "", projectId = null }) {
   const { t } = useI18n();
+  const navigate = useNavigate();
+  const { isAnonymous } = useAuth();
+  const [sendingToIdentity, setSendingToIdentity] = React.useState(false);
   const [svgMarkup, setSvgMarkup] = React.useState("");
   const [originalMarkup, setOriginalMarkup] = React.useState("");
   const [fileName, setFileName] = React.useState("");
@@ -940,6 +947,42 @@ export default function SvgEditorDialog({ onClose, direction = "ltr", initialSvg
     }
   };
 
+  // Saves the edited SVG as the project's approved logo and opens it in the
+  // Visual Identity studio, so the user can continue (palette, fonts, mockups…)
+  // with exactly this logo selected.
+  const openInVisualIdentity = async () => {
+    if (!svgMarkup || sendingToIdentity) return;
+    if (isAnonymous) {
+      setError(t("svgEditor.useInIdentityLogin"));
+      return;
+    }
+    setSendingToIdentity(true);
+    setError("");
+    try {
+      const { markup: exportedMarkup } = exportSvgMarkup(markupRef.current);
+      const baseName = String(fileName || initialName || "edited-logo").replace(/\.svg$/i, "").trim() || "edited-logo";
+      const file = new File([exportedMarkup], `${baseName}-edited.svg`, { type: "image/svg+xml" });
+      let targetProjectId = projectId || new URLSearchParams(window.location.search).get("project");
+      if (!targetProjectId) {
+        const created = await projectService.create({
+          title: baseName,
+          studio_type: "brand-kit",
+          status: "draft",
+          language: direction === "rtl" ? "ar" : "en",
+          project_data: { brand_identity: { brand_name: "" } },
+        });
+        targetProjectId = created.id;
+      }
+      const asset = await assetService.uploadLogo({ projectId: targetProjectId, file });
+      onClose?.();
+      navigate(`/studios/brand-kit?project=${encodeURIComponent(targetProjectId)}&asset=${encodeURIComponent(asset.id)}`);
+    } catch (caught) {
+      console.error("[EYAD SVG Editor] could not send the logo to Visual Identity", caught);
+      setError(t("svgEditor.useInIdentityError"));
+      setSendingToIdentity(false);
+    }
+  };
+
   const beginCanvasInteraction = (event) => {
     if (!svgMarkup || event.button !== 0) return;
     const svg = stageRef.current?.querySelector("svg");
@@ -1216,6 +1259,10 @@ export default function SvgEditorDialog({ onClose, direction = "ltr", initialSvg
           <div className="svg-editor-header-actions">
             <input ref={fileInputRef} type="file" accept=".svg,image/svg+xml" onChange={(event) => loadFile(event.target.files?.[0])} hidden />
             <button type="button" className="svg-editor-secondary-button" onClick={() => fileInputRef.current?.click()}><Upload size={15} /><span className="svg-editor-header-btn-label">{t("svgEditor.open")}</span></button>
+            <button type="button" className="svg-editor-secondary-button" onClick={openInVisualIdentity} disabled={!svgMarkup || sendingToIdentity} title={t("svgEditor.useInIdentityHint")} aria-label={t("svgEditor.useInIdentity")}>
+              {sendingToIdentity ? <Loader2 size={15} className="animate-spin" /> : <Palette size={15} />}
+              <span className="svg-editor-header-btn-label">{t("svgEditor.useInIdentity")}</span>
+            </button>
             <button type="button" className="svg-editor-export-button" onClick={downloadSvg} disabled={!svgMarkup}><Download size={15} /><span className="svg-editor-header-btn-label">{t("svgEditor.export")}</span></button>
             <button type="button" className="svg-editor-close-button" onClick={onClose} aria-label={t("svgEditor.close")}><X size={19} /></button>
           </div>

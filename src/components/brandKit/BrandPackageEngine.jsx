@@ -3,6 +3,7 @@ import JSZip from "jszip";
 import { jsPDF } from "jspdf";
 import { Archive, Check, Download, FileJson, FileText, Loader2, PackageCheck } from "lucide-react";
 import { projectService } from "@/services/projectService";
+import { ensureRasterLogoUrl, isSvgSource } from "@/services/logoImageService";
 import { runEyadEngine } from "@/services/eyadEngineService";
 
 function safeName(value) {
@@ -639,8 +640,14 @@ export default function BrandPackageEngine({ brand, palette, background, arabicF
       ].join("\n"));
 
       failureStage = "تنزيل الشعار PNG";
-      const logoResult = await addRemoteFile(zip, brand?.logo?.url, root + "/01-Logo/" + packageName + "-logo.png");
-      const svgUrl = brand?.logo?.svg_url || brand?.logo?.svgUrl;
+      // An uploaded SVG logo is packaged as a real SVG and also rasterized to a
+      // PNG, so the PNG file and the PDF/HTML brand pages always get a raster logo.
+      const logoIsSvg = isSvgSource(brand?.logo?.url, brand?.logo?.name || "");
+      const logoPngSource = logoIsSvg ? await ensureRasterLogoUrl(brand?.logo) : brand?.logo?.url;
+      const logoResult = logoIsSvg && !String(logoPngSource || "").startsWith("data:image/png")
+        ? { added: false, reason: "svg-rasterize-failed" }
+        : await addRemoteFile(zip, logoPngSource, root + "/01-Logo/" + packageName + "-logo.png");
+      const svgUrl = brand?.logo?.svg_url || brand?.logo?.svgUrl || (logoIsSvg ? brand?.logo?.url : null);
       const svgResult = await addRemoteFile(zip, svgUrl, root + "/01-Logo/" + packageName + "-logo.svg");
 
       zip.file(root + "/06-Source-Data/logo-source.json", jsonText({

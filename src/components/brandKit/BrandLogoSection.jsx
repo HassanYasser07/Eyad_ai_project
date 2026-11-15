@@ -4,10 +4,12 @@
  * Also includes the editable brand name field.
  */
 import React from "react";
-import { Check, ImagePlus, Loader2, Upload, Shapes } from "lucide-react";
+import { Check, ImagePlus, Images, Loader2, Upload, Shapes } from "lucide-react";
+import AssetPickerDialog from "./AssetPickerDialog";
 
-export default function BrandLogoSection({ logo, brandName, onNameChange, onSaveName, onUploadLogo, onUploadRequest, saving, uploading, projectId, ar, hasApprovedLogo, attention }) {
+export default function BrandLogoSection({ logo, brandName, onNameChange, onSaveName, onUploadLogo, onUploadRequest, onPickExistingLogo, onPickRequest, saving, uploading, projectId, ar, hasApprovedLogo, attention }) {
   const inputRef = React.useRef(null);
+  const [pickerOpen, setPickerOpen] = React.useState(false);
   const openLogoStudio = () => {
     window.location.href = projectId ? `/studios/logo?project=${encodeURIComponent(projectId)}` : "/studios/logo";
   };
@@ -44,6 +46,10 @@ export default function BrandLogoSection({ logo, brandName, onNameChange, onSave
 {hasApprovedLogo ? (ar ? "لا يوجد شعار محفوظ. صمّم شعارًا في استوديو الشعارات أو ارفع شعارك من جهازك." : "No saved logo yet. Design one in Logo Studio or upload your own logo.") : (ar ? "لم يتم اعتماد شعار بعد. صمّم شعارًا أو ارفع شعارك لاستخدامه في الموك أب." : "No logo has been approved yet. Design or upload a logo to use it in Mockups.")}
             </p>
             <div className="vi-logo-empty-actions">
+              <button type="button" onClick={() => onPickRequest?.(() => setPickerOpen(true))} className="vi-logo-action-btn vi-logo-action-pick" disabled={uploading}>
+                <Images className="w-4 h-4" />
+                {ar ? "اختر من صوري" : "My Images"}
+              </button>
               <button type="button" onClick={openLogoStudio} className="vi-logo-action-btn vi-logo-action-primary">
                 <Shapes className="w-4 h-4" />
                 {ar ? "صمم شعار" : "Design Logo"}
@@ -77,6 +83,12 @@ export default function BrandLogoSection({ logo, brandName, onNameChange, onSave
           </button>
         </div>
       </label>
+      <AssetPickerDialog
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        onSelect={onPickExistingLogo}
+        ar={ar}
+      />
     </section>
   );
 }
