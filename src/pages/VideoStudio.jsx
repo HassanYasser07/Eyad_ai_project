@@ -6,8 +6,8 @@ import { useAuth } from "@/lib/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { getBrandIdentity } from "@/services/brandService";
 import { projectService } from "@/services/projectService";
+import { conversationService } from "@/services/conversationService";
 import { getProjectContext, saveStudioOutput } from "@/services/projectContextService";
-import StudioNextActions from "@/components/studios/StudioNextActions";
 import "./videoStudio.css";
 import TypewriterHint from "@/components/ui/TypewriterHint";
 import { VIDEO_HINTS } from "@/config/typewriterHints";
@@ -64,6 +64,23 @@ function PillSelect({ label, valueLabel, options, value, onChange }) {
   </div>;
 }
 
+// Compact preview that keeps the video's aspect ratio (max ~440px wide, ~380px tall).
+function playerStyle(ratio) {
+  const [w, h] = String(ratio).split(":").map(Number);
+  const r = w > 0 && h > 0 ? w / h : 16 / 9;
+  const width = Math.round(Math.min(440, 380 * r));
+  return { aspectRatio: `${w || 16} / ${h || 9}`, width: `min(100%, ${width}px)` };
+}
+
+// Surface the real error body from a non-2xx edge function response.
+async function readInvokeError(err) {
+  try {
+    const body = await err?.context?.json?.();
+    if (body?.error) return new Error(typeof body.error === "string" ? body.error : JSON.stringify(body.error));
+  } catch { /* ignore */ }
+  return err;
+}
+
 export default function VideoStudio() {
   const { loc, direction } = useI18n();
   const { isAnonymous, requireAccount, user } = useAuth();
@@ -86,6 +103,8 @@ export default function VideoStudio() {
   const [queueRequest, setQueueRequest] = React.useState(null);
   const [videoUrl, setVideoUrl] = React.useState("");
   const [generationId, setGenerationId] = React.useState(null);
+  const [videoAspect, setVideoAspect] = React.useState("16:9");
+  const [downloading, setDownloading] = React.useState(false);
   const [error, setError] = React.useState("");
   const fileInputRef = React.useRef(null);
   const selectedModel = MODELS.find((m) => m.id === modelId) || MODELS[0];
@@ -120,14 +139,15 @@ export default function VideoStudio() {
     const timer = setInterval(async () => {
       attempts += 1;
       try {
-        const { data, error: invokeError } = await supabase.functions.invoke("fal-video", { body: { action: "status", model: queueRequest.model, model_path: queueRequest.model_path, request_id: queueRequest.request_id } });
-        if (invokeError) throw invokeError;
+        const { data, error: invokeError } = await supabase.functions.invoke("fal-video", { body: { action: "status", model: queueRequest.model, model_path: queueRequest.model_path, request_id: queueRequest.request_id, status_url: queueRequest.status_url, response_url: queueRequest.response_url } });
+        if (invokeError) throw await readInvokeError(invokeError);
         if (!active || !data) return;
         if (data.status === "COMPLETED") {
           const url = getVideoUrl(data.result);
           if (!url) throw new Error("VIDEO_URL_MISSING");
-          setVideoUrl(url); setGenerationId(queueRequest.request_id); setQueueRequest(null); setGenerating(false);
-          if (projectId) await saveStudioOutput(projectId, { studioId: "video", asset: { id: queueRequest.request_id, url, generation_id: queueRequest.request_id }, approved: false, metadata: { provider: "fal", model: modelId, duration, aspect, resolution: selectedModel.resolutions.length ? resolution : null, style, source_asset_id: incomingAssetId || null } });
+          setVideoUrl(url); setGenerationId(queueRequest.request_id); setVideoAspect(queueRequest.aspect || aspect); setQueueRequest(null); setGenerating(false);
+          await saveVideoToProject({ url, requestId: queueRequest.request_id, title: queueRequest.title, metadata: { provider: "fal", model: modelId, duration, aspect: queueRequest.aspect || aspect, resolution: selectedModel.resolutions.length ? resolution : null, style, source_asset_id: incomingAssetId || null } });
+          resetForm();
         } else if (data.status === "FAILED") {
           throw new Error(data.error || "VIDEO_GENERATION_FAILED");
         } else if (attempts >= 180) {
@@ -141,6 +161,77 @@ export default function VideoStudio() {
     }, 4000);
     return () => { active = false; clearInterval(timer); };
   }, [queueRequest, projectId, modelId, duration, aspect, resolution, style, incomingAssetId, loc]);
+
+  // Persist the finished video: copy it to our own storage (fal links can expire), make sure a project exists
+  // (create one when the studio was opened directly) and register the video in that project so it shows in My Projects.
+  const saveVideoToProject = async ({ url, requestId, title, metadata }) => {
+    try {
+      const { data: authData } = await supabase.auth.getUser();
+      const ownerId = authData?.user?.id || user?.id;
+      if (!ownerId) return;
+      let targetProjectId = projectId;
+      let createdProject = false;
+      if (!targetProjectId) {
+        const fallbackTitle = brand?.brand_name ? `${brand.brand_name} - ${loc({ en: "Video", ar: "فيديو" })}` : (title || loc({ en: "Video", ar: "فيديو" }));
+        const created = await projectService.create({ title: title || fallbackTitle, studio_type: "video", status: "completed", language: direction === "rtl" ? "ar" : "en", project_data: { last_studio_id: "video" } });
+        targetProjectId = created?.id; createdProject = true;
+      }
+      if (!targetProjectId) return;
+      const assetId = crypto.randomUUID();
+      let finalUrl = url; let storagePath = null; let sizeBytes = null;
+      try {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error("FETCH_FAILED");
+        const blob = await response.blob();
+        const path = `${ownerId}/${targetProjectId}/videos/${assetId}.mp4`;
+        const { error: uploadError } = await supabase.storage.from("eyad-assets").upload(path, blob, { contentType: "video/mp4", cacheControl: "31536000", upsert: false });
+        if (uploadError) throw uploadError;
+        finalUrl = supabase.storage.from("eyad-assets").getPublicUrl(path).data.publicUrl; storagePath = path; sizeBytes = blob.size;
+      } catch { /* keep the provider URL if the copy fails */ }
+      if (storagePath) {
+        await supabase.from("assets").insert({ id: assetId, owner_id: ownerId, project_id: targetProjectId, kind: "video", name: `video-${assetId.slice(0, 8)}.mp4`, storage_path: storagePath, mime_type: "video/mp4", size_bytes: sizeBytes, metadata: { source: "video-studio", asset_url: finalUrl, provider_url: url, ...metadata } });
+      }
+      await saveStudioOutput(targetProjectId, { studioId: "video", asset: { id: storagePath ? assetId : requestId, url: finalUrl, generation_id: requestId, kind: "video" }, approved: false, metadata });
+      // Add the video to the project's chat so it can be played and downloaded there.
+      try {
+        const conversation = await conversationService.getOrCreate(targetProjectId, {});
+        await conversationService.addMessage(conversation.id, {
+          role: "assistant",
+          content: loc({ en: "Your video is ready.", ar: "الفيديو جاهز." }),
+          metadata: { studio_id: "video", video_url: finalUrl, video_aspect: metadata?.aspect || "16:9", video_asset_id: storagePath ? assetId : requestId },
+        });
+      } catch { /* the video is still saved in the project */ }
+      if (createdProject) await projectService.update(targetProjectId, { studio_type: "video", status: "completed" }).catch(() => null);
+      setVideoUrl(finalUrl);
+    } catch { /* saving must never break the generated video */ }
+  };
+
+  // Clear all inputs after a successful generation (kept untouched when generation fails).
+  const resetForm = () => {
+    setPrompt("");
+    setImages((current) => { current.forEach((item) => { try { URL.revokeObjectURL(item.preview); } catch { /* ignore */ } }); return []; });
+    setModelId(MODELS[0].id); setResolution(MODELS[0].defaultResolution);
+    setDuration(5); setIsCustomDuration(false); setCustomDurationText("5");
+    setAspect("16:9"); setStyle("cinematic"); setError("");
+  };
+
+  // Save the video file to the device instead of opening it in a new tab.
+  const downloadVideo = async () => {
+    if (!videoUrl || downloading) return;
+    setDownloading(true);
+    try {
+      const response = await fetch(videoUrl);
+      if (!response.ok) throw new Error("DOWNLOAD_FAILED");
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(new Blob([blob], { type: "video/mp4" }));
+      const link = document.createElement("a");
+      link.href = objectUrl; link.download = `eyad-video-${Date.now()}.mp4`;
+      document.body.appendChild(link); link.click(); link.remove();
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 10000);
+    } catch {
+      setError(loc({ en: "Could not download the video. Please try again.", ar: "تعذر تنزيل الفيديو. حاول مرة أخرى." }));
+    } finally { setDownloading(false); }
+  };
 
   const changeModel = (nextId) => {
     const next = MODELS.find((m) => m.id === nextId);
@@ -205,12 +296,12 @@ export default function VideoStudio() {
       const brandContext = brand?.brand_name ? `Brand: ${brand.brand_name}.` : "";
       const promptWithStyle = `${prompt.trim()}\n\nVisual direction: ${STYLE_GUIDANCE[style]} ${brandContext}`.trim();
       const { data, error: invokeError } = await supabase.functions.invoke("fal-video", { body: { action: "submit", model: modelId, prompt: promptWithStyle, duration: Number(duration), aspect_ratio: aspect, resolution: selectedModel.resolutions.length ? resolution : undefined, image_urls: uploadedUrls, user_id: ownerId } });
-      if (invokeError) throw invokeError;
+      if (invokeError) throw await readInvokeError(invokeError);
       if (data?.video?.url || data?.video_url || data?.url) {
-        const url = getVideoUrl(data); setVideoUrl(url); setGenerationId(data.request_id || data.id || null);
-        if (projectId) await saveStudioOutput(projectId, { studioId: "video", asset: { id: data.request_id || data.id || null, url, generation_id: data.request_id || data.id || null }, approved: false, metadata: { provider: "fal", model: modelId, duration, aspect, resolution: selectedModel.resolutions.length ? resolution : null, style, source_asset_id: incomingAssetId || null } });
-        setGenerating(false);
-      } else if (data?.request_id) setQueueRequest({ model: modelId, model_path: data.model_path, request_id: data.request_id });
+        const url = getVideoUrl(data); setVideoUrl(url); setGenerationId(data.request_id || data.id || null); setVideoAspect(aspect);
+        await saveVideoToProject({ url, requestId: data.request_id || data.id || null, title: prompt.trim().slice(0, 60), metadata: { provider: "fal", model: modelId, duration, aspect, resolution: selectedModel.resolutions.length ? resolution : null, style, source_asset_id: incomingAssetId || null } });
+        setGenerating(false); resetForm();
+      } else if (data?.request_id) setQueueRequest({ aspect, title: prompt.trim().slice(0, 60), model: modelId, model_path: data.model_path, request_id: data.request_id, status_url: data.status_url, response_url: data.response_url });
       else throw new Error(data?.error || "FAL_SUBMIT_FAILED");
     } catch (err) {
       setError(err?.message || loc({ en: "Video generation failed.", ar: "فشل توليد الفيديو." })); setGenerating(false);
@@ -261,7 +352,7 @@ export default function VideoStudio() {
         {!canGenerate && !generating && <div className="video-studio-validation">{loc({ en: "Enter a prompt and complete every setting to enable generation.", ar: "اكتب البرومبت وأكمل جميع الاختيارات لتفعيل التوليد." })}</div>}
         {error && <div className="video-studio-error">{error}</div>}
       </section>
-      <section className="video-studio-result">{generating ? <div className="video-studio-empty"><div className="video-studio-orb"><span /><span /><span /></div><strong>{loc({ en: "Your video is being generated", ar: "جاري إنشاء الفيديو" })}</strong><small>{loc({ en: "This may take a few minutes. You can keep this page open.", ar: "قد تستغرق العملية عدة دقائق. يمكنك إبقاء الصفحة مفتوحة." })}</small></div> : videoUrl ? <div className="video-studio-output"><StudioNextActions projectId={projectId} fromStudio="video" asset={{ id: generationId, url: videoUrl }} title={loc({ en: "Video created. Choose the next step", ar: "تم إنشاء الفيديو. اختر الخطوة التالية" })} description={loc({ en: "Continue with the same project context.", ar: "كمل بنفس بيانات المشروع والهوية." })} /><div className="video-studio-player-wrap"><video controls playsInline src={videoUrl} /></div><div className="video-studio-output-actions"><a href={videoUrl} target="_blank" rel="noreferrer" download="eyad-video.mp4"><Download /> {loc({ en: "Download", ar: "تحميل" })}</a><button type="button" onClick={generate}><RefreshCw /> {loc({ en: "Generate again", ar: "توليد مرة أخرى" })}</button></div></div> : <div className="video-studio-empty"><Film /><strong>{loc({ en: "Your video will appear here", ar: "الفيديو الناتج هيظهر هنا" })}</strong><small>{loc({ en: "Choose a model, describe your idea and generate.", ar: "اختر الموديل واكتب فكرتك وابدأ التوليد." })}</small></div>}</section>
+      <section className="video-studio-result">{generating ? <div className="video-studio-empty"><div className="video-studio-orb"><span /><span /><span /></div><strong>{loc({ en: "Your video is being generated", ar: "جاري إنشاء الفيديو" })}</strong><small>{loc({ en: "This may take a few minutes. You can keep this page open.", ar: "قد تستغرق العملية عدة دقائق. يمكنك إبقاء الصفحة مفتوحة." })}</small></div> : videoUrl ? <div className="video-studio-output"><div className="video-studio-player-wrap" style={playerStyle(videoAspect)}><video controls playsInline src={videoUrl} /></div><div className="video-studio-output-actions"><button type="button" onClick={downloadVideo} disabled={downloading}><Download /> {downloading ? loc({ en: "Downloading...", ar: "جاري التنزيل..." }) : loc({ en: "Download", ar: "تحميل" })}</button></div></div> : <div className="video-studio-empty"><Film /><strong>{loc({ en: "Your video will appear here", ar: "الفيديو الناتج هيظهر هنا" })}</strong><small>{loc({ en: "Choose a model, describe your idea and generate.", ar: "اختر الموديل واكتب فكرتك وابدأ التوليد." })}</small></div>}</section>
     </main>
   </div>;
 }

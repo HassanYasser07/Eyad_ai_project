@@ -112,6 +112,22 @@ export default function Chat() {
   const inputRef = useRef(null);
   const fileInputRef = useRef(null);
   const eyadIconSrc = appConfig.assets.logoIcon;
+  const [videoDownloading, setVideoDownloading] = useState(null);
+  const downloadChatVideo = async (url) => {
+    if (!url || videoDownloading) return;
+    setVideoDownloading(url);
+    try {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error("DOWNLOAD_FAILED");
+      const objectUrl = URL.createObjectURL(new Blob([await response.blob()], { type: "video/mp4" }));
+      const link = document.createElement("a");
+      link.href = objectUrl; link.download = `eyad-video-${Date.now()}.mp4`;
+      document.body.appendChild(link); link.click(); link.remove();
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 10000);
+    } catch {
+      window.alert(isAr ? "تعذر تنزيل الفيديو. حاول مرة أخرى." : "Could not download the video. Please try again.");
+    } finally { setVideoDownloading(null); }
+  };
   const requestedProjectId = searchParams.get("project");
 
   const unlockVoicePlayback = () => {
@@ -365,6 +381,7 @@ export default function Chat() {
           assetId: item.metadata?.asset_id || null,
           asset: item.metadata?.asset_id ? { id: item.metadata.asset_id, url: item.metadata?.asset_url || item.metadata?.image_data_url || null } : null,
           choices: item.metadata?.choices || null,
+          video: item.metadata?.video_url ? { url: item.metadata.video_url, aspect: item.metadata.video_aspect || "16:9" } : null,
         }));
         setMessages(mappedHistory);
         // Restore the latest generated image as lastImage so modification requests
@@ -406,6 +423,7 @@ export default function Chat() {
         assetId: item.metadata?.asset_id || null,
         asset: item.metadata?.asset_id ? { id: item.metadata.asset_id, url: item.metadata?.asset_url || item.metadata?.image_data_url || null } : null,
         choices: item.metadata?.choices || null,
+        video: item.metadata?.video_url ? { url: item.metadata.video_url, aspect: item.metadata.video_aspect || "16:9" } : null,
       }));
       const latestAssistantIndex = mappedHistory.map((item) => item.role === "assistant" && !item.error && !item.background).lastIndexOf(true);
       const replyIndex = isVoiceJob
@@ -1626,6 +1644,16 @@ export default function Chat() {
                       <div className="eyad-chat-page__text-row">
                         <div className="eyad-chat-page__text">{message.text}</div>
 
+                      </div>
+                    )}
+                    {message.video?.url && (
+                      <div className="eyad-chat-page__video-card">
+                        <div className="eyad-chat-page__video-frame" style={{ aspectRatio: String(message.video.aspect || "16:9").replace(":", " / "), width: `min(100%, ${Math.round(Math.min(480, 400 * ((Number(String(message.video.aspect || "16:9").split(":")[0]) || 16) / (Number(String(message.video.aspect || "16:9").split(":")[1]) || 9))))}px)` }}>
+                          <video controls playsInline preload="metadata" src={message.video.url} />
+                        </div>
+                        <button type="button" className="eyad-chat-page__video-download" onClick={() => downloadChatVideo(message.video.url)} disabled={videoDownloading === message.video.url}>
+                          <Download /> {videoDownloading === message.video.url ? (isAr ? "جاري التنزيل..." : "Downloading...") : (isAr ? "تحميل الفيديو" : "Download video")}
+                        </button>
                       </div>
                     )}
                     {message.loginPrompt && (
