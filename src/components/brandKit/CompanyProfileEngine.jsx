@@ -25,6 +25,7 @@ import {
   PROFILE_SLIDE_PRESETS, PROFILE_TONES, clampSlideCount, groupFill, profileCompleteness,
 } from "@/config/companyProfileOptions";
 import { buildProfileSettings, buildSlidePlan } from "./companyProfilePrompt";
+import CompanyProfileMockup from "./CompanyProfileMockup";
 
 const DRAFT_PREFIX = "eyad_company_profile_draft:";
 const EDITOR_ORIGIN_KEY = "eyad_cp_editor_origin";
@@ -103,7 +104,10 @@ function ProfileField({ field, value, onChange, error, ar }) {
   );
 }
 
-export default function CompanyProfileEngine({ brand, palette, arabicFont, englishFont, projectId, ar }) {
+export default function CompanyProfileEngine({
+  brand, palette, background, arabicFont, englishFont, projectId, ar,
+  hasApprovedLogo, onRequireApprovedLogo, onSaveMockup,
+}) {
   const { loc } = useI18n();
   const { isAnonymous, requireAccount } = useAuth();
   const tx = (arabic, english) => (ar ? arabic : english);
@@ -433,6 +437,24 @@ export default function CompanyProfileEngine({ brand, palette, arabicFont, engli
           )}
         </aside>
       )}
+
+      {/* 4 · printed-profile mockups (same flow as the Visual Identity Mockup section) */}
+      <div className="cp-card cp-card--mockup">
+        <div className="cp-card-head">
+          <span className="cp-step">4</span>
+          <strong>{tx("موك أب بروفايل الشركة", "Company profile mockup")}</strong>
+        </div>
+        <CompanyProfileMockup
+          brand={brand}
+          palette={palette}
+          background={background}
+          projectId={projectId}
+          onSave={onSaveMockup}
+          ar={ar}
+          hasApprovedLogo={hasApprovedLogo}
+          onRequireApprovedLogo={onRequireApprovedLogo}
+        />
+      </div>
 
       {editorOpen && <PresentationEditorHost file={editorFile} onClose={closeEditor} loc={loc} />}
     </section>

@@ -111,6 +111,13 @@ export default function VisualIdentityStudio() {
     return () => window.clearTimeout(timer);
   }, [loading, wantsProfile]);
 
+  // Shared by every section that needs the approved logo first (Mockup, Brand Package, Company Profile mockup).
+  const requireApprovedLogo = () => {
+    setLogoAttention(true);
+    window.setTimeout(() => document.querySelector(".vi-logo-section")?.scrollIntoView({ behavior: "smooth", block: "center" }), 60);
+    window.setTimeout(() => setLogoAttention(false), 6000);
+  };
+
   const saveMockup = async (mockup) => {
     if (isAnonymous || !projectId) {
       requireAccount(window.location.pathname + window.location.search);
@@ -236,11 +243,7 @@ export default function VisualIdentityStudio() {
         <MockupEngine
           brand={brand}
           hasApprovedLogo={hasApprovedLogo}
-          onRequireApprovedLogo={() => {
-            setLogoAttention(true);
-            window.setTimeout(() => document.querySelector(".vi-logo-section")?.scrollIntoView({ behavior: "smooth", block: "center" }), 60);
-            window.setTimeout(() => setLogoAttention(false), 6000);
-          }}
+          onRequireApprovedLogo={requireApprovedLogo}
           palette={activePalette}
           background={activeBackground}
           projectId={projectId}
@@ -265,17 +268,17 @@ export default function VisualIdentityStudio() {
           englishFont={activeEnglishFont}
           projectId={projectId}
           hasApprovedLogo={hasApprovedLogo}
-          onRequireApprovedLogo={() => {
-            setLogoAttention(true);
-            window.setTimeout(() => document.querySelector(".vi-logo-section")?.scrollIntoView({ behavior: "smooth", block: "center" }), 60);
-            window.setTimeout(() => setLogoAttention(false), 6000);
-          }}
+          onRequireApprovedLogo={requireApprovedLogo}
           ar={ar}
         />
 
         <CompanyProfileEngine
           brand={brand}
           palette={activePalette}
+          background={activeBackground}
+          hasApprovedLogo={hasApprovedLogo}
+          onRequireApprovedLogo={requireApprovedLogo}
+          onSaveMockup={saveMockup}
           arabicFont={activeArabicFont}
           englishFont={activeEnglishFont}
           projectId={projectId}

@@ -1397,3 +1397,13 @@
   .cp-presets small { flex-basis: 100%; margin-inline-start: 0; }
   .cp-field input, .cp-field textarea, .cp-select select { font-size: 16px; } /* no iOS zoom on focus */
 }
+
+/* --- Company Profile · mockup block (reuses the .mockup-* launcher / gallery / result styles) --- */
+.cp-card--mockup .cp-mockup { min-width: 0; }
+.cp-card--mockup .mockup-launch-card { height: 280px; min-height: 280px; }
+.cp-card--mockup .mockup-launch-copy strong { font-size: 1.6rem; }
+@media (max-width: 620px) {
+  .cp-card--mockup .mockup-launch-card { height: 300px; min-height: 300px; }
+  .cp-card--mockup .mockup-launch-copy { inset: 14px 14px; }
+  .cp-card--mockup .mockup-launch-copy strong { font-size: 1.3rem; }
+}
