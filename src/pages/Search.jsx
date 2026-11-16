@@ -1,7 +1,7 @@
 import React from "react";
 import {
   Search as SearchIcon, X, Shapes, Image, Video, Presentation,
-  Palette, BriefcaseBusiness, Store, Folder, MessageSquare, FileImage
+  Palette, Store, Folder, MessageSquare, FileImage
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useI18n } from "@/i18n/I18nContext";
@@ -15,7 +15,6 @@ const studioIconMap = {
   video: Video,
   presentations: Presentation,
   "brand-kit": Palette,
-  "company-profile": BriefcaseBusiness,
   marketplace: Store,
 };
 
@@ -25,7 +24,6 @@ const studioAccent = {
   video: "#ef6b6b",
   presentations: "#4d8df7",
   "brand-kit": "#7c7ee8",
-  "company-profile": "#5ab9aa",
   marketplace: "#f5a623",
 };
 

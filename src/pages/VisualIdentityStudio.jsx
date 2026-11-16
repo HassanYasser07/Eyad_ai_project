@@ -26,6 +26,7 @@ import BackgroundsSection from "@/components/brandKit/BackgroundsSection";
 import MockupEngine from "@/components/brandKit/MockupEngine";
 import ProductionEngine from "@/components/brandKit/ProductionEngine";
 import BrandPackageEngine from "@/components/brandKit/BrandPackageEngine";
+import CompanyProfileEngine from "@/components/brandKit/CompanyProfileEngine";
 import StudioNextActions from "@/components/studios/StudioNextActions";
 import "./visualIdentityStudio.css";
 
@@ -101,6 +102,21 @@ export default function VisualIdentityStudio() {
   };
 
   const back = () => navigate("/studios");
+
+  // Old /studios/company-profile links (and chat hand-offs) land here with #company-profile: scroll to that section.
+  const wantsProfile = typeof window !== "undefined" && window.location.hash === "#company-profile";
+  React.useEffect(() => {
+    if (loading || !wantsProfile) return undefined;
+    const timer = window.setTimeout(() => document.getElementById("company-profile")?.scrollIntoView({ behavior: "smooth", block: "start" }), 250);
+    return () => window.clearTimeout(timer);
+  }, [loading, wantsProfile]);
+
+  // Shared by every section that needs the approved logo first (Mockup, Brand Package, Company Profile mockup).
+  const requireApprovedLogo = () => {
+    setLogoAttention(true);
+    window.setTimeout(() => document.querySelector(".vi-logo-section")?.scrollIntoView({ behavior: "smooth", block: "center" }), 60);
+    window.setTimeout(() => setLogoAttention(false), 6000);
+  };
 
   const saveMockup = async (mockup) => {
     if (isAnonymous || !projectId) {
@@ -227,11 +243,7 @@ export default function VisualIdentityStudio() {
         <MockupEngine
           brand={brand}
           hasApprovedLogo={hasApprovedLogo}
-          onRequireApprovedLogo={() => {
-            setLogoAttention(true);
-            window.setTimeout(() => document.querySelector(".vi-logo-section")?.scrollIntoView({ behavior: "smooth", block: "center" }), 60);
-            window.setTimeout(() => setLogoAttention(false), 6000);
-          }}
+          onRequireApprovedLogo={requireApprovedLogo}
           palette={activePalette}
           background={activeBackground}
           projectId={projectId}
@@ -256,11 +268,20 @@ export default function VisualIdentityStudio() {
           englishFont={activeEnglishFont}
           projectId={projectId}
           hasApprovedLogo={hasApprovedLogo}
-          onRequireApprovedLogo={() => {
-            setLogoAttention(true);
-            window.setTimeout(() => document.querySelector(".vi-logo-section")?.scrollIntoView({ behavior: "smooth", block: "center" }), 60);
-            window.setTimeout(() => setLogoAttention(false), 6000);
-          }}
+          onRequireApprovedLogo={requireApprovedLogo}
+          ar={ar}
+        />
+
+        <CompanyProfileEngine
+          brand={brand}
+          palette={activePalette}
+          background={activeBackground}
+          hasApprovedLogo={hasApprovedLogo}
+          onRequireApprovedLogo={requireApprovedLogo}
+          onSaveMockup={saveMockup}
+          arabicFont={activeArabicFont}
+          englishFont={activeEnglishFont}
+          projectId={projectId}
           ar={ar}
         />
 

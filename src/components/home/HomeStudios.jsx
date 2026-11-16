@@ -10,7 +10,6 @@ export const HOME_STUDIO_IDS = [
   "video",
   "templates",
   "presentations",
-  "company-profile",
 ];
 
 export const STUDIO_VISUALS = {
@@ -37,12 +36,6 @@ export const STUDIO_VISUALS = {
       "https://images.unsplash.com/photo-1519608487953-e999c86e7455?auto=format&fit=crop&w=1200&q=85",
     title: "home.studio.images.title",
     line: "home.studio.images.line",
-  },
-  "company-profile": {
-    image:
-      "https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=1200&q=85",
-    title: "home.studio.company.title",
-    line: "home.studio.company.line",
   },
   presentations: {
     image:
