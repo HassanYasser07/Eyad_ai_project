@@ -58,6 +58,15 @@ function resolveFalKey() {
   return { key, presence, falLikeNames };
 }
 
+const errText = (v: unknown, fallback: string): string => {
+  if (!v) return fallback;
+  if (typeof v === "string") return v;
+  try { return JSON.stringify(v).slice(0, 500); } catch { return fallback; }
+};
+// fal queue status/result URLs use only the app root (owner/alias), not the full sub-path.
+const falBasePath = (endpoint: string) => endpoint.split("/").slice(0, 2).join("/");
+const isFalQueueUrl = (u: unknown): u is string => typeof u === "string" && /^https:\/\/queue\.fal\.run\//i.test(u);
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "METHOD_NOT_ALLOWED" }, 405);
@@ -121,9 +130,12 @@ Deno.serve(async (req: Request) => {
     const submitData = await submitResponse.json().catch(() => ({}));
     if (!submitResponse.ok) {
       console.error("FAL_VIDEO_SUBMIT_FAILED", submitResponse.status, submitData);
-      return json({ error: submitData?.detail || submitData?.message || "FAL_SUBMIT_FAILED" }, 502);
+      return json({ error: errText(submitData?.detail || submitData?.message, "FAL_SUBMIT_FAILED") }, 502);
     }
-    return json({ ok: true, model_path: endpoint, has_images: images.length > 0, request_id: submitData.request_id, status: "IN_QUEUE" });
+    return json({
+      ok: true, model_path: endpoint, has_images: images.length > 0, request_id: submitData.request_id, status: "IN_QUEUE",
+      status_url: submitData.status_url, response_url: submitData.response_url,
+    });
   }
 
   if (action === "status") {
@@ -131,13 +143,22 @@ Deno.serve(async (req: Request) => {
     const endpoint = String(body?.model_path || "");
     if (![config.text, config.image].includes(endpoint)) return json({ error: "INVALID_MODEL_ENDPOINT" }, 400);
     if (!requestId || !/^[a-zA-Z0-9_-]{8,120}$/.test(requestId)) return json({ error: "INVALID_REQUEST_ID" }, 400);
-    const statusResponse = await fetch(`https://queue.fal.run/${endpoint}/requests/${encodeURIComponent(requestId)}/status`, { headers: { Authorization: `Key ${falKey}` } });
+    const base = `https://queue.fal.run/${falBasePath(endpoint)}/requests/${encodeURIComponent(requestId)}`;
+    const statusUrl = isFalQueueUrl(body?.status_url) && body.status_url.includes(requestId) ? body.status_url : `${base}/status`;
+    const responseUrl = isFalQueueUrl(body?.response_url) && body.response_url.includes(requestId) ? body.response_url : base;
+    const statusResponse = await fetch(statusUrl, { headers: { Authorization: `Key ${falKey}` } });
     const statusData = await statusResponse.json().catch(() => ({}));
-    if (!statusResponse.ok) return json({ error: statusData?.detail || "FAL_STATUS_FAILED" }, 502);
+    if (!statusResponse.ok) {
+      console.error("FAL_VIDEO_STATUS_FAILED", statusResponse.status, statusUrl, statusData);
+      return json({ error: errText(statusData?.detail || statusData?.message, `FAL_STATUS_FAILED (${statusResponse.status})`) }, 502);
+    }
     if (statusData.status !== "COMPLETED") return json({ status: statusData.status || "IN_PROGRESS" });
-    const resultResponse = await fetch(`https://queue.fal.run/${endpoint}/requests/${encodeURIComponent(requestId)}`, { headers: { Authorization: `Key ${falKey}` } });
+    const resultResponse = await fetch(responseUrl, { headers: { Authorization: `Key ${falKey}` } });
     const result = await resultResponse.json().catch(() => ({}));
-    if (!resultResponse.ok) return json({ error: result?.detail || "FAL_RESULT_FAILED" }, 502);
+    if (!resultResponse.ok) {
+      console.error("FAL_VIDEO_RESULT_FAILED", resultResponse.status, result);
+      return json({ error: errText(result?.detail || result?.message, `FAL_RESULT_FAILED (${resultResponse.status})`) }, 502);
+    }
     return json({ status: "COMPLETED", result });
   }
   return json({ error: "UNKNOWN_ACTION" }, 400);

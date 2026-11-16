@@ -18,13 +18,20 @@ export default function ProjectRow({ project, studio }) {
   const presentation = project.studioType === "presentations" ? project.data?.presentation : null;
   const thumbVersionId = presentation?.latest_version_id || null;
 
+  // Video projects show a muted still of the generated video as their thumbnail.
+  const videoThumbUrl = project.studioType === "video" ? project.data?.latest_asset_url : null;
+
   return (
     <Link
       to={`/chat?project=${encodeURIComponent(project.id)}`}
       className="flex items-center gap-3 p-3 rounded-xl hover:bg-highlight-mist/60 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
       aria-label={language === "ar" ? `فتح مشروع ${project.title} في محادثة إياد` : `Open ${project.title} in EYAD chat`}
     >
-      {thumbVersionId ? (
+      {videoThumbUrl ? (
+        <div className="relative w-16 aspect-video rounded-md overflow-hidden border border-border bg-black shrink-0" data-testid="project-video-thumb">
+          <video src={`${videoThumbUrl}#t=0.1`} muted playsInline preload="metadata" className="h-full w-full object-cover pointer-events-none" />
+        </div>
+      ) : thumbVersionId ? (
         <div className="relative w-16 aspect-video rounded-md overflow-hidden border border-border bg-white shrink-0" data-testid="project-presentation-thumb">
           <FirstSlideThumbnail
             load={() => fetchPresentationFile(project.id, thumbVersionId)}
