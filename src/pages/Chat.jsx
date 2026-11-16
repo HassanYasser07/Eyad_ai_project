@@ -494,7 +494,7 @@ export default function Chat() {
           pendingVoiceRouteRef.current = null;
           const studio = getStudioById(pendingRoute.studioId);
           const studioRoute = studio?.route || `/studios/${encodeURIComponent(pendingRoute.studioId)}`;
-          const studioPath = `${studioRoute}?project=${encodeURIComponent(pendingRoute.projectId)}&from=chat`;
+          const studioPath = `${studioRoute}?project=${encodeURIComponent(pendingRoute.projectId)}&from=chat${/^company[-_ ]?profile/i.test(String(pendingRoute.studioId)) ? "#company-profile" : ""}`;
           stopVoicePlayback({ completeReply: false });
           setVoiceOverlayOpen(false);
           setVoiceOverlayTranscript("");
@@ -754,7 +754,7 @@ export default function Chat() {
         if (isDesktopHandoff && routedStudioId === "logo" && value) {
           handoffParams.set("brief", value);
         }
-        const studioPath = `${studioRoute}?${handoffParams.toString()}`;
+        const studioPath = `${studioRoute}?${handoffParams.toString()}${/^company[-_ ]?profile/i.test(String(routedStudioId)) ? "#company-profile" : ""}`;
         // Voice Chat: stop all TTS/listening and close the overlay before the
         // final handoff so VoiceOverlay cannot reclaim the Chat route or start
         // a new listening session during navigation. Use a real browser navigation

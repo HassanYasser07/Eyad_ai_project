@@ -22,15 +22,6 @@ export const studioRegistry = [
     route: "/studios/brand-kit",
   },
   {
-    id: "company-profile",
-    name: { en: "Company Profile Studio", ar: "ستوديو بروفايل الشركة" },
-    description: { en: "Create polished company profiles.", ar: "إنشاء بروفايل احترافي للشركة." },
-    icon: "BriefcaseBusiness",
-    accent: "#0ea5e9",
-    status: "placeholder",
-    route: "/studios/company-profile",
-  },
-  {
     id: "ai-images",
     name: { en: "AI Images Studio", ar: "ستوديو الصور" },
     description: { en: "Create images from your ideas.", ar: "إنشاء صور من أفكارك." },
@@ -84,7 +75,8 @@ const STUDIO_ALIASES = {
   slides: "presentations", deck: "presentations", pptx: "presentations", powerpoint: "presentations", ppt: "presentations",
   logos: "logo", "logo-studio": "logo", logo_studio: "logo",
   brand: "brand-kit", "brand-identity": "brand-kit", brand_identity: "brand-kit", "visual-identity": "brand-kit", visual_identity: "brand-kit", brandkit: "brand-kit", brand_kit: "brand-kit", identity: "brand-kit",
-  "company_profile": "company-profile", companyprofile: "company-profile", profile: "company-profile",
+  // Company Profile now lives inside the Visual Identity Studio.
+  "company-profile": "brand-kit", "company_profile": "brand-kit", companyprofile: "brand-kit", "company-profile-studio": "brand-kit", profile: "brand-kit",
   image: "ai-images", images: "ai-images", ai_images: "ai-images", "ai-image": "ai-images", aiimages: "ai-images",
   videos: "video", "video-studio": "video",
   template: "templates", "template-studio": "templates",

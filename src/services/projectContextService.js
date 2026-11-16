@@ -7,12 +7,11 @@ import { getBrandIdentity } from "@/services/brandService";
 
 export const STUDIO_NEXT_ACTIONS = {
   logo: ["brand-kit", "presentations"],
-  "brand-kit": ["templates", "ai-images", "company-profile", "presentations"],
-  templates: ["ai-images", "video", "presentations", "company-profile"],
+  "brand-kit": ["templates", "ai-images", "presentations"],
+  templates: ["ai-images", "video", "presentations"],
   "ai-images": ["templates", "video", "brand-kit"],
   video: ["templates", "presentations", "ai-images"],
-  presentations: ["company-profile", "templates", "brand-kit"],
-  "company-profile": ["presentations", "templates", "brand-kit"],
+  presentations: ["templates", "brand-kit"],
   marketplace: ["templates", "ai-images", "brand-kit"],
 };
 

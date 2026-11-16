@@ -30,7 +30,7 @@ export const aiToolRegistry = {
   },
   create_company_profile: {
     id: "create_company_profile",
-    studio: "company-profile",
+    studio: "brand-kit", // Company Profile is a Visual Identity Studio section
     category: "production",
     requiresAccount: true,
     creditMeter: "company_profile",

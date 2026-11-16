@@ -6,7 +6,7 @@ import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 import ScrollToTop from './components/ScrollToTop';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
 import AccountRequiredRoute from '@/components/AccountRequiredRoute';
 import OAuthReturnHandler from '@/components/OAuthReturnHandler';
 import { I18nProvider } from '@/i18n/I18nContext';
@@ -25,7 +25,6 @@ import LogoStudio from './pages/LogoStudio';
 import VisualIdentityStudio from '@/pages/VisualIdentityStudio';
 import AIImagesStudio from '@/pages/AIImagesStudio';
 import TemplatesStudio from "@/pages/TemplatesStudio";
-import CompanyProfileStudio from "@/pages/CompanyProfileStudio";
 import PresentationsStudio from "@/pages/PresentationsStudio";
 import VideoStudio from "@/pages/VideoStudio";
 import StudioDetail from '@/pages/StudioDetail';
@@ -78,7 +77,7 @@ const AuthenticatedApp = () => {
         <Route path="/studios/brand-kit" element={<VisualIdentityStudio />} />
         <Route path="/studios/ai-images" element={<AIImagesStudio />} />
         <Route path="/studios/templates" element={<TemplatesStudio />} />
-        <Route path="/studios/company-profile" element={<CompanyProfileStudio />} />
+        <Route path="/studios/company-profile" element={<CompanyProfileRedirect />} />
         <Route path="/studios/presentations" element={<PresentationsStudio />} />
         <Route path="/studios/video" element={<VideoStudio />} />
         <Route path="/studios/:id" element={<StudioDetail />} />
@@ -95,6 +94,12 @@ const AuthenticatedApp = () => {
   );
 };
 
+
+// The standalone Company Profile page moved into the Visual Identity Studio: keep old links working.
+function CompanyProfileRedirect() {
+  const { search } = useLocation();
+  return <Navigate to={{ pathname: "/studios/brand-kit", search, hash: "#company-profile" }} replace />;
+}
 
 function App() {
 

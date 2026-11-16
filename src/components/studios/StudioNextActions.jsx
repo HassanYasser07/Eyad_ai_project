@@ -1,5 +1,5 @@
 import React from "react";
-import { ArrowRight, ArrowLeft, Palette, LayoutTemplate, Image, Video, Presentation, BriefcaseBusiness, Download } from "lucide-react";
+import { ArrowRight, ArrowLeft, Palette, LayoutTemplate, Image, Video, Presentation, Download } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useI18n } from "@/i18n/I18nContext";
 import { getNextStudioIds, buildStudioHandoffUrl, setStudioHandoff } from "@/services/projectContextService";
@@ -8,7 +8,7 @@ import { exportImagePng, exportImagePdf, exportImageSvg, exportImagePptx, safeFi
 import { runEyadEngine } from "@/services/eyadEngineService";
 import "./StudioNextActions.css";
 
-const ICONS = { "brand-kit": Palette, templates: LayoutTemplate, "ai-images": Image, video: Video, presentations: Presentation, "company-profile": BriefcaseBusiness };
+const ICONS = { "brand-kit": Palette, templates: LayoutTemplate, "ai-images": Image, video: Video, presentations: Presentation };
 
 export default function StudioNextActions({ projectId, fromStudio, asset = null, title, description, hideExports = false }) {
   const navigate = useNavigate();

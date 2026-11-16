@@ -5,7 +5,7 @@ import { getStudioById } from "@/studios/studioRegistry";
 const ROUTES = [
   { studio: "logo", patterns: [/\b(logo|شعار|لوجو|لوجو الشركة|علامة تجارية)\b/i] },
   { studio: "brand-kit", patterns: [/\b(brand|identity|هوية|هوية بصرية|براند)\b/i] },
-  { studio: "company-profile", patterns: [/\b(company profile|profile|بروفايل|بروفايل شركة|ملف الشركة)\b/i] },
+  { studio: "brand-kit", patterns: [/\b(company profile|profile|بروفايل|بروفايل شركة|ملف الشركة)\b/i] },
   { studio: "presentations", patterns: [/(presentations?|slides?|عرض تقديمي|عروض تقديمية|بر[يى]?زنت[يى]?ش[يى]?ن|بريزنتيشن|ب[او]?ور ?بوينت|سلايدات|شرائح|pptx?)/i] },
   { studio: "ai-images", patterns: [/\b(image|images|photo|picture|صورة|صور|تصميم صورة)\b/i] },
   { studio: "video", patterns: [/\b(video|فيديو|ريل|reel|motion)\b/i] },

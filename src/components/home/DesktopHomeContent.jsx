@@ -31,7 +31,6 @@ const PASTEL = {
   "brand-kit": "#EDE9FE",
   video: "#FEF3C7",
   "ai-images": "#DCFCE7",
-  "company-profile": "#FEE2E2",
   presentations: "#E0E7FF",
   templates: "#FCE7F3",
   marketplace: "#F3E8FF",
