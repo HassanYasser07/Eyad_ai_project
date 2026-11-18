@@ -3,9 +3,8 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, ArrowRight, ImagePlus, Sparkles, Check, Mic, Download, Maximize2, X } from "lucide-react";
 import { useI18n } from "@/i18n/I18nContext";
 import { useAuth } from "@/lib/AuthContext";
-import { runEyadEngine } from "@/services/eyadEngineService";
+import { useGenerationJob, useGenerations } from "@/lib/GenerationContext";
 import { transcribeEyadAudio } from "@/services/transcribeService";
-import { jobService } from "@/services/jobService";
 import { getBrandIdentity } from "@/services/brandService";
 import { projectService } from "@/services/projectService";
 import { assetService } from "@/services/assetService";
@@ -214,7 +213,7 @@ export default function AIImagesStudio() {
   // Ratio the results are currently shown/cropped to. The user can change it freely after generation.
   const [displayAspectId, setDisplayAspectId] = React.useState(null);
   const [generating, setGenerating] = React.useState(false);
-  const [jobId, setJobId] = React.useState(null);
+  const { startGeneration } = useGenerations();
   const [images, setImages] = React.useState([]);
   const [error, setError] = React.useState("");
   const [selectedImage, setSelectedImage] = React.useState(null);
@@ -292,42 +291,47 @@ export default function AIImagesStudio() {
     // The user picks the best one themselves.
     setSelectedImage(null);
     setGenerating(false);
-    setJobId(null);
     scrollStageIntoView();
     return true;
   }, [scrollStageIntoView]);
 
+  // ---- Background job observer (survives leaving the app / reloads) ---------------------------
+  const matchImageJob = React.useCallback((item) => item.kind === "image" && (!projectId || !item.projectId || item.projectId === projectId), [projectId]);
+  const observed = useGenerationJob({ match: matchImageJob });
+  const handledJobRef = React.useRef(null);
+
   React.useEffect(() => {
-    if (!jobId) return undefined;
-    let active = true;
-    let attempts = 0;
-    const timer = setInterval(async () => {
-      if (!active) return;
-      attempts += 1;
-      try {
-        const data = await jobService.pollGeneration(jobId);
-        if (!active || !data) return;
-        if (data.status === "generated" || data.status === "completed") {
-          const next = Array.isArray(data.images) ? data.images : data.image ? [data.image] : [];
-          if (!showResults(next)) {
-            setError(loc({ en: "The generation completed without an image.", ar: "اكتمل التوليد بدون صورة." }));
-            setGenerating(false);
-            setJobId(null);
-          }
-        } else if (data.status === "failed") {
-          setError(data.error || loc({ en: "Image generation failed.", ar: "فشل توليد الصورة." }));
-          setGenerating(false);
-          setJobId(null);
-        }
-      } catch {}
-      if (attempts >= 60) {
-        setError(loc({ en: "Generation is still processing. You can return later and the job will remain on the server.", ar: "التوليد ما زال قيد التنفيذ. يمكنك العودة لاحقًا وستظل العملية محفوظة على الخادم." }));
+    if (observed.status !== "running") return;
+    const aspectFromJob = observed.job?.context?.aspectId;
+    if (aspectFromJob) {
+      generationAspectRef.current = aspectFromJob;
+      setResultAspectId(aspectFromJob);
+      setDisplayAspectId(aspectFromJob);
+    }
+    setError("");
+    setGenerating(true);
+  }, [observed.status, observed.job?.jobId]);
+
+  React.useEffect(() => {
+    if (observed.status !== "done" && observed.status !== "failed") return;
+    const finished = observed.job;
+    if (!finished || handledJobRef.current === finished.jobId) return;
+    handledJobRef.current = finished.jobId;
+    if (Date.now() - Number(finished.result?.finishedAt || 0) > 2 * 60 * 60 * 1000) { observed.consume(); return; }
+    if (finished.context?.aspectId) generationAspectRef.current = finished.context.aspectId;
+    if (observed.status === "failed") {
+      setError(loc({ en: "Image generation failed.", ar: "فشل توليد الصورة." }));
+      setGenerating(false);
+    } else {
+      const data = observed.result || {};
+      const next = Array.isArray(data.images) ? data.images : data.image ? [data.image] : [];
+      if (!showResults(next)) {
+        setError(loc({ en: "The generation completed without an image.", ar: "اكتمل التوليد بدون صورة." }));
         setGenerating(false);
-        setJobId(null);
       }
-    }, 2000);
-    return () => { active = false; clearInterval(timer); };
-  }, [jobId, loc, showResults]);
+    }
+    observed.consume();
+  }, [observed.status, observed.job?.jobId]);
 
   const generate = async () => {
     if (generating) return;
@@ -350,12 +354,14 @@ export default function AIImagesStudio() {
     setDisplayAspectId(aspect.id);
     scrollStageIntoView();
     try {
-      const data = await runEyadEngine({
+      await startGeneration({
+        kind: "image",
+        context: { aspectId: aspect.id, language: direction === "rtl" ? "ar" : "en" },
+        request: {
         message: requestPrompt,
         projectId,
         studioId: "ai-images",
         language: direction === "rtl" ? "ar" : "en",
-        action: "generate",
         referenceImage: referenceImages[0]?.data_url || referenceImages[0]?.url || brand?.logo?.url || null,
         designOptions: {
           image_type: "ai-image",
@@ -370,15 +376,9 @@ export default function AIImagesStudio() {
           style_reference_image: styleReference ? { id: styleReference.id, name: styleReference.en, url: styleReference.url, prompt: styleReference.prompt } : null,
           style_reference_prompt: styleReference?.prompt || "",
         },
+        },
       });
-      const list = Array.isArray(data?.images) && data.images.length ? data.images : data?.image ? [data.image] : [];
-      if (list.length && showResults(list)) return;
-      if (data?.job_id) {
-        setJobId(data.job_id);
-      } else {
-        setError(data?.reply || loc({ en: "Generation did not start.", ar: "لم يبدأ التوليد." }));
-        setGenerating(false);
-      }
+      // The provider owns the job now; the observer above shows progress and the result.
     } catch (err) {
       setError(err?.message || loc({ en: "Image generation failed.", ar: "فشل توليد الصورة." }));
       setGenerating(false);

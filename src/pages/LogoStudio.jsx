@@ -4,7 +4,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useI18n } from "@/i18n/I18nContext";
 import { useAuth } from "@/lib/AuthContext";
 import { runEyadEngine } from "@/services/eyadEngineService";
-import { jobService } from "@/services/jobService";
+import { useGenerationJob, useGenerations } from "@/lib/GenerationContext";
 import { projectService } from "@/services/projectService";
 import { assetService } from "@/services/assetService";
 import { saveBrandIdentity } from "@/services/brandService";
@@ -127,10 +127,9 @@ export default function LogoStudio() {
   // with the same/missing ids, which used to make both cards look selected and unclickable.
   const [selectedIndex, setSelectedIndex] = React.useState(null);
   const [project, setProject] = React.useState(null);
-  const [jobId, setJobId] = React.useState(null);
   const [error, setError] = React.useState("");
   const [loading, setLoading] = React.useState(false);
-  const [polling, setPolling] = React.useState(false);
+  const { startGeneration } = useGenerations();
   const [approved, setApproved] = React.useState(false);
   const selectedAsset = selectedIndex !== null ? (images.slice(0, 2)[selectedIndex] || null) : null;
   const selectedImage = selectedAsset ? (selectedAsset.asset_id || selectedAsset.id || `variant-${selectedIndex + 1}`) : null;
@@ -271,7 +270,6 @@ export default function LogoStudio() {
     generatedHereRef.current = true;
     setError("");
     setLoading(true);
-    setPolling(false);
     setStep("generating");
     setImages([]);
     setSelectedIndex(null);
@@ -299,16 +297,17 @@ export default function LogoStudio() {
         activity: gActivity.trim(),
         ...styleOptions,
       };
-      let data;
+      const buildRequest = (pid) => ({
+        message: briefMessage,
+        projectId: pid,
+        studioId: "logo",
+        language: ar ? "ar" : "en",
+        designOptions: generationOptions,
+      });
+      const generationContext = { name: gName.trim(), language: ar ? "ar" : "en" };
+      let started;
       try {
-        data = await runEyadEngine({
-          message: briefMessage,
-          projectId: projectId || null,
-          studioId: "logo",
-          language: ar ? "ar" : "en",
-          action: "generate",
-          designOptions: generationOptions,
-        });
+        started = await startGeneration({ kind: "logo", context: generationContext, request: buildRequest(projectId || null) });
       } catch (firstError) {
         // A project id can become stale after an anonymous session/login.
         // If the backend explicitly says it cannot find that project, retry
@@ -316,88 +315,55 @@ export default function LogoStudio() {
         const message = String(firstError?.message || firstError || "");
         if (!projectId || !/PROJECT_NOT_FOUND/i.test(message)) throw firstError;
         navigate("/studios/logo", { replace: true });
-        data = await runEyadEngine({
-          message: briefMessage,
-          projectId: null,
-          studioId: "logo",
-          language: ar ? "ar" : "en",
-          action: "generate",
-          designOptions: generationOptions,
-        });
+        started = await startGeneration({ kind: "logo", context: generationContext, request: buildRequest(null) });
       }
 
-      const durableProjectId = data?.project?.id || projectId;
+      const durableProjectId = started?.projectId || projectId;
       if (durableProjectId && !projectId) {
         navigate(`/studios/logo?project=${encodeURIComponent(durableProjectId)}`, { replace: true });
       }
-
-      if (data?.status === "generated") {
-        const nextImages = normalizeImages(data);
-        setImages(nextImages);
-        setSelectedIndex(null);
-        setApproved(false);
-        setProject({ id: durableProjectId, title: gName.trim() });
-        setStep("results");
-        setLoading(false);
-        return;
-      }
-
-      if ((data?.status === "queued" || data?.status === "waiting_external" || data?.status === "processing") && data?.job_id) {
-        setJobId(data.job_id);
-        setPolling(true);
-        setStep("generating");
-        return;
-      }
-
-      throw new Error(data?.error || "GENERATION_NOT_STARTED");
+      // The provider now owns the job; the observer below renders progress and the result.
     } catch (err) {
       setLoading(false);
-      setPolling(false);
       setStep("choices");
       setError(formatError(err));
     }
   };
 
+  // ---- Background job observer (survives leaving the app / reloads) ---------------------------
+  const matchLogoJob = React.useCallback((item) => item.kind === "logo" && (!projectId || !item.projectId || item.projectId === projectId), [projectId]);
+  const observed = useGenerationJob({ match: matchLogoJob });
+  const handledJobRef = React.useRef(null);
+
   React.useEffect(() => {
-    if (!jobId || !polling) return;
-    let active = true;
-    let attempts = 0;
+    if (observed.status !== "running") return;
+    generatedHereRef.current = true;
+    setError("");
+    setLoading(true);
+    setStep("generating");
+  }, [observed.status, observed.job?.jobId]);
 
-    const tick = async () => {
-      attempts += 1;
-      try {
-        const data = await jobService.pollGeneration(jobId);
-        if (!active) return;
-        if (data?.status === "generated") {
-          const nextImages = normalizeImages(data);
-          setImages(nextImages);
-        setSelectedIndex(null);
-        setApproved(false);
-          setStep("results");
-          setLoading(false);
-          setPolling(false);
-          return;
-        }
-        if (data?.status === "failed" || data?.error) {
-          setError(formatError(new Error(data?.error || "GENERATION_FAILED")));
-          setLoading(false);
-          setPolling(false);
-          setStep("choices");
-          return;
-        }
-      } catch {}
-      if (attempts >= 90) {
-        setError(ar ? "استغرق التوليد وقتًا أطول من المتوقع. يمكنك العودة للمشروع ومتابعته لاحقًا." : "Generation is taking longer than expected. You can return to the project and continue later.");
-        setLoading(false);
-        setPolling(false);
-        setStep("choices");
-      }
-    };
-
-    tick();
-    const timer = window.setInterval(tick, 2500);
-    return () => { active = false; window.clearInterval(timer); };
-  }, [jobId, polling, ar]);
+  React.useEffect(() => {
+    if (observed.status !== "done" && observed.status !== "failed") return;
+    const finished = observed.job;
+    if (!finished || handledJobRef.current === finished.jobId) return;
+    handledJobRef.current = finished.jobId;
+    if (Date.now() - Number(finished.result?.finishedAt || 0) > 2 * 60 * 60 * 1000) { observed.consume(); return; }
+    generatedHereRef.current = true;
+    if (observed.status === "failed") {
+      setError(formatError(new Error(observed.error || "GENERATION_FAILED")));
+      setLoading(false);
+      setStep("choices");
+    } else {
+      setImages(normalizeImages(observed.result || {}));
+      setSelectedIndex(null);
+      setApproved(false);
+      if (finished.projectId) setProject({ id: finished.projectId, title: finished.context?.name || "" });
+      setStep("results");
+      setLoading(false);
+    }
+    observed.consume();
+  }, [observed.status, observed.job?.jobId]);
 
   const approve = async () => {
     if (!selectedImage) return;
@@ -561,8 +527,6 @@ export default function LogoStudio() {
       setApproved(false);
       setDownloadMenuOpen(false);
       setStep("choices");
-      setPolling(false);
-      setJobId(null);
       setLoading(false);
       return;
     }

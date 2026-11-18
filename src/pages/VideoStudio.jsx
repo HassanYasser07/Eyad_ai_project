@@ -132,34 +132,83 @@ export default function VideoStudio() {
     return () => { active = false; };
   }, [projectId, loc]);
 
+  // The fal job runs on fal's side no matter what the app does. We remember the queue request so
+  // that leaving the app / reloading resumes polling, and network errors never fail the video.
+  const queueStoreKey = `eyad.video-queue.v1:${user?.id || "anon"}`;
+  const queueRequestLoadedRef = React.useRef(false);
+  React.useEffect(() => {
+    try {
+      if (queueRequest) globalThis.localStorage?.setItem(queueStoreKey, JSON.stringify({ ...queueRequest, savedAt: queueRequest.savedAt || Date.now() }));
+      else if (queueRequestLoadedRef.current) globalThis.localStorage?.removeItem(queueStoreKey);
+    } catch { /* storage unavailable */ }
+  }, [queueRequest, queueStoreKey]);
+  React.useEffect(() => {
+    if (queueRequestLoadedRef.current || !user?.id) return;
+    queueRequestLoadedRef.current = true;
+    try {
+      const stored = JSON.parse(globalThis.localStorage?.getItem(queueStoreKey) || "null");
+      const fresh = stored?.request_id && Date.now() - Number(stored.savedAt || 0) < 3 * 60 * 60 * 1000;
+      const sameProject = (stored?.meta?.projectId || null) === (projectId || null);
+      if (fresh && sameProject) { setQueueRequest(stored); setGenerating(true); }
+      else if (stored) globalThis.localStorage?.removeItem(queueStoreKey);
+    } catch { /* ignore */ }
+  }, [user?.id, queueStoreKey, projectId]);
+
   React.useEffect(() => {
     if (!queueRequest) return undefined;
     let active = true;
-    let attempts = 0;
-    const timer = setInterval(async () => {
-      attempts += 1;
+    let timer = null;
+    let running = false;
+    const startedAt = Number(queueRequest.savedAt || Date.now());
+
+    const check = async () => {
+      if (!active || running) return;
+      running = true;
+      let nextDelay = 4000;
       try {
         const { data, error: invokeError } = await supabase.functions.invoke("fal-video", { body: { action: "status", model: queueRequest.model, model_path: queueRequest.model_path, request_id: queueRequest.request_id, status_url: queueRequest.status_url, response_url: queueRequest.response_url } });
         if (invokeError) throw await readInvokeError(invokeError);
         if (!active || !data) return;
         if (data.status === "COMPLETED") {
           const url = getVideoUrl(data.result);
-          if (!url) throw new Error("VIDEO_URL_MISSING");
-          setVideoUrl(url); setGenerationId(queueRequest.request_id); setVideoAspect(queueRequest.aspect || aspect); setQueueRequest(null); setGenerating(false);
-          await saveVideoToProject({ url, requestId: queueRequest.request_id, title: queueRequest.title, metadata: { provider: "fal", model: modelId, duration, aspect: queueRequest.aspect || aspect, resolution: selectedModel.resolutions.length ? resolution : null, style, source_asset_id: incomingAssetId || null } });
+          if (!url) throw Object.assign(new Error("VIDEO_URL_MISSING"), { terminal: true });
+          const meta = queueRequest.meta || {};
+          setVideoUrl(url); setGenerationId(queueRequest.request_id); setVideoAspect(queueRequest.aspect || meta.aspect || aspect); setQueueRequest(null); setGenerating(false);
+          await saveVideoToProject({ url, requestId: queueRequest.request_id, title: queueRequest.title, metadata: { provider: "fal", model: meta.modelId || modelId, duration: meta.duration || duration, aspect: queueRequest.aspect || meta.aspect || aspect, resolution: meta.resolution !== undefined ? meta.resolution : (selectedModel.resolutions.length ? resolution : null), style: meta.style || style, source_asset_id: meta.incomingAssetId || incomingAssetId || null } });
           resetForm();
-        } else if (data.status === "FAILED") {
-          throw new Error(data.error || "VIDEO_GENERATION_FAILED");
-        } else if (attempts >= 180) {
-          throw new Error("VIDEO_GENERATION_TIMEOUT");
+          active = false;
+          return;
         }
+        if (data.status === "FAILED") throw Object.assign(new Error(data.error || "VIDEO_GENERATION_FAILED"), { terminal: true });
+        // Still running: back off a little the longer it takes. No client-side deadline.
+        nextDelay = Date.now() - startedAt > 5 * 60 * 1000 ? 8000 : 4000;
       } catch (err) {
         if (!active) return;
-        setError(err?.message || loc({ en: "Could not read the video job status.", ar: "تعذر قراءة حالة توليد الفيديو." }));
-        setQueueRequest(null); setGenerating(false);
+        if (err?.terminal) {
+          setError(err?.message || loc({ en: "Video generation failed.", ar: "فشل توليد الفيديو." }));
+          setQueueRequest(null); setGenerating(false); active = false;
+          return;
+        }
+        // Network / gateway hiccup or app just resumed: the video is still being made. Keep trying.
+        nextDelay = 6000;
+      } finally {
+        running = false;
+        if (active) timer = setTimeout(check, nextDelay);
       }
-    }, 4000);
-    return () => { active = false; clearInterval(timer); };
+    };
+
+    const wake = () => { if (document.visibilityState === "hidden") return; if (timer) clearTimeout(timer); timer = null; check(); };
+    document.addEventListener("visibilitychange", wake);
+    window.addEventListener("online", wake);
+    window.addEventListener("pageshow", wake);
+    check();
+    return () => {
+      active = false;
+      if (timer) clearTimeout(timer);
+      document.removeEventListener("visibilitychange", wake);
+      window.removeEventListener("online", wake);
+      window.removeEventListener("pageshow", wake);
+    };
   }, [queueRequest, projectId, modelId, duration, aspect, resolution, style, incomingAssetId, loc]);
 
   // Persist the finished video: copy it to our own storage (fal links can expire), make sure a project exists
@@ -301,7 +350,7 @@ export default function VideoStudio() {
         const url = getVideoUrl(data); setVideoUrl(url); setGenerationId(data.request_id || data.id || null); setVideoAspect(aspect);
         await saveVideoToProject({ url, requestId: data.request_id || data.id || null, title: prompt.trim().slice(0, 60), metadata: { provider: "fal", model: modelId, duration, aspect, resolution: selectedModel.resolutions.length ? resolution : null, style, source_asset_id: incomingAssetId || null } });
         setGenerating(false); resetForm();
-      } else if (data?.request_id) setQueueRequest({ aspect, title: prompt.trim().slice(0, 60), model: modelId, model_path: data.model_path, request_id: data.request_id, status_url: data.status_url, response_url: data.response_url });
+      } else if (data?.request_id) setQueueRequest({ savedAt: Date.now(), meta: { modelId, duration, aspect, resolution: selectedModel.resolutions.length ? resolution : null, style, incomingAssetId: incomingAssetId || null, projectId: projectId || null }, aspect, title: prompt.trim().slice(0, 60), model: modelId, model_path: data.model_path, request_id: data.request_id, status_url: data.status_url, response_url: data.response_url });
       else throw new Error(data?.error || "FAL_SUBMIT_FAILED");
     } catch (err) {
       setError(err?.message || loc({ en: "Video generation failed.", ar: "فشل توليد الفيديو." })); setGenerating(false);

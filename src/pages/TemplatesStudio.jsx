@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, ArrowRight, Sparkles, Upload, LayoutTemplate, Wand2, ImagePlus, Download, Check, Trash2 } from "lucide-react";
 import { useI18n } from "@/i18n/I18nContext";
 import { useAuth } from "@/lib/AuthContext";
-import { runEyadEngine } from "@/services/eyadEngineService";
+import { useGenerationJob, useGenerations } from "@/lib/GenerationContext";
 import { getBrandIdentity } from "@/services/brandService";
 import { projectService } from "@/services/projectService";
 import { saveStudioOutput } from "@/services/projectContextService";
@@ -79,6 +79,7 @@ export default function TemplatesStudio() {
   const [type, setType] = React.useState("social");
   const [ratio, setRatio] = React.useState("1:1");
   const [generating, setGenerating] = React.useState(false);
+  const { startGeneration } = useGenerations();
   const [result, setResult] = React.useState(null);
   const [error, setError] = React.useState("");
   const [myTemplates, setMyTemplates] = React.useState([]);
@@ -121,42 +122,77 @@ export default function TemplatesStudio() {
   const generate = async () => {
     if (isAnonymous) { requireAccount(); return; }
     if (!prompt.trim()) { setError(loc({ ar: "اكتب وصف القالب أولاً.", en: "Describe the template first." })); return; }
+    if (generating) return;
     setGenerating(true); setError(""); setResult(null);
     try {
-      const data = await runEyadEngine({
-        message: prompt.trim(),
-        projectId,
-        studioId: "templates",
-        language: direction === "rtl" ? "ar" : "en",
-        action: "generate",
-        referenceImage: brand?.logo?.url || null,
-        designOptions: {
-          template_generation: true,
-          template_type: type,
-          aspect_ratio: ratio,
-          approved_logo_url: brand?.logo?.url || null,
-          brand_name: brand?.brand_name || businessInfo.companyName || "",
-          business_info: businessInfo,
-          selected_ready_template: customizingReadyTemplate ? { id: customizingReadyTemplate.id, number: customizingReadyTemplate.number, name: customizingReadyTemplate.name, category: customizingReadyTemplate.category?.type, ratio: customizingReadyTemplate.category?.ratio } : null,
-          brand_identity: brand || null,
+      await startGeneration({
+        kind: "template",
+        context: { templateType: type, ratio, readyTemplateId: customizingReadyTemplate?.id || null },
+        request: {
+          message: prompt.trim(),
+          projectId,
+          studioId: "templates",
+          language: direction === "rtl" ? "ar" : "en",
+          referenceImage: brand?.logo?.url || null,
+          designOptions: {
+            template_generation: true,
+            template_type: type,
+            aspect_ratio: ratio,
+            approved_logo_url: brand?.logo?.url || null,
+            brand_name: brand?.brand_name || businessInfo.companyName || "",
+            business_info: businessInfo,
+            selected_ready_template: customizingReadyTemplate ? { id: customizingReadyTemplate.id, number: customizingReadyTemplate.number, name: customizingReadyTemplate.name, category: customizingReadyTemplate.category?.type, ratio: customizingReadyTemplate.category?.ratio } : null,
+            brand_identity: brand || null,
+          },
         },
       });
-      if (data?.image?.url || data?.image?.data_url) {
-        setResult(data.image);
-        if (projectId) await saveStudioOutput(projectId, { studioId: "templates", asset: { id: data.image.id || null, url: data.image.url || null, data_url: data.image.data_url || null, generation_id: data.generation_id || data.job_id || null }, approved: false, metadata: { template_type: type, ratio, ready_template: customizingReadyTemplate?.id || null } });
-      }
-      else if (data?.images?.[0]) {
-        setResult(data.images[0]);
-        if (projectId) await saveStudioOutput(projectId, { studioId: "templates", asset: { id: data.images[0].id || data.images[0].asset_id || null, url: data.images[0].url || data.images[0].data_url || null, data_url: data.images[0].data_url || null, generation_id: data.generation_id || data.job_id || null }, approved: false, metadata: { template_type: type, ratio, ready_template: customizingReadyTemplate?.id || null } });
-      }
-      else if (data?.job_id) setError(loc({ ar: "بدأ التوليد وسيظهر عند اكتماله.", en: "Generation started and will appear when complete." }));
-      else setError(data?.reply || loc({ ar: "لم يبدأ التوليد.", en: "Generation did not start." }));
+      // The provider owns the job now; the observer below shows progress and the result.
     } catch (err) {
       setError(err?.message || loc({ ar: "فشل إنشاء القالب.", en: "Template generation failed." }));
-    } finally {
       setGenerating(false);
     }
   };
+
+  // ---- Background job observer (survives leaving the app / reloads) ---------------------------
+  const matchTemplateJob = React.useCallback((item) => item.kind === "template" && (!projectId || !item.projectId || item.projectId === projectId), [projectId]);
+  const observed = useGenerationJob({ match: matchTemplateJob });
+  const handledJobRef = React.useRef(null);
+
+  React.useEffect(() => {
+    if (observed.status !== "running") return;
+    setError("");
+    setGenerating(true);
+  }, [observed.status, observed.job?.jobId]);
+
+  React.useEffect(() => {
+    if (observed.status !== "done" && observed.status !== "failed") return;
+    const finished = observed.job;
+    if (!finished || handledJobRef.current === finished.jobId) return;
+    handledJobRef.current = finished.jobId;
+    if (Date.now() - Number(finished.result?.finishedAt || 0) > 2 * 60 * 60 * 1000) { observed.consume(); return; }
+    if (observed.status === "failed") {
+      setError(loc({ ar: "فشل إنشاء القالب.", en: "Template generation failed." }));
+    } else {
+      const data = observed.result || {};
+      const image = data?.image?.url || data?.image?.data_url ? data.image : (data?.images?.[0] || null);
+      if (image) {
+        setResult(image);
+        const saveProjectId = projectId || finished.projectId;
+        if (saveProjectId) {
+          saveStudioOutput(saveProjectId, {
+            studioId: "templates",
+            asset: { id: image.id || image.asset_id || null, url: image.url || image.data_url || null, data_url: image.data_url || null, generation_id: data.generation_id || finished.jobId || null },
+            approved: false,
+            metadata: { template_type: finished.context?.templateType || type, ratio: finished.context?.ratio || ratio, ready_template: finished.context?.readyTemplateId || null },
+          }).catch(() => {});
+        }
+      } else {
+        setError(data?.reply || loc({ ar: "لم يبدأ التوليد.", en: "Generation did not start." }));
+      }
+    }
+    setGenerating(false);
+    observed.consume();
+  }, [observed.status, observed.job?.jobId]);
 
   const uploadTemplate = async (event) => {
     if (isAnonymous) { requireAccount(); return; }

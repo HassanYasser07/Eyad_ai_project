@@ -104,7 +104,7 @@ export default function PresentationsStudio() {
     }
   }, [projectId]);
 
-  const generation = usePresentationGeneration({ onCompleted: saveToProject });
+  const generation = usePresentationGeneration({ onCompleted: saveToProject, projectId });
   const { phase, job, error: genError, timedOut, busy } = generation;
 
   React.useEffect(() => {

@@ -692,7 +692,7 @@ export default function Chat() {
       // EYAD_STREAM_FINAL_MISSING even when the backend had already completed.
       // We keep the same single AI request/credit cost and reveal the returned text
       // smoothly in the UI, so the user still sees a natural typing effect.
-      const data = await runEyadEngine({
+      const rawEngineData = await runEyadEngine({
 
         message: value,
         language,
@@ -703,6 +703,11 @@ export default function Chat() {
         referenceImage: referenceImageOverride || lastImage,
         attachments: sentAttachments,
       });
+      // Background generation: the server answers 202 {status:"processing", job_id} and keeps
+      // working. Chat already has a durable-job flow for "queued", so reuse it (no second poller).
+      const data = (rawEngineData?.status === "processing" && rawEngineData?.job_id)
+        ? { ...rawEngineData, status: "queued" }
+        : rawEngineData;
       if (import.meta.env.DEV && voiceReply) console.info("[voice-chat] engine response received", {
         action,
         status: data?.status || "(missing)",

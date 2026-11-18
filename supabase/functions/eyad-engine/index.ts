@@ -685,9 +685,300 @@ function isNewDesignRequest(text = "") {
   return patterns.some((p) => p.test(input));
 }
 
+const TERMINAL_WAITING_ERRORS = new Set(["MOCKUP_GENERATION_TIMEOUT", "IMAGE_GENERATION_TIMEOUT", "IMAGE_PROVIDER_ERROR"]);
+
+function studioRouteForJob(studioId: string | null | undefined, isMockup: boolean, projectId: string) {
+  const q = `?project=${encodeURIComponent(projectId)}`;
+  if (isMockup) return `/studios/brand-kit${q}`;
+  if (studioId === "logo") return `/studios/logo${q}`;
+  if (studioId === "ai-images") return `/studios/ai-images${q}`;
+  if (studioId === "templates") return `/studios/templates${q}`;
+  if (studioId === "brand-kit") return `/studios/brand-kit${q}`;
+  return `/chat${q}`;
+}
+
+async function sendJobPush(admin: any, { ownerId, projectId, language, failed = false, studioId = null, isMockup = false }: { ownerId: string; projectId: string; language: string; failed?: boolean; studioId?: string | null; isMockup?: boolean }) {
+  try {
+    const privateKey = Deno.env.get("VAPID_PRIVATE_KEY") || "";
+    const publicKey = Deno.env.get("VAPID_PUBLIC_KEY") || "";
+    const subject = Deno.env.get("VAPID_SUBJECT") || "mailto:support@eyad-ai.com";
+    if (!privateKey || !publicKey) return;
+    webpush.setVapidDetails(subject, publicKey, privateKey);
+    const { data: subscriptions } = await admin.from("push_subscriptions")
+      .select("id, endpoint, p256dh, auth").eq("owner_id", ownerId).eq("enabled", true);
+    if (!subscriptions?.length) return;
+    const ar = language !== "en";
+    const title = ar ? "إياد AI" : "EYAD AI";
+    const body = failed
+      ? (ar ? "حصلت مشكلة أثناء تنفيذ طلبك. افتح التطبيق لمعرفة التفاصيل." : "There was a problem completing your request. Open the app for details.")
+      : (ar ? "إياد خلص طلبك. النتيجة جاهزة." : "EYAD finished your request. Your result is ready.");
+    const url = studioRouteForJob(studioId, isMockup, projectId);
+    const icon = "https://media.base44.com/images/public/user_6a338f83f97317e51c543273/291e45aa9_eyad-iconpng.png";
+    for (const subscription of subscriptions) {
+      try {
+        await webpush.sendNotification(
+          { endpoint: subscription.endpoint, keys: { p256dh: subscription.p256dh, auth: subscription.auth } },
+          JSON.stringify({ title, body, url, icon, badge: icon, tag: `eyad-job-${projectId}` }),
+        );
+      } catch (error: any) {
+        const statusCode = error?.statusCode;
+        if (statusCode === 404 || statusCode === 410) {
+          await admin.from("push_subscriptions").update({ enabled: false }).eq("id", subscription.id);
+        }
+      }
+    }
+  } catch {
+    // Notifications must never fail the user's creative job.
+  }
+}
+
+// Fetches the provider result of a waiting_external job, stores the images and finalizes it.
+// Shared by: client polling (poll_generation), the in-worker loop after submit, and the cron sweeper.
+async function finalizeWaitingJobCore(admin: any, ownerId: string, pollJobId: string, openAiKey: string | undefined): Promise<Response> {
+  if (!pollJobId) return json({ error: "JOB_ID_REQUIRED" }, 400);
+  const { data: initialPollJob, error: pollReadError } = await admin.from("eyad_jobs").select("*").eq("id", pollJobId).eq("owner_id", ownerId).maybeSingle();
+  if (pollReadError) return json({ error: "JOB_READ_FAILED", detail: pollReadError.message }, 500);
+  if (!initialPollJob) return json({ error: "JOB_NOT_FOUND" }, 404);
+  let pollJob = initialPollJob;
+  if (pollJob.status === "completed") return json(pollJob.result || { ok: true, status: "completed" });
+  if (pollJob.status === "failed") return json({ error: "JOB_FAILED", detail: pollJob.error || "EYAD_JOB_FAILED" }, 502);
+
+  // A job that is still running synchronously inside the background worker has no
+  // waiting_external marker yet: never claim it from a poll, just report progress.
+  if (pollJob.result?.status !== "waiting_external") {
+    return json({ ok: true, status: pollJob.status || "processing", job_id: pollJob.id });
+  }
+
+  const { data: claimData, error: claimError } = await admin.rpc("claim_eyad_job", {
+    p_owner_id: ownerId,
+    p_job_id: pollJob.id,
+  });
+  if (claimError) return json({ error: "JOB_CLAIM_FAILED", detail: claimError.message }, 500);
+  const claimInfo = Array.isArray(claimData) ? claimData[0] : claimData;
+  if (!claimInfo?.claimed) return json({ ok: true, status: claimInfo?.status || "processing", job_id: pollJob.id });
+  const claimToken = claimInfo.claim_token;
+  const { data: claimedJob, error: claimedJobError } = await admin.from("eyad_jobs")
+    .select("*").eq("id", pollJob.id).eq("owner_id", ownerId).maybeSingle();
+  if (claimedJobError || !claimedJob) {
+    if (claimToken) await admin.rpc("release_eyad_job_claim", {
+      p_owner_id: ownerId, p_job_id: pollJob.id, p_claim_token: claimToken,
+    });
+    return json({ error: "JOB_READ_FAILED", detail: claimedJobError?.message || "Job disappeared after claim" }, 500);
+  }
+  pollJob = claimedJob;
+  const releaseClaim = async () => {
+    if (claimToken) await admin.rpc("release_eyad_job_claim", {
+      p_owner_id: ownerId, p_job_id: pollJob.id, p_claim_token: claimToken,
+    });
+  };
+
+  const waiting = pollJob.result?.status === "waiting_external" ? pollJob.result : null;
+  const ids = Array.isArray(waiting?.openai_response_ids) ? waiting.openai_response_ids : [];
+  if (!ids.length) {
+    await releaseClaim();
+    return json({ ok: true, status: pollJob.status || "processing", job_id: pollJob.id });
+  }
+
+  // Never leave an external image-generation job spinning indefinitely.
+  // Mockups keep their shorter 120s window; normal logo/image generation gets
+  // a 180s safety window. On timeout, mark the durable job failed and refund
+  // the reserved credits so the UI cannot remain at the simulated 95% forever.
+  const startedAt = Date.parse(String(
+    waiting?.mockup_started_at || pollJob.started_at || pollJob.created_at || ""
+  ));
+  const maxWaitMs = waiting?.mockup_type ? MOCKUP_MAX_WAIT_MS : IMAGE_GENERATION_MAX_WAIT_MS;
+  if (Number.isFinite(startedAt) && Date.now() - startedAt >= maxWaitMs) {
+    const detail = waiting?.mockup_type
+      ? "MOCKUP_GENERATION_TIMEOUT"
+      : "IMAGE_GENERATION_TIMEOUT";
+    const { error: failError } = await admin.rpc("fail_eyad_job", {
+      p_job_id: pollJob.id, p_owner_id: ownerId, p_error: detail,
+      p_result: { ok: false, status: "failed", error: detail, detail }, p_claim_token: claimToken,
+    });
+    if (failError) return json({ error: "JOB_FAILURE_FINALIZATION_FAILED", detail: failError.message }, 500);
+    return json({
+      error: detail,
+      detail: "Image generation exceeded the " + Math.round(maxWaitMs / 1000) + " second safety window."
+    }, 504);
+  }
+  const responses = [];
+  for (const responseId of ids) {
+    try {
+      const resp = await fetchWithTimeout("https://api.openai.com/v1/responses/" + encodeURIComponent(responseId), {
+        headers: { "Authorization": "Bearer " + openAiKey }
+      }, OPENAI_POLL_TIMEOUT_MS);
+      const raw = await resp.text();
+      let data: any = {};
+      try { data = JSON.parse(raw); } catch { }
+      if (!resp.ok) {
+        await releaseClaim();
+        return json({ error: "OPENAI_RESPONSE_POLL_FAILED", status: resp.status, detail: data?.error?.message || raw.slice(0, 500) }, 502);
+      }
+      responses.push(data);
+    } catch (error) {
+      await releaseClaim();
+      return json({ error: "OPENAI_RESPONSE_POLL_FAILED", detail: error instanceof Error ? error.message : "Provider poll failed" }, 502);
+    }
+  }
+  const failedResponse = responses.find((x) => ["failed", "cancelled", "incomplete"].includes(x?.status));
+  if (failedResponse) {
+    const detail = failedResponse?.error?.message || "OpenAI image generation failed";
+    const { error: failError } = await admin.rpc("fail_eyad_job", {
+      p_job_id: pollJob.id, p_owner_id: ownerId, p_error: detail,
+      p_result: { ok: false, status: "failed", detail }, p_claim_token: claimToken,
+    });
+    if (failError) return json({ error: "JOB_FAILURE_FINALIZATION_FAILED", detail: failError.message }, 500);
+    return json({ error: "IMAGE_PROVIDER_ERROR", detail }, 502);
+  }
+  if (!responses.every((x) => x?.status === "completed")) {
+    await releaseClaim();
+    return json({ ok: true, status: "processing", job_id: pollJob.id });
+  }
+  const { data: pollProject } = await admin.from("projects").select("*").eq("id", pollJob.project_id).eq("owner_id", ownerId).maybeSingle();
+  const { data: pollConversation } = await admin.from("conversations").select("*").eq("id", pollJob.conversation_id).eq("owner_id", ownerId).maybeSingle();
+  if (!pollProject || !pollConversation) {
+    await releaseClaim();
+    return json({ error: "PROJECT_OR_CONVERSATION_NOT_FOUND" }, 500);
+  }
+  const finalizationAssets = [];
+  for (let index = 0; index < responses.length; index++) {
+    const call = (responses[index]?.output || []).find((item) => item?.type === "image_generation_call" && item?.result);
+    if (!call?.result) {
+      await releaseClaim();
+      return json({ error: "IMAGE_RESULT_MISSING" }, 502);
+    }
+    const variantIndex = index + 1;
+    const storagePath = `${ownerId}/${pollProject.id}/${pollJob.id}/${variantIndex}.png`;
+    const bytes = decodeBase64(call.result);
+    const { error: uploadError } = await admin.storage.from("eyad-assets").upload(storagePath, bytes, { contentType: "image/png", cacheControl: "31536000", upsert: true });
+    if (uploadError) {
+      await releaseClaim();
+      return json({ error: "ASSET_UPLOAD_FAILED", detail: uploadError.message }, 502);
+    }
+    const { data: urlData } = admin.storage.from("eyad-assets").getPublicUrl(storagePath);
+    const assetUrl = urlData.publicUrl;
+    finalizationAssets.push({
+      variant_index: variantIndex,
+      storage_path: storagePath,
+      asset_url: assetUrl,
+      size_bytes: bytes.byteLength,
+      kind: waiting.studio_id === "logo" ? "logo" : "image",
+      name: `${(pollProject.name || "تصميم جديد").trim()}.png`,
+      prompt: waiting.variants?.[index]?.variantPrompt || waiting.final_prompt || "",
+      input: {
+        design_options: waiting.design_options || {},
+        has_reference_image: Boolean(pollJob.payload?.reference_image),
+        variant_index: variantIndex,
+      },
+      metadata: {
+        source: "eyad-background",
+        studio_id: waiting.studio_id,
+        prompt: waiting.variants?.[index]?.variantPrompt || waiting.final_prompt || "",
+        variant_index: variantIndex,
+      },
+    });
+  }
+  const lang = waiting.language || "ar";
+  const reply = waiting.mockup_type
+    ? (lang === "en" ? "I created the photorealistic mockup." : "جهزت لك الموك أب الواقعي بالـAI.")
+    : (lang === "en" ? "I created the logo concepts from your selected brief." : "جهزت لك اتجاهات الشعار بناءً على الاختيارات.");
+  const actions = getCreativeActionsForAsset(waiting.studio_id, lang);
+  const { data: result, error: finalizeError } = await admin.rpc("finalize_eyad_generation", {
+    p_job_id: pollJob.id,
+    p_owner_id: ownerId,
+    p_claim_token: claimToken,
+    p_finalization: {
+      studio_id: waiting.studio_id,
+      reply,
+      primary_asset_url: finalizationAssets[0].asset_url,
+      creative_actions: actions,
+      message_metadata: {
+        studio_id: waiting.studio_id,
+        image_generated: true,
+        action: "generate",
+        image_data_url: finalizationAssets[0].asset_url,
+        selected_asset_id: null,
+        image_prompt: waiting.final_prompt || "",
+        creative_actions: actions,
+      },
+      assets: finalizationAssets,
+    },
+  });
+  if (finalizeError) {
+    await releaseClaim();
+    return json({ error: "GENERATION_FINALIZATION_FAILED", detail: finalizeError.message }, 502);
+  }
+  if (!result?.ok) {
+    await releaseClaim();
+    return json({ error: "GENERATION_FINALIZATION_FAILED" }, 502);
+  }
+  return json(result);
+  return json({ ok: true, status: "processing", job_id: pollJob.id });
+}
+
+async function finalizeWaitingJob(admin: any, ownerId: string, pollJobId: string, openAiKey: string | undefined): Promise<Response> {
+  const response = await finalizeWaitingJobCore(admin, ownerId, pollJobId, openAiKey);
+  try {
+    const payload = await response.clone().json();
+    const done = response.ok && payload?.status === "generated";
+    const failed = !response.ok && TERMINAL_WAITING_ERRORS.has(String(payload?.error || ""));
+    if (done || failed) {
+      const { data: row } = await admin.from("eyad_jobs").select("project_id,result,payload").eq("id", pollJobId).eq("owner_id", ownerId).maybeSingle();
+      if (row?.project_id) {
+        const designOptions = row.payload?.design_options || {};
+        await sendJobPush(admin, {
+          ownerId, projectId: row.project_id, language: row.payload?.language === "en" ? "en" : "ar", failed,
+          studioId: row.payload?.studio_id || null,
+          isMockup: Boolean(designOptions?.mockup_type),
+        });
+      }
+    }
+  } catch { /* notification is best effort */ }
+  return response;
+}
+
+async function reconcileWaitingJobs(admin: any, openAiKey: string | undefined, budgetMs = 100000) {
+  const startedAt = Date.now();
+  const { data: jobs, error } = await admin.from("eyad_jobs")
+    .select("id,owner_id").eq("status", "processing").eq("result->>status", "waiting_external")
+    .order("created_at", { ascending: true }).limit(20);
+  if (error) return { ok: false, error: error.message, processed: 0 };
+  let processed = 0;
+  for (const row of jobs || []) {
+    if (Date.now() - startedAt > budgetMs) break;
+    try { await finalizeWaitingJob(admin, row.owner_id, row.id, openAiKey); processed += 1; } catch (e) {
+      console.error("[EYAD] sweeper failed for job", row.id, e instanceof Error ? e.message : e);
+    }
+  }
+  return { ok: true, processed, found: (jobs || []).length };
+}
+
+function constantTimeEqual(a: string, b: string) {
+  const enc = new TextEncoder();
+  const x = enc.encode(a), y = enc.encode(b);
+  let diff = x.length ^ y.length;
+  for (let i = 0; i < Math.max(x.length, y.length); i++) diff |= (x[i] || 0) ^ (y[i] || 0);
+  return diff === 0;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "METHOD_NOT_ALLOWED" }, 405);
+  // Cron sweeper: authenticated by a shared secret, not a user JWT.
+  const cronHeader = req.headers.get("x-eyad-cron-secret");
+  if (cronHeader !== null) {
+    const expected = Deno.env.get("EYAD_CRON_SECRET") || "";
+    if (!expected || !constantTimeEqual(cronHeader, expected)) return json({ error: "FORBIDDEN" }, 403);
+    let cronBody: any = {};
+    try { cronBody = await req.json(); } catch { /* empty */ }
+    if (cronBody?.action !== "reconcile_waiting") return json({ error: "UNKNOWN_CRON_ACTION" }, 400);
+    const cronUrl = Deno.env.get("SUPABASE_URL");
+    const cronServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+    if (!cronUrl || !cronServiceKey) return json({ error: "BACKEND_CONFIG_ERROR" }, 500);
+    const cronAdmin = createClient(cronUrl, cronServiceKey, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } });
+    return json(await reconcileWaitingJobs(cronAdmin, Deno.env.get("OPENAI_API_KEY")));
+  }
+
 
   const token = getBearer(req);
   if (!token) return json({ error: "AUTH_REQUIRED" }, 401);
@@ -845,179 +1136,7 @@ Deno.serve(async (req: Request) => {
   }
 
   if (action === "poll_generation") {
-    const pollJobId = String(body?.job_id || "");
-    if (!pollJobId) return json({ error: "JOB_ID_REQUIRED" }, 400);
-    const { data: initialPollJob, error: pollReadError } = await admin.from("eyad_jobs").select("*").eq("id", pollJobId).eq("owner_id", user.id).maybeSingle();
-    if (pollReadError) return json({ error: "JOB_READ_FAILED", detail: pollReadError.message }, 500);
-    if (!initialPollJob) return json({ error: "JOB_NOT_FOUND" }, 404);
-    let pollJob = initialPollJob;
-    if (pollJob.status === "completed") return json(pollJob.result || { ok: true, status: "completed" });
-    if (pollJob.status === "failed") return json({ error: "JOB_FAILED", detail: pollJob.error || "EYAD_JOB_FAILED" }, 502);
-
-    const { data: claimData, error: claimError } = await admin.rpc("claim_eyad_job", {
-      p_owner_id: user.id,
-      p_job_id: pollJob.id,
-    });
-    if (claimError) return json({ error: "JOB_CLAIM_FAILED", detail: claimError.message }, 500);
-    const claimInfo = Array.isArray(claimData) ? claimData[0] : claimData;
-    if (!claimInfo?.claimed) return json({ ok: true, status: claimInfo?.status || "processing", job_id: pollJob.id });
-    const claimToken = claimInfo.claim_token;
-    const { data: claimedJob, error: claimedJobError } = await admin.from("eyad_jobs")
-      .select("*").eq("id", pollJob.id).eq("owner_id", user.id).maybeSingle();
-    if (claimedJobError || !claimedJob) {
-      if (claimToken) await admin.rpc("release_eyad_job_claim", {
-        p_owner_id: user.id, p_job_id: pollJob.id, p_claim_token: claimToken,
-      });
-      return json({ error: "JOB_READ_FAILED", detail: claimedJobError?.message || "Job disappeared after claim" }, 500);
-    }
-    pollJob = claimedJob;
-    const releaseClaim = async () => {
-      if (claimToken) await admin.rpc("release_eyad_job_claim", {
-        p_owner_id: user.id, p_job_id: pollJob.id, p_claim_token: claimToken,
-      });
-    };
-
-    const waiting = pollJob.result?.status === "waiting_external" ? pollJob.result : null;
-    const ids = Array.isArray(waiting?.openai_response_ids) ? waiting.openai_response_ids : [];
-    if (!ids.length) {
-      await releaseClaim();
-      return json({ ok: true, status: pollJob.status || "processing", job_id: pollJob.id });
-    }
-
-    // Never leave an external image-generation job spinning indefinitely.
-    // Mockups keep their shorter 120s window; normal logo/image generation gets
-    // a 180s safety window. On timeout, mark the durable job failed and refund
-    // the reserved credits so the UI cannot remain at the simulated 95% forever.
-    const startedAt = Date.parse(String(
-      waiting?.mockup_started_at || pollJob.started_at || pollJob.created_at || ""
-    ));
-    const maxWaitMs = waiting?.mockup_type ? MOCKUP_MAX_WAIT_MS : IMAGE_GENERATION_MAX_WAIT_MS;
-    if (Number.isFinite(startedAt) && Date.now() - startedAt >= maxWaitMs) {
-      const detail = waiting?.mockup_type
-        ? "MOCKUP_GENERATION_TIMEOUT"
-        : "IMAGE_GENERATION_TIMEOUT";
-      const { error: failError } = await admin.rpc("fail_eyad_job", {
-        p_job_id: pollJob.id, p_owner_id: user.id, p_error: detail,
-        p_result: { ok: false, status: "failed", error: detail, detail }, p_claim_token: claimToken,
-      });
-      if (failError) return json({ error: "JOB_FAILURE_FINALIZATION_FAILED", detail: failError.message }, 500);
-      return json({
-        error: detail,
-        detail: "Image generation exceeded the " + Math.round(maxWaitMs / 1000) + " second safety window."
-      }, 504);
-    }
-    const responses = [];
-    for (const responseId of ids) {
-      try {
-        const resp = await fetchWithTimeout("https://api.openai.com/v1/responses/" + encodeURIComponent(responseId), {
-          headers: { "Authorization": "Bearer " + openAiKey }
-        }, OPENAI_POLL_TIMEOUT_MS);
-        const raw = await resp.text();
-        let data = {};
-        try { data = JSON.parse(raw); } catch { }
-        if (!resp.ok) {
-          await releaseClaim();
-          return json({ error: "OPENAI_RESPONSE_POLL_FAILED", status: resp.status, detail: data?.error?.message || raw.slice(0, 500) }, 502);
-        }
-        responses.push(data);
-      } catch (error) {
-        await releaseClaim();
-        return json({ error: "OPENAI_RESPONSE_POLL_FAILED", detail: error instanceof Error ? error.message : "Provider poll failed" }, 502);
-      }
-    }
-    const failedResponse = responses.find((x) => ["failed", "cancelled", "incomplete"].includes(x?.status));
-    if (failedResponse) {
-      const detail = failedResponse?.error?.message || "OpenAI image generation failed";
-      const { error: failError } = await admin.rpc("fail_eyad_job", {
-        p_job_id: pollJob.id, p_owner_id: user.id, p_error: detail,
-        p_result: { ok: false, status: "failed", detail }, p_claim_token: claimToken,
-      });
-      if (failError) return json({ error: "JOB_FAILURE_FINALIZATION_FAILED", detail: failError.message }, 500);
-      return json({ error: "IMAGE_PROVIDER_ERROR", detail }, 502);
-    }
-    if (!responses.every((x) => x?.status === "completed")) {
-      await releaseClaim();
-      return json({ ok: true, status: "processing", job_id: pollJob.id });
-    }
-    const { data: pollProject } = await admin.from("projects").select("*").eq("id", pollJob.project_id).eq("owner_id", user.id).maybeSingle();
-    const { data: pollConversation } = await admin.from("conversations").select("*").eq("id", pollJob.conversation_id).eq("owner_id", user.id).maybeSingle();
-    if (!pollProject || !pollConversation) {
-      await releaseClaim();
-      return json({ error: "PROJECT_OR_CONVERSATION_NOT_FOUND" }, 500);
-    }
-    const finalizationAssets = [];
-    for (let index = 0; index < responses.length; index++) {
-      const call = (responses[index]?.output || []).find((item) => item?.type === "image_generation_call" && item?.result);
-      if (!call?.result) {
-        await releaseClaim();
-        return json({ error: "IMAGE_RESULT_MISSING" }, 502);
-      }
-      const variantIndex = index + 1;
-      const storagePath = `${user.id}/${pollProject.id}/${pollJob.id}/${variantIndex}.png`;
-      const bytes = decodeBase64(call.result);
-      const { error: uploadError } = await admin.storage.from("eyad-assets").upload(storagePath, bytes, { contentType: "image/png", cacheControl: "31536000", upsert: true });
-      if (uploadError) {
-        await releaseClaim();
-        return json({ error: "ASSET_UPLOAD_FAILED", detail: uploadError.message }, 502);
-      }
-      const { data: urlData } = supabase.storage.from("eyad-assets").getPublicUrl(storagePath);
-      const assetUrl = urlData.publicUrl;
-      finalizationAssets.push({
-        variant_index: variantIndex,
-        storage_path: storagePath,
-        asset_url: assetUrl,
-        size_bytes: bytes.byteLength,
-        kind: waiting.studio_id === "logo" ? "logo" : "image",
-        name: `${(pollProject.name || "تصميم جديد").trim()}.png`,
-        prompt: waiting.variants?.[index]?.variantPrompt || waiting.final_prompt || "",
-        input: {
-          design_options: waiting.design_options || {},
-          has_reference_image: Boolean(pollJob.payload?.reference_image),
-          variant_index: variantIndex,
-        },
-        metadata: {
-          source: "eyad-background",
-          studio_id: waiting.studio_id,
-          prompt: waiting.variants?.[index]?.variantPrompt || waiting.final_prompt || "",
-          variant_index: variantIndex,
-        },
-      });
-    }
-    const lang = waiting.language || "ar";
-    const reply = waiting.mockup_type
-      ? (lang === "en" ? "I created the photorealistic mockup." : "جهزت لك الموك أب الواقعي بالـAI.")
-      : (lang === "en" ? "I created the logo concepts from your selected brief." : "جهزت لك اتجاهات الشعار بناءً على الاختيارات.");
-    const actions = getCreativeActionsForAsset(waiting.studio_id, lang);
-    const { data: result, error: finalizeError } = await admin.rpc("finalize_eyad_generation", {
-      p_job_id: pollJob.id,
-      p_owner_id: user.id,
-      p_claim_token: claimToken,
-      p_finalization: {
-        studio_id: waiting.studio_id,
-        reply,
-        primary_asset_url: finalizationAssets[0].asset_url,
-        creative_actions: actions,
-        message_metadata: {
-          studio_id: waiting.studio_id,
-          image_generated: true,
-          action: "generate",
-          image_data_url: finalizationAssets[0].asset_url,
-          selected_asset_id: null,
-          image_prompt: waiting.final_prompt || "",
-          creative_actions: actions,
-        },
-        assets: finalizationAssets,
-      },
-    });
-    if (finalizeError) {
-      await releaseClaim();
-      return json({ error: "GENERATION_FINALIZATION_FAILED", detail: finalizeError.message }, 502);
-    }
-    if (!result?.ok) {
-      await releaseClaim();
-      return json({ error: "GENERATION_FINALIZATION_FAILED" }, 502);
-    }
-    return json(result);
+    return await finalizeWaitingJob(admin, user.id, String(body?.job_id || ""), openAiKey);
   }
 
   const message = normalize(body?.message || "");
@@ -2905,6 +3024,74 @@ The supplied approved logo reference must be used as the actual printed logo on 
         "X-Accel-Buffering": "no",
       },
     });
+  }
+
+  // Background generation: answer fast, the server owns the job. The client only observes it
+  // (poll_generation / eyad_jobs), so suspending or closing the app never fails the generation.
+  // @ts-ignore EdgeRuntime is provided by the Supabase Edge runtime
+  const canRunInBackground = typeof EdgeRuntime !== "undefined" && typeof EdgeRuntime?.waitUntil === "function";
+  if (action === "generate" && decision?.action === "generate" && canRunInBackground) {
+    let backgroundSettled = false;
+    const onShutdown = () => {
+      if (!backgroundSettled) {
+        // fail_eyad_job is idempotent (no-op for terminal jobs) and refunds credits exactly once.
+        failJob("WORKER_SHUTDOWN").catch(() => {});
+      }
+    };
+    try { addEventListener("beforeunload", onShutdown); } catch { /* not supported locally */ }
+
+    const runToCompletion = async () => {
+      try {
+        let bgResponse: Response;
+        try {
+          bgResponse = await processJob();
+        } catch (error) {
+          // processJob already failed the job, refunded credits and notified.
+          await failJob(error instanceof Error ? error.message : "EYAD_JOB_FAILED");
+          return;
+        }
+        let bgPayload: any = null;
+        try { bgPayload = await bgResponse.clone().json(); } catch { /* not json */ }
+        const bgFailed = !bgResponse.ok;
+        const bgWaiting = !bgFailed && bgPayload?.status === "waiting_external";
+        if (bgFailed) {
+          await failJob(bgPayload?.detail || bgPayload?.error || "EYAD_JOB_RESPONSE_FAILED");
+        } else {
+          await admin.from("eyad_jobs").update({
+            status: bgWaiting ? "processing" : "completed",
+            result: bgPayload || { status: bgResponse.status || 200 },
+            error: null,
+            completed_at: bgWaiting ? null : new Date().toISOString(),
+          }).eq("id", job.id).eq("owner_id", user.id);
+        }
+        if (bgWaiting) {
+          // Finish provider-side jobs right here so most of them complete without waiting for the cron minute.
+          const loopStarted = Date.now();
+          while (Date.now() - loopStarted < 120000) {
+            await new Promise((resolve) => setTimeout(resolve, 4000));
+            let res: Response;
+            try { res = await finalizeWaitingJob(admin, user.id, job.id, openAiKey); } catch { continue; }
+            let p: any = null;
+            try { p = await res.clone().json(); } catch { /* ignore */ }
+            if (res.ok && p?.status === "processing") continue;
+            if (!res.ok && !TERMINAL_WAITING_ERRORS.has(String(p?.error || ""))) continue;
+            break; // generated, or definitively failed
+          }
+        } else {
+          await notifyJobCompletion({ ownerId: user.id, projectId: project.id, language, failed: bgFailed });
+        }
+      } finally {
+        backgroundSettled = true;
+        try { removeEventListener("beforeunload", onShutdown); } catch { /* ignore */ }
+      }
+    };
+
+    // @ts-ignore EdgeRuntime is provided by the Supabase Edge runtime
+    EdgeRuntime.waitUntil(runToCompletion());
+    return json({
+      ok: true, status: "processing", job_id: job.id,
+      project: { id: project.id }, conversation: { id: conversation.id }, message_id: userMessage.id,
+    }, 202);
   }
 
   let response: Response;

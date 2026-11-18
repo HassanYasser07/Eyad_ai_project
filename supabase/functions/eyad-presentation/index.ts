@@ -280,9 +280,111 @@ async function jobView(admin: any, job: any) {
   return publicJob(job, null);
 }
 
+// Advances one pending Gamma job (poll Gamma, store the .pptx, register the version).
+// Shared by the client `status` action and the cron sweeper, so a presentation finishes
+// even when the app is closed. Every step is idempotent (deterministic paths, unique job id).
+async function advancePresentationJob(admin: any, ownerId: string, gammaKey: string, jobId: string): Promise<Response> {
+  if (!UUID.test(jobId)) return json({ error: "INVALID_JOB_ID" }, 400);
+
+  const { data: job } = await admin.from("gamma_presentation_jobs").select("*")
+    .eq("id", jobId).eq("owner_id", ownerId).maybeSingle();
+  if (!job) return json({ error: "JOB_NOT_FOUND" }, 404);
+  if (job.status !== "pending") return json({ ok: true, job: await jobView(admin, job) });
+  if (!job.generation_id) return json({ ok: true, job: publicJob(job) });
+  if (!gammaKey) return json({ error: "GAMMA_API_KEY_MISSING" }, 503);
+
+  // A failed generation never deletes the project; its card says what happened (older versions, if any, stay usable).
+  const markPresentationFailed = async (failedJob: any) => {
+    if (!failedJob?.project_id) return;
+    const { count: versionCount } = await admin.from("presentation_versions").select("id", { count: "exact", head: true })
+      .eq("project_id", failedJob.project_id).eq("owner_id", ownerId);
+    await patchProjectPresentation(admin, ownerId, failedJob.project_id, { status: (versionCount || 0) > 0 ? "ready" : "failed", job_id: failedJob.id, pptx_error: null });
+  };
+
+  const result = await gammaFetch(`/generations/${encodeURIComponent(job.generation_id)}`, gammaKey, { method: "GET" });
+
+  if (!result.ok) {
+    if (result.status === 404) {
+      const { data: failed } = await admin.from("gamma_presentation_jobs").update({
+        status: "failed", error_code: "GENERATION_NOT_FOUND", error_message: "Gamma could not find this generation.", updated_at: new Date().toISOString(),
+      }).eq("id", job.id).select("*").single();
+      await markPresentationFailed(failed || job);
+      return json({ ok: true, job: publicJob(failed || job) });
+    }
+    // Transient problem (network, 5xx, rate limit): keep the job pending; the client retries.
+    const mapped = result.networkError ? { code: "GAMMA_UNAVAILABLE", http: 502 } : mapGammaHttpError(result.status);
+    console.error("[eyad-presentation] gamma status failed", { status: result.status, code: mapped.code });
+    return json({ error: mapped.code, retryable: true }, mapped.http);
+  }
+
+  const normalized = normalizeGammaStatus(result.body);
+  if (normalized.status === "pending") {
+    if (Date.now() - new Date(job.created_at).getTime() > STALE_PENDING_MS) {
+      const { data: timedOut } = await admin.from("gamma_presentation_jobs").update({
+        status: "failed", error_code: "GENERATION_TIMEOUT", error_message: "The presentation took too long to generate.", updated_at: new Date().toISOString(),
+      }).eq("id", job.id).select("*").single();
+      await markPresentationFailed(timedOut || job);
+      return json({ ok: true, job: publicJob(timedOut || job) });
+    }
+    return json({ ok: true, job: publicJob(job) });
+  }
+
+  const { data: finished } = await admin.from("gamma_presentation_jobs").update({
+    status: normalized.status,
+    gamma_url: normalized.gammaUrl,
+    export_url: normalized.exportUrl,
+    error_code: normalized.status === "failed" ? "GAMMA_GENERATION_FAILED" : null,
+    error_message: normalized.errorMessage,
+    updated_at: new Date().toISOString(),
+  }).eq("id", job.id).select("*").single();
+
+  if ((finished || job).status === "failed") {
+    await markPresentationFailed(finished || job);
+    return json({ ok: true, job: publicJob(finished || job) });
+  }
+  // Completed: copy the .pptx into the private bucket and register it as the project's first version.
+  return json({ ok: true, job: await jobView(admin, finished || job) });
+}
+
+function constantTimeEqual(a: string, b: string) {
+  const enc = new TextEncoder();
+  const x = enc.encode(a), y = enc.encode(b);
+  let diff = x.length ^ y.length;
+  for (let i = 0; i < Math.max(x.length, y.length); i++) diff |= (x[i] || 0) ^ (y[i] || 0);
+  return diff === 0;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "METHOD_NOT_ALLOWED" }, 405);
+
+  // Cron sweeper: authenticated by a shared secret, not a user JWT.
+  const cronHeader = req.headers.get("x-eyad-cron-secret");
+  if (cronHeader !== null) {
+    const expected = Deno.env.get("EYAD_CRON_SECRET") || "";
+    if (!expected || !constantTimeEqual(cronHeader, expected)) return json({ error: "FORBIDDEN" }, 403);
+    let cronBody: any = {};
+    try { cronBody = await req.json(); } catch { /* empty */ }
+    if (cronBody?.action !== "reconcile_pending") return json({ error: "UNKNOWN_CRON_ACTION" }, 400);
+    const cronUrl = Deno.env.get("SUPABASE_URL") || "";
+    const cronServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+    const cronGammaKey = Deno.env.get("GAMMA_API_KEY") || "";
+    if (!cronUrl || !cronServiceKey || !cronGammaKey) return json({ error: "BACKEND_CONFIG_ERROR" }, 500);
+    const cronAdmin = createClient(cronUrl, cronServiceKey, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } });
+    const { data: pending, error: pendingError } = await cronAdmin.from("gamma_presentation_jobs")
+      .select("id,owner_id").eq("status", "pending").not("generation_id", "is", null)
+      .order("created_at", { ascending: true }).limit(20);
+    if (pendingError) return json({ ok: false, error: pendingError.message }, 500);
+    const startedAt = Date.now();
+    let processed = 0;
+    for (const row of pending || []) {
+      if (Date.now() - startedAt > 100_000) break;
+      try { await advancePresentationJob(cronAdmin, row.owner_id, cronGammaKey, row.id); processed += 1; } catch (error) {
+        console.error("[eyad-presentation] sweeper failed for job", row.id, error instanceof Error ? error.message : error);
+      }
+    }
+    return json({ ok: true, processed, found: (pending || []).length });
+  }
 
   const token = getBearer(req);
   if (!token) return json({ error: "AUTH_REQUIRED" }, 401);
@@ -446,67 +548,7 @@ Deno.serve(async (req: Request) => {
 
   /* ------------------------------- status ------------------------------- */
   if (action === "status") {
-    const jobId = String(body?.job_id || "");
-    if (!UUID.test(jobId)) return json({ error: "INVALID_JOB_ID" }, 400);
-
-    const { data: job } = await admin.from("gamma_presentation_jobs").select("*")
-      .eq("id", jobId).eq("owner_id", user.id).maybeSingle();
-    if (!job) return json({ error: "JOB_NOT_FOUND" }, 404);
-    if (job.status !== "pending") return json({ ok: true, job: await jobView(admin, job) });
-    if (!job.generation_id) return json({ ok: true, job: publicJob(job) });
-    if (!gammaKey) return json({ error: "GAMMA_API_KEY_MISSING" }, 503);
-
-    // A failed generation never deletes the project; its card says what happened (older versions, if any, stay usable).
-    const markPresentationFailed = async (failedJob: any) => {
-      if (!failedJob?.project_id) return;
-      const { count: versionCount } = await admin.from("presentation_versions").select("id", { count: "exact", head: true })
-        .eq("project_id", failedJob.project_id).eq("owner_id", user.id);
-      await patchProjectPresentation(admin, user.id, failedJob.project_id, { status: (versionCount || 0) > 0 ? "ready" : "failed", job_id: failedJob.id, pptx_error: null });
-    };
-
-    const result = await gammaFetch(`/generations/${encodeURIComponent(job.generation_id)}`, gammaKey, { method: "GET" });
-
-    if (!result.ok) {
-      if (result.status === 404) {
-        const { data: failed } = await admin.from("gamma_presentation_jobs").update({
-          status: "failed", error_code: "GENERATION_NOT_FOUND", error_message: "Gamma could not find this generation.", updated_at: new Date().toISOString(),
-        }).eq("id", job.id).select("*").single();
-        await markPresentationFailed(failed || job);
-        return json({ ok: true, job: publicJob(failed || job) });
-      }
-      // Transient problem (network, 5xx, rate limit): keep the job pending; the client retries.
-      const mapped = result.networkError ? { code: "GAMMA_UNAVAILABLE", http: 502 } : mapGammaHttpError(result.status);
-      console.error("[eyad-presentation] gamma status failed", { status: result.status, code: mapped.code });
-      return json({ error: mapped.code, retryable: true }, mapped.http);
-    }
-
-    const normalized = normalizeGammaStatus(result.body);
-    if (normalized.status === "pending") {
-      if (Date.now() - new Date(job.created_at).getTime() > STALE_PENDING_MS) {
-        const { data: timedOut } = await admin.from("gamma_presentation_jobs").update({
-          status: "failed", error_code: "GENERATION_TIMEOUT", error_message: "The presentation took too long to generate.", updated_at: new Date().toISOString(),
-        }).eq("id", job.id).select("*").single();
-        await markPresentationFailed(timedOut || job);
-        return json({ ok: true, job: publicJob(timedOut || job) });
-      }
-      return json({ ok: true, job: publicJob(job) });
-    }
-
-    const { data: finished } = await admin.from("gamma_presentation_jobs").update({
-      status: normalized.status,
-      gamma_url: normalized.gammaUrl,
-      export_url: normalized.exportUrl,
-      error_code: normalized.status === "failed" ? "GAMMA_GENERATION_FAILED" : null,
-      error_message: normalized.errorMessage,
-      updated_at: new Date().toISOString(),
-    }).eq("id", job.id).select("*").single();
-
-    if ((finished || job).status === "failed") {
-      await markPresentationFailed(finished || job);
-      return json({ ok: true, job: publicJob(finished || job) });
-    }
-    // Completed: copy the .pptx into the private bucket and register it as the project's first version.
-    return json({ ok: true, job: await jobView(admin, finished || job) });
+    return await advancePresentationJob(admin, user.id, gammaKey, String(body?.job_id || ""));
   }
 
   /* ------------------------------- download ------------------------------- */

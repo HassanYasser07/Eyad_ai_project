@@ -9,6 +9,7 @@ import { Outlet, useLocation } from "react-router-dom";
 import TopNav from "@/components/layout/TopNav";
 import MobileHeader from "@/components/layout/MobileHeader";
 import BottomNav from "@/components/layout/BottomNav";
+import GenerationPill from "@/components/generation/GenerationPill";
 
 export default function AppLayout() {
   const location = useLocation();
@@ -26,6 +27,7 @@ export default function AppLayout() {
           <Outlet />
         </main>
         <BottomNav />
+        <GenerationPill />
       </div>
     </div>
   );

@@ -13,15 +13,15 @@
  * Like the business card, a company-profile mockup is generated as one finished artwork by the image model
  * (logo + brand colors + business details), so no text box is composited on top of the generated image.
  */
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   BookOpen, FileText, Layers3, NotebookPen, Package, ReceiptText, X,
   ArrowLeft, ArrowRight, Mail, Phone, MapPin, Globe2, Instagram, Printer, Download, Loader2, Save, BriefcaseBusiness,
 } from "lucide-react";
 import { projectService } from "@/services/projectService";
-import { runEyadEngine } from "@/services/eyadEngineService";
-import { jobService } from "@/services/jobService";
+import { useGenerationJob, useGenerations } from "@/lib/GenerationContext";
+import { isRetryableSubmitError } from "@/services/generationPolling";
 import { assetService } from "@/services/assetService";
 import { useAuth } from "@/lib/AuthContext";
 import { COMPANY_PROFILE_MOCKUP_IMAGES } from "./companyProfileMockupImages";
@@ -93,7 +93,6 @@ export default function CompanyProfileMockup({ brand, palette, background, proje
   const [saved, setSaved] = useState(false);
   const [loadingInfo, setLoadingInfo] = useState(false);
   const [generating, setGenerating] = useState(false);
-  const [jobId, setJobId] = useState(null);
   const [generatedImage, setGeneratedImage] = useState(null);
   const [generationError, setGenerationError] = useState("");
   const [crop, setCrop] = useState({ rect: null, natural: { w: 0, h: 0 }, active: false });
@@ -101,8 +100,7 @@ export default function CompanyProfileMockup({ brand, palette, background, proje
   const [pdfError, setPdfError] = useState("");
   const { isAnonymous, requireAccount } = useAuth();
 
-  const MOCKUP_MAX_WAIT_MS = 240000;
-  const MOCKUP_POLL_MS = 2000;
+  const { startGeneration } = useGenerations();
 
   useEffect(() => {
     let active = true;
@@ -187,10 +185,20 @@ export default function CompanyProfileMockup({ brand, palette, background, proje
     setStep("gallery");
     setSelected(null);
     setGeneratedImage(null);
-    setJobId(null);
     setGenerating(false);
     setGenerationError("");
   };
+
+  const friendlyError = useCallback((raw) => {
+    const code = String(raw || "GENERATION_FAILED");
+    if (code.includes("MOCKUP_GENERATION_TIMEOUT") || code.includes("IMAGE_GENERATION_TIMEOUT")) {
+      return ar ? "التوليد تجاوز الوقت المسموح. تم إيقاف العملية واسترجاع رصيدك." : "Mockup generation exceeded the safe time limit and was stopped. Your credits were refunded.";
+    }
+    if (isRetryableSubmitError({ message: code })) {
+      return ar ? "تعذر بدء التوليد بسبب ضعف الاتصال. لم يتم خصم أي رصيد، حاول مرة أخرى." : "Could not start the generation because of a weak connection. Please try again.";
+    }
+    return code;
+  }, [ar]);
 
   async function generateMockup(mockupId = selected) {
     if (!mockupId || generating) return;
@@ -211,100 +219,77 @@ export default function CompanyProfileMockup({ brand, palette, background, proje
       const baseMessage = ar
         ? `أنشئ موك أب واقعي احترافي لبروفايل شركة مطبوع (${type?.ar || "بروفايل الشركة"}) باستخدام الشعار المعتمد.`
         : `Create a photorealistic professional printed company profile booklet mockup (${type?.en || "company profile"}) using the approved logo.`;
-      const data = await runEyadEngine({
-        message: `${baseMessage} ${type?.scene || ""}`.trim(),
-        projectId: projectId || null,
-        studioId: "ai-images",
-        language: ar ? "ar" : "en",
-        action: "generate",
-        referenceImage: logoForGeneration,
-        designOptions: {
-          mockup_type: mockupId,
-          mockup_family: "company-profile",
-          mockup_name: `Company Profile — ${type?.en || mockupId}`,
-          mockup_prompt: type?.scene || "",
-          approved_logo_url: logoForGeneration,
-          brand_name: brand?.brand_name || businessInfo.companyName || "",
-          palette,
-          background,
-          business_info: businessInfo,
-          company_profile: {
-            companyName: profileInfo?.companyName || businessInfo.companyName || "",
-            tagline: profileInfo?.tagline || "",
-            industry: profileInfo?.industry || "",
+      const started = await startGeneration({
+        kind: "company-profile",
+        title: ar ? type?.ar : type?.en,
+        context: { surface: "mockup", mockupId, language: ar ? "ar" : "en" },
+        request: {
+          message: `${baseMessage} ${type?.scene || ""}`.trim(),
+          projectId: projectId || null,
+          studioId: "ai-images",
+          language: ar ? "ar" : "en",
+          referenceImage: logoForGeneration,
+          designOptions: {
+            mockup_type: mockupId,
+            mockup_family: "company-profile",
+            mockup_name: `Company Profile — ${type?.en || mockupId}`,
+            mockup_prompt: type?.scene || "",
+            approved_logo_url: logoForGeneration,
+            brand_name: brand?.brand_name || businessInfo.companyName || "",
+            palette,
+            background,
+            business_info: businessInfo,
+            company_profile: {
+              companyName: profileInfo?.companyName || businessInfo.companyName || "",
+              tagline: profileInfo?.tagline || "",
+              industry: profileInfo?.industry || "",
+            },
           },
         },
       });
-      if (data?.project?.id && !projectId) {
-        window.history.replaceState({}, "", `${window.location.pathname}?project=${encodeURIComponent(data.project.id)}`);
+      if (started?.projectId && !projectId) {
+        window.history.replaceState({}, "", `${window.location.pathname}?project=${encodeURIComponent(started.projectId)}`);
       }
-      if (data?.status === "generated") {
-        const resultImage = data?.images?.[0] || data?.image || null;
-        setGeneratedImage(resultImage);
-        setStep("result");
-        setGenerating(false);
-        return;
-      }
-      if (data?.job_id) {
-        setJobId(data.job_id);
-        return;
-      }
-      throw new Error(data?.error || "GENERATION_NOT_STARTED");
     } catch (error) {
       setGenerating(false);
-      setGenerationError(error?.message || "GENERATION_FAILED");
+      setGenerationError(friendlyError(error?.message || "GENERATION_FAILED"));
       setStep("result");
     }
   }
 
+  // ---- Background job observer (survives leaving the app / reloads) ---------------------------
+  const matchProfileMockupJob = useCallback((item) => item.kind === "company-profile" && item.context?.surface === "mockup" && (!projectId || !item.projectId || item.projectId === projectId), [projectId]);
+  const observed = useGenerationJob({ match: matchProfileMockupJob });
+  const handledJobRef = useRef(null);
+
   useEffect(() => {
-    if (!jobId || !generating) return undefined;
-    let active = true;
-    const startedAt = Date.now();
+    if (observed.status !== "running") return;
+    if (observed.job?.context?.mockupId) setSelected(observed.job.context.mockupId);
+    setGalleryOpen(true);
+    setGenerating(true);
+    setGenerationError("");
+    setStep("generating");
+  }, [observed.status, observed.job?.jobId]);
 
-    const poll = async () => {
-      if (!active) return;
-      try {
-        const data = await jobService.pollGeneration(jobId);
-        if (!active) return;
-        if (data?.status === "generated") {
-          const resultImage = data?.images?.[0] || data?.image || null;
-          setGeneratedImage(resultImage);
-          setGenerating(false);
-          setStep("result");
-          setJobId(null);
-          return;
-        }
-        if (data?.error || data?.status === "failed") {
-          const raw = String(data?.detail || data?.error || "GENERATION_FAILED");
-          const friendly = raw === "MOCKUP_GENERATION_TIMEOUT"
-            ? (ar ? "التوليد تجاوز الوقت المسموح. تم إيقاف العملية بدون انتظار إضافي." : "Mockup generation exceeded the safe time limit and was stopped.")
-            : raw === "OPENAI_RESPONSE_POLL_FAILED"
-              ? (ar ? "تعذر متابعة نتيجة التوليد من مزود الصور." : "The image provider could not be reached while checking the result.")
-              : raw;
-          setGenerationError(friendly);
-          setGenerating(false);
-          setStep("result");
-          setJobId(null);
-          return;
-        }
-      } catch {
-        // Transient polling/network errors do not fail the generation. The
-        // durable backend job remains authoritative and the next poll retries.
-      }
-
-      if (Date.now() - startedAt >= MOCKUP_MAX_WAIT_MS && active) {
-        setGenerationError(ar ? "التوليد استغرق وقتًا أطول من المتوقع وتم إيقاف الانتظار." : "Generation took longer than expected and the wait was stopped.");
-        setGenerating(false);
-        setStep("result");
-        setJobId(null);
-      }
-    };
-
-    poll();
-    const timer = window.setInterval(poll, MOCKUP_POLL_MS);
-    return () => { active = false; window.clearInterval(timer); };
-  }, [jobId, generating, ar]);
+  useEffect(() => {
+    if (observed.status !== "done" && observed.status !== "failed") return;
+    const finished = observed.job;
+    if (!finished || handledJobRef.current === finished.jobId) return;
+    handledJobRef.current = finished.jobId;
+    if (Date.now() - Number(finished.result?.finishedAt || 0) > 2 * 60 * 60 * 1000) { observed.consume(); return; }
+    if (finished.context?.mockupId) setSelected(finished.context.mockupId);
+    setGalleryOpen(true);
+    if (observed.status === "failed") {
+      setGenerationError(friendlyError(observed.error));
+    } else {
+      const data = observed.result || {};
+      setGeneratedImage(data?.images?.[0] || data?.image || null);
+      setGenerationError("");
+    }
+    setGenerating(false);
+    setStep("result");
+    observed.consume();
+  }, [observed.status, observed.job?.jobId]);
 
   const save = async () => {
     const sourceImage = generatedImage?.data_url || generatedImage?.url;
