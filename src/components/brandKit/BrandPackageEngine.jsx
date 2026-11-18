@@ -3,6 +3,7 @@ import { Check, Download, FileText, Image as ImageIcon, Loader2, PackageCheck, P
 import { projectService } from "@/services/projectService";
 import { ensureRasterLogoUrl, isSvgSource } from "@/services/logoImageService";
 import { runEyadEngine } from "@/services/eyadEngineService";
+import { generateAndWait } from "@/services/generationWait";
 import { buildBrandGuidelinesPdf } from "./brandProfilePdf";
 import { detectSector } from "./brandProfileData";
 
@@ -105,12 +106,11 @@ export default function BrandPackageEngine({ brand, palette, background, arabicF
       };
       const generate = async (page, extra) => {
         try {
-          const result = await runEyadEngine({
+          const result = await generateAndWait(runEyadEngine, {
             message: `Generate a cinematic landscape (16:9) background photograph for the brand guidelines of "${brand?.brand_name || "the brand"}"${activity ? `, a ${activity} business` : ""}. Scene: ${sector.scene}. ${extra} Colour grading harmonised with ${colors.primary}, ${colors.secondary} and ${colors.accent}. Absolutely no text, no logos, no watermarks, no close-up faces.`,
             projectId,
             studioId: "brand-kit",
             language: ar ? "ar" : "en",
-            action: "generate",
             designOptions: {
               brand_profile_page: page,
               brand_profile_name: brand?.brand_name || "",
@@ -120,7 +120,7 @@ export default function BrandPackageEngine({ brand, palette, background, arabicF
               aspect_ratio: "16:9",
             },
           });
-          const url = result?.image?.url || result?.image?.data_url || result?.asset?.asset_url || null;
+          const url = result?.image?.url || result?.image?.data_url || result?.images?.[0]?.url || result?.images?.[0]?.data_url || result?.asset?.asset_url || null;
           return await toDataUrl(url);
         } catch (error) {
           console.warn("[EYAD Brand Package] AI imagery unavailable; using built-in artwork.", error);

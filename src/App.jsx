@@ -10,6 +10,7 @@ import { Navigate, useLocation } from 'react-router-dom';
 import AccountRequiredRoute from '@/components/AccountRequiredRoute';
 import OAuthReturnHandler from '@/components/OAuthReturnHandler';
 import { I18nProvider } from '@/i18n/I18nContext';
+import { GenerationProvider } from '@/lib/GenerationContext';
 import AppLayout from '@/components/layout/AppLayout';
 import Login from '@/pages/Login';
 import Register from '@/pages/Register';
@@ -110,7 +111,9 @@ function App() {
           <ScrollToTop />
           <OAuthReturnHandler />
           <I18nProvider>
-            <AuthenticatedApp />
+            <GenerationProvider>
+              <AuthenticatedApp />
+            </GenerationProvider>
           </I18nProvider>
         </Router>
         <Toaster />

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Coffee, PenLine, FileText, ShoppingBag, Package, Store, Smartphone, Monitor,
   Car, Shirt, BookOpen, HardHat, ShieldCheck, BriefcaseBusiness,
@@ -6,8 +6,8 @@ import {
   ArrowLeft, ArrowRight, Mail, Phone, MapPin, Globe2, Instagram, Printer, Download, Loader2
 } from "lucide-react";
 import { projectService } from "@/services/projectService";
-import { runEyadEngine } from "@/services/eyadEngineService";
-import { jobService } from "@/services/jobService";
+import { useGenerationJob, useGenerations } from "@/lib/GenerationContext";
+import { isRetryableSubmitError } from "@/services/generationPolling";
 import { assetService } from "@/services/assetService";
 import { useAuth } from "@/lib/AuthContext";
 import { MOCKUP_IMAGES } from "./mockupImages";
@@ -371,7 +371,6 @@ export default function MockupEngine({ brand, palette, background, projectId, on
   const [saved, setSaved] = useState(false);
   const [loadingInfo, setLoadingInfo] = useState(false);
   const [generating, setGenerating] = useState(false);
-  const [jobId, setJobId] = useState(null);
   const [generatedImage, setGeneratedImage] = useState(null);
   const [finalMockupImage, setFinalMockupImage] = useState(null);
   const [compositing, setCompositing] = useState(false);
@@ -381,8 +380,7 @@ export default function MockupEngine({ brand, palette, background, projectId, on
   const [pdfError, setPdfError] = useState("");
   const { isAnonymous, requireAccount } = useAuth();
 
-  const MOCKUP_MAX_WAIT_MS = 240000;
-  const MOCKUP_POLL_MS = 2000;
+  const { startGeneration } = useGenerations();
 
   useEffect(() => {
     let active = true;
@@ -462,11 +460,21 @@ export default function MockupEngine({ brand, palette, background, projectId, on
     setSelected(null);
     setGeneratedImage(null);
     setFinalMockupImage(null);
-    setJobId(null);
     setGenerating(false);
     setCompositing(false);
     setGenerationError("");
   };
+
+  const friendlyError = useCallback((raw) => {
+    const code = String(raw || "GENERATION_FAILED");
+    if (code.includes("MOCKUP_GENERATION_TIMEOUT") || code.includes("IMAGE_GENERATION_TIMEOUT")) {
+      return ar ? "التوليد تجاوز الوقت المسموح. تم إيقاف العملية واسترجاع رصيدك." : "Mockup generation exceeded the safe time limit and was stopped. Your credits were refunded.";
+    }
+    if (isRetryableSubmitError({ message: code })) {
+      return ar ? "تعذر بدء التوليد بسبب ضعف الاتصال. لم يتم خصم أي رصيد، حاول مرة أخرى." : "Could not start the generation because of a weak connection. Please try again.";
+    }
+    return code;
+  }, [ar]);
 
   async function generateMockup(mockupId = selected) {
     if (!mockupId || generating) return;
@@ -486,127 +494,118 @@ export default function MockupEngine({ brand, palette, background, projectId, on
       // The image model only accepts raster images. SVG logos are converted to a
       // transparent PNG here so they behave exactly like PNG logos.
       const logoForGeneration = (await ensureRasterLogoUrl(brand?.logo)) || null;
-      const data = await runEyadEngine({
-        message: ar ? `أنشئ موك أب واقعي احترافي لـ${type?.ar || "هذا المنتج"} باستخدام الشعار المعتمد.` : `Create a photorealistic professional ${type?.en || "brand mockup"} using the approved logo.`,
-        projectId: projectId || null,
-        studioId: "ai-images",
-        language: ar ? "ar" : "en",
-        action: "generate",
-        referenceImage: logoForGeneration,
-        designOptions: {
-          mockup_type: mockupId,
-          mockup_name: type?.en || mockupId,
-          approved_logo_url: logoForGeneration,
-          brand_name: brand?.brand_name || businessInfo.companyName || "",
-          palette,
-          background,
-          business_info: DATA_MOCKUP_IDS.has(mockupId) ? businessInfo : null,
+      const logoUrl = brand?.logo?.url && !String(brand.logo.url).startsWith("data:") ? brand.logo.url : null;
+      const started = await startGeneration({
+        kind: "mockup",
+        title: ar ? type?.ar : type?.en,
+        // Everything needed to finish the mockup after the user comes back (compositing runs client-side).
+        context: {
+          mockupId,
+          businessInfo: DATA_MOCKUP_IDS.has(mockupId) ? { ...businessInfo } : {},
+          palette: palette || {},
+          background: background || null,
+          brand: { brand_name: brand?.brand_name || "", logo: logoUrl ? { url: logoUrl } : null },
+          brandName: brand?.brand_name || businessInfo.companyName || "",
+          language: ar ? "ar" : "en",
+        },
+        request: {
+          message: ar ? `أنشئ موك أب واقعي احترافي لـ${type?.ar || "هذا المنتج"} باستخدام الشعار المعتمد.` : `Create a photorealistic professional ${type?.en || "brand mockup"} using the approved logo.`,
+          projectId: projectId || null,
+          studioId: "ai-images",
+          language: ar ? "ar" : "en",
+          referenceImage: logoForGeneration,
+          designOptions: {
+            mockup_type: mockupId,
+            mockup_name: type?.en || mockupId,
+            approved_logo_url: logoForGeneration,
+            brand_name: brand?.brand_name || businessInfo.companyName || "",
+            palette,
+            background,
+            business_info: DATA_MOCKUP_IDS.has(mockupId) ? businessInfo : null,
+          },
         },
       });
-      if (data?.project?.id && !projectId) {
-        window.history.replaceState({}, "", `${window.location.pathname}?project=${encodeURIComponent(data.project.id)}`);
+      if (started?.projectId && !projectId) {
+        window.history.replaceState({}, "", `${window.location.pathname}?project=${encodeURIComponent(started.projectId)}`);
       }
-      if (data?.status === "generated") {
-        const resultImage = data?.images?.[0] || data?.image || null;
-        setGeneratedImage(resultImage);
-        if (DATA_MOCKUP_IDS.has(mockupId) && mockupId !== "business-card") {
-          const source = resultImage?.data_url || resultImage?.url || "";
-          if (!source) throw new Error("MOCKUP_RESULT_IMAGE_MISSING");
-          setCompositing(true);
-          try {
-            const exactImage = await composeExactBusinessDataMockup(source, mockupId, businessInfo, brand, palette);
-            setFinalMockupImage(exactImage);
-          } finally {
-            setCompositing(false);
-          }
-        } else {
-          // Business cards are now generated as complete finished artwork by
-          // the image model, including the approved logo and user-entered data.
-          setFinalMockupImage(null);
-        }
-        setStep("result");
-        setGenerating(false);
-        return;
-      }
-      if (data?.job_id) {
-        setJobId(data.job_id);
-        return;
-      }
-      throw new Error(data?.error || "GENERATION_NOT_STARTED");
+      // From here the provider observes the job; the effect below renders progress/result.
     } catch (error) {
       setGenerating(false);
-      setGenerationError(error?.message || "GENERATION_FAILED");
+      setGenerationError(friendlyError(error?.message || "GENERATION_FAILED"));
       setStep("result");
     }
   }
 
+  // ---- Background job observer ---------------------------------------------------------------
+  const matchMockupJob = useCallback((item) => item.kind === "mockup" && (!projectId || !item.projectId || item.projectId === projectId), [projectId]);
+  const observed = useGenerationJob({ match: matchMockupJob });
+  const handledJobRef = useRef(null);
+
+  // Restore the generating screen after a reload / returning to the app.
   useEffect(() => {
-    if (!jobId || !generating) return undefined;
-    let active = true;
-    const startedAt = Date.now();
+    if (observed.status !== "running") return;
+    const mockupId = observed.job?.context?.mockupId;
+    if (mockupId) setSelected(mockupId);
+    setGalleryOpen(true);
+    setGenerating(true);
+    setGenerationError("");
+    setStep("generating");
+  }, [observed.status, observed.job?.jobId]);
 
-    const poll = async () => {
-      if (!active) return;
-      try {
-        const data = await jobService.pollGeneration(jobId);
-        if (!active) return;
-        if (data?.status === "generated") {
-          const resultImage = data?.images?.[0] || data?.image || null;
-          setGeneratedImage(resultImage);
-          if (DATA_MOCKUP_IDS.has(selected) && selected !== "business-card") {
-            const source = resultImage?.data_url || resultImage?.url || "";
-            if (!source) {
-              setGenerationError(ar ? "الصورة الناتجة غير متاحة للتركيب النهائي." : "The generated image is unavailable for final compositing.");
-            } else {
-              setCompositing(true);
-              try {
-                const exactImage = await composeExactBusinessDataMockup(source, selected, businessInfo, brand, palette);
-                setFinalMockupImage(exactImage);
-              } catch {
-                setGenerationError(ar ? "تعذر تركيب بيانات الشركة بدقة على الموك أب." : "The exact business data could not be composited onto the mockup.");
-              } finally {
-                setCompositing(false);
-              }
-            }
-          } else {
-            setFinalMockupImage(null);
-            setFinalMockupImage(null);
-          }
-          setGenerating(false);
-          setStep("result");
-          setJobId(null);
-          return;
-        }
-        if (data?.error || data?.status === "failed") {
-          const raw = String(data?.detail || data?.error || "GENERATION_FAILED");
-          const friendly = raw === "MOCKUP_GENERATION_TIMEOUT"
-            ? (ar ? "التوليد تجاوز الوقت المسموح. تم إيقاف العملية بدون انتظار إضافي." : "Mockup generation exceeded the safe time limit and was stopped.")
-            : raw === "OPENAI_RESPONSE_POLL_FAILED"
-              ? (ar ? "تعذر متابعة نتيجة التوليد من مزود الصور." : "The image provider could not be reached while checking the result.")
-              : raw;
-          setGenerationError(friendly);
-          setGenerating(false);
-          setStep("result");
-          setJobId(null);
-          return;
-        }
-      } catch {
-        // Transient polling/network errors do not fail the generation. The
-        // durable backend job remains authoritative and the next poll retries.
-      }
+  // Handle a finished job (also one that finished while the user was away).
+  useEffect(() => {
+    if (observed.status !== "done" && observed.status !== "failed") return undefined;
+    const finished = observed.job;
+    if (!finished || handledJobRef.current === finished.jobId) return undefined;
+    handledJobRef.current = finished.jobId;
+    let cancelled = false;
+    const ctx = finished.context || {};
+    const mockupId = ctx.mockupId || selected;
+    const isStale = Date.now() - Number(finished.result?.finishedAt || 0) > 2 * 60 * 60 * 1000;
+    if (isStale) { observed.consume(); return undefined; }
 
-      if (Date.now() - startedAt >= MOCKUP_MAX_WAIT_MS && active) {
-        setGenerationError(ar ? "التوليد استغرق وقتًا أطول من المتوقع وتم إيقاف الانتظار." : "Generation took longer than expected and the wait was stopped.");
+    setSelected(mockupId);
+    setGalleryOpen(true);
+
+    (async () => {
+      if (observed.status === "failed") {
+        setGenerationError(friendlyError(observed.error));
         setGenerating(false);
         setStep("result");
-        setJobId(null);
+        observed.consume();
+        return;
       }
-    };
-
-    poll();
-    const timer = window.setInterval(poll, MOCKUP_POLL_MS);
-    return () => { active = false; window.clearInterval(timer); };
-  }, [jobId, generating, ar]);
+      const data = observed.result || {};
+      const resultImage = data?.images?.[0] || data?.image || null;
+      setGeneratedImage(resultImage);
+      setFinalMockupImage(null);
+      setGenerationError("");
+      const info = ctx.businessInfo || {};
+      const brandForCompose = { ...(ctx.brand || {}), ...(brand?.logo?.url ? { logo: brand.logo } : {}), brand_name: ctx.brand?.brand_name || brand?.brand_name || "" };
+      if (DATA_MOCKUP_IDS.has(mockupId) && mockupId !== "business-card") {
+        const source = resultImage?.data_url || resultImage?.url || "";
+        if (!source) {
+          setGenerationError(ar ? "الصورة الناتجة غير متاحة للتركيب النهائي." : "The generated image is unavailable for final compositing.");
+        } else {
+          setCompositing(true);
+          try {
+            const exactImage = await composeExactBusinessDataMockup(source, mockupId, info, brandForCompose, ctx.palette || palette || {});
+            if (!cancelled) setFinalMockupImage(exactImage);
+          } catch {
+            if (!cancelled) setGenerationError(ar ? "تعذر تركيب بيانات الشركة بدقة على الموك أب." : "The exact business data could not be composited onto the mockup.");
+          } finally {
+            if (!cancelled) setCompositing(false);
+          }
+        }
+      }
+      if (cancelled) return;
+      setBusinessInfo((prev) => (Object.keys(info).length ? { ...prev, ...info } : prev));
+      setGenerating(false);
+      setStep("result");
+      observed.consume();
+    })();
+    return () => { cancelled = true; handledJobRef.current = null; };
+  }, [observed.status, observed.job?.jobId]);
 
   const save = async () => {
     const sourceImage = finalMockupImage || generatedImage?.data_url || generatedImage?.url;
