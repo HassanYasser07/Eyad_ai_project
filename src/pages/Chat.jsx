@@ -10,7 +10,8 @@ import { getCreativeActions } from "@/core/creativeActionRegistry";
 import { projectService } from "@/services/projectService";
 import { assetService } from "@/services/assetService";
 import { saveBrandIdentity } from "@/services/brandService";
-import { getProjectContext } from "@/services/projectContextService";
+import { getProjectContext, setStudioHandoff, buildStudioHandoffUrl } from "@/services/projectContextService";
+import { setImageHandoff } from "@/services/imageHandoff";
 import PresentationProjectCard from "@/components/presentations/PresentationProjectCard";
 
 import { appConfig } from "@/config/app.config";
@@ -20,7 +21,7 @@ import GeneratingCanvas from "@/components/chat/GeneratingCanvas";
 import EyadMiniOrb from "@/components/chat/EyadMiniOrb";
 import VoiceOverlay from "@/components/chat/VoiceOverlay";
 import { splitIntoSentences } from "@/utils/sentenceSegmenter";
-import { getStudioById } from "@/studios/studioRegistry";
+import { getStudioById, resolveStudioId } from "@/studios/studioRegistry";
 import "./chat.css";
 
 // The SVG editor is large and only needed after a logo is approved and edited.
@@ -1461,6 +1462,40 @@ export default function Chat() {
     }
   };
 
+  // Image results (anything that is not a logo) are edited in the AI Images
+  // Studio. The image itself travels with the user: its asset id goes in the URL
+  // and its source goes through the hand-off store, so the studio shows the image
+  // straight away and uses it as the prompt reference.
+  const openImageInImageStudio = (message, image) => {
+    const assetId = image?.asset_id || message?.assetId || message?.asset?.id || null;
+    const src = image?.data_url || image?.url || message?.image || null;
+    setImageHandoff({ assetId, url: src, projectId: projectId || null });
+    const params = new URLSearchParams({ source: "eyad-chat", intent: "edit" });
+    if (projectId) params.set("project", projectId);
+    if (assetId) params.set("asset", assetId);
+    navigate(`/studios/ai-images?${params.toString()}`);
+  };
+
+  // Logo results: continue to the Visual Identity Studio with the logo attached,
+  // exactly like the "turn logo into visual identity" action inside the Logo Studio.
+  const goToVisualIdentity = async (image) => {
+    const assetId = image?.asset_id || null;
+    if (projectId) {
+      try {
+        await setStudioHandoff(projectId, {
+          fromStudio: "logo",
+          toStudio: "brand-kit",
+          asset: { id: assetId, url: image?.data_url || image?.url || null },
+          intent: "continue",
+          metadata: { source: "eyad-chat" },
+        });
+      } catch (error) {
+        console.warn("[Chat] visual identity hand-off could not be saved", error);
+      }
+    }
+    navigate(buildStudioHandoffUrl("brand-kit", projectId, { from: "logo", assetId, intent: "continue" }));
+  };
+
   const handleCreativeAction = async (action, message) => {
     if (action.kind === "download" && message.image) {
       await downloadImageAsPng(message.image, `eyad-${message.studioId || "design"}.png`);
@@ -1694,7 +1729,7 @@ export default function Chat() {
                       : [{ data_url: message.image, asset_id: message.assetId }];
                     const selectedId = message.selectedAssetId || null;
                     const selectedImage = images.find((item) => item.asset_id === selectedId) || null;
-                    const isLogoResult = (message.studioId || studioId) === "logo";
+                    const isLogoResult = resolveStudioId(message.studioId || studioId) === "logo";
 
                     return (
                       <>
@@ -1760,13 +1795,7 @@ export default function Chat() {
                                     <button
                                       type="button"
                                       className="is-primary"
-                                      onClick={() => {
-                                        const chosen = { ...message, assetId: assetId || message.assetId, image: image.data_url };
-                                        handleCreativeAction(
-                                          { id: "open_studio", kind: "route", studioId: message.studioId || "ai-images", mode: undefined },
-                                          chosen
-                                        );
-                                      }}
+                                      onClick={() => openImageInImageStudio(message, image)}
                                     >
                                       <Pencil />
                                       <span>{isAr ? "فتح هذا التصميم" : "Open this design"}</span>
@@ -1814,6 +1843,14 @@ export default function Chat() {
                                       >
                                         {busyKind === "edit" ? <Loader2 className="eyad-chat-page__spin" /> : <Pencil />}
                                         <span>{isAr ? "تعديل" : "Edit"}</span>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => goToVisualIdentity(selectedImage)}
+                                        disabled={anyBusy}
+                                      >
+                                        <Palette />
+                                        <span>{isAr ? "الذهاب إلى الهوية البصرية" : "Go to Visual Identity"}</span>
                                       </button>
                                     </>
                                   ) : (
