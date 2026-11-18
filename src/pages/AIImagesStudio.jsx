@@ -9,6 +9,7 @@ import { getBrandIdentity } from "@/services/brandService";
 import { projectService } from "@/services/projectService";
 import { assetService } from "@/services/assetService";
 import { saveStudioOutput } from "@/services/projectContextService";
+import { peekImageHandoff } from "@/services/imageHandoff";
 import StudioNextActions from "@/components/studios/StudioNextActions";
 import TypewriterHint from "@/components/ui/TypewriterHint";
 import { IMAGE_HINTS } from "@/config/typewriterHints";
@@ -130,6 +131,42 @@ async function prepareReferenceImage(file) {
   return { name: file.name, type: file.type, data_url: original };
 }
 
+/**
+ * An image handed over from the chat can be a large data URL. Like uploaded
+ * references, downscale it before it travels with the generation request so the
+ * request body stays small. https URLs are left untouched.
+ */
+async function prepareIncomingReference(src) {
+  if (!src || !src.startsWith("data:") || src.length < SKIP_COMPRESS_BELOW_BYTES * 1.37) return src;
+  try {
+    const el = await loadImageElement(src);
+    const scale = Math.min(1, MAX_REFERENCE_SIDE / Math.max(el.naturalWidth, el.naturalHeight));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(el.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(el.naturalHeight * scale));
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(el, 0, 0, canvas.width, canvas.height);
+    const compressed = canvas.toDataURL("image/jpeg", 0.88);
+    return compressed.length < src.length ? compressed : src;
+  } catch {
+    return src;
+  }
+}
+
+/** Closest supported generation ratio for an image of the given size. */
+function closestAspectId(width, height) {
+  if (!width || !height) return null;
+  const ratio = width / height;
+  let best = null;
+  ASPECTS.forEach((item) => {
+    const diff = Math.abs(Math.log(ratio / (item.w / item.h)));
+    if (!best || diff < best.diff) best = { id: item.id, diff };
+  });
+  return best ? best.id : null;
+}
+
 async function downloadImage(src, filename) {
   try {
     const response = await fetch(src);
@@ -204,6 +241,9 @@ export default function AIImagesStudio() {
   const [params] = useSearchParams();
   const projectId = params.get("project");
   const incomingAssetId = params.get("asset");
+  // Opened from the chat ("Open this design"): the image is shown here and the user
+  // only has to type the change they want. The image is sent as the prompt reference.
+  const isEditHandoff = params.get("intent") === "edit" || params.get("source") === "eyad-chat";
   const [brand, setBrand] = React.useState(null);
   const [prompt, setPrompt] = React.useState("");
   // No default: the user must choose the aspect ratio before generating.
@@ -231,6 +271,9 @@ export default function AIImagesStudio() {
   const stageRef = React.useRef(null);
   const savedKeysRef = React.useRef(new Set());
   const generationAspectRef = React.useRef(null);
+  // Natural size of the incoming (original) image, so it is displayed uncropped until the user generates.
+  const [incomingSize, setIncomingSize] = React.useState(null);
+  const incomingActiveRef = React.useRef(false);
 
   const aspect = getAspect(aspectId);
   const resultAspect = getAspect(displayAspectId) || getAspect(resultAspectId) || aspect;
@@ -242,24 +285,56 @@ export default function AIImagesStudio() {
 
   React.useEffect(() => {
     let active = true;
-    if (!incomingAssetId || incomingAssetId === "latest") return undefined;
-    assetService.get(incomingAssetId).then((asset) => {
+    const hasAsset = Boolean(incomingAssetId && incomingAssetId !== "latest");
+    // The chat hands the image source over directly (it may only exist as a data URL).
+    const handoff = isEditHandoff ? peekImageHandoff({ assetId: hasAsset ? incomingAssetId : null }) : null;
+    if (!hasAsset && !handoff?.url) return undefined;
+
+    const loadFailedMessage = loc({ en: "The selected design could not be loaded. Return to chat and open it again.", ar: "تعذر تحميل التصميم المحدد. ارجع للمحادثة وافتح التصميم مرة أخرى." });
+
+    const applyIncoming = async ({ id, url, name, type }) => {
+      const reference = await prepareIncomingReference(url);
       if (!active) return;
-      if (!asset?.url) {
-        setError(loc({ en: "The selected design could not be loaded. Return to chat and open it again.", ar: "تعذر تحميل التصميم المحدد. ارجع للمحادثة وافتح التصميم مرة أخرى." }));
-        return;
-      }
-      const incomingImage = { id: asset.id, asset_id: asset.id, url: asset.url, name: asset.name || "Incoming design", type: asset.mime_type || "image/png" };
+      // Same object everywhere: it is shown in the result slot AND used as the prompt reference.
+      const incomingImage = { id: id || null, asset_id: id || null, url, name: name || "Incoming design", type: type || "image/png" };
+      const referenceImage = reference === url ? incomingImage : { ...incomingImage, data_url: reference };
+      incomingActiveRef.current = true;
       setImages([incomingImage]);
       setSelectedImage(incomingImage);
-      setReferenceImages([incomingImage]);
+      setReferenceImages([referenceImage]);
       setError("");
-    }).catch((err) => {
-      console.warn("[AI Images] Could not load incoming asset", err);
-      if (active) setError(loc({ en: "The selected design could not be loaded. Return to chat and open it again.", ar: "تعذر تحميل التصميم المحدد. ارجع للمحادثة وافتح التصميم مرة أخرى." }));
-    });
+      // Pre-select the closest ratio (the user can still change it) and keep the original unstretched on screen.
+      // Measuring needs no pixel access, so no CORS mode (works for any image host).
+      const probe = new window.Image();
+      probe.onload = () => {
+        if (!active || !incomingActiveRef.current) return;
+        setIncomingSize({ w: probe.naturalWidth, h: probe.naturalHeight });
+        const closest = closestAspectId(probe.naturalWidth, probe.naturalHeight);
+        if (closest) setAspectId((current) => current || closest);
+      };
+      probe.src = url;
+    };
+
+    (async () => {
+      let asset = null;
+      if (hasAsset) {
+        try {
+          asset = await assetService.get(incomingAssetId);
+        } catch (err) {
+          console.warn("[AI Images] Could not load incoming asset", err);
+        }
+      }
+      if (!active) return;
+      if (asset?.url) {
+        await applyIncoming({ id: asset.id, url: asset.url, name: asset.name, type: asset.mime_type });
+      } else if (handoff?.url) {
+        await applyIncoming({ id: hasAsset ? incomingAssetId : handoff.assetId, url: handoff.url, name: handoff.name });
+      } else {
+        setError(loadFailedMessage);
+      }
+    })();
     return () => { active = false; };
-  }, [incomingAssetId, loc]);
+  }, [incomingAssetId, isEditHandoff, loc]);
 
   React.useEffect(() => {
     let active = true;
@@ -270,11 +345,12 @@ export default function AIImagesStudio() {
     ]).then(([brandData, project]) => {
       if (!active) return;
       setBrand(brandData);
-      const inheritedPrompt = String(project?.metadata?.initial_prompt || project?.description || "").trim();
+      // When editing an image opened from the chat the prompt stays empty: the user writes the change they want.
+      const inheritedPrompt = isEditHandoff ? "" : String(project?.metadata?.initial_prompt || project?.description || "").trim();
       if (inheritedPrompt) setPrompt(inheritedPrompt);
     });
     return () => { active = false; };
-  }, [projectId]);
+  }, [projectId, isEditHandoff]);
 
   // On desktop the results sit beside the form; only phones/tablets need the scroll.
   const scrollStageIntoView = React.useCallback(() => {
@@ -285,6 +361,8 @@ export default function AIImagesStudio() {
   const showResults = React.useCallback((list) => {
     const next = list.filter((item) => imageSrc(item)).slice(0, 2);
     if (!next.length) return false;
+    incomingActiveRef.current = false;
+    setIncomingSize(null);
     setResultAspectId(generationAspectRef.current);
     setDisplayAspectId(generationAspectRef.current);
     setImages(next);
@@ -308,6 +386,8 @@ export default function AIImagesStudio() {
       setResultAspectId(aspectFromJob);
       setDisplayAspectId(aspectFromJob);
     }
+    incomingActiveRef.current = false;
+    setIncomingSize(null);
     setError("");
     setGenerating(true);
   }, [observed.status, observed.job?.jobId]);
@@ -346,6 +426,8 @@ export default function AIImagesStudio() {
       return;
     }
     generationAspectRef.current = aspect.id;
+    incomingActiveRef.current = false;
+    setIncomingSize(null);
     setGenerating(true);
     setError("");
     setImages([]);
@@ -496,7 +578,8 @@ export default function AIImagesStudio() {
   const removeReferenceImage = (index) => setReferenceImages((prev) => prev.filter((_, i) => i !== index));
   const BackIcon = direction === "rtl" ? ArrowRight : ArrowLeft;
   const slotCount = images.length === 1 && !generating ? 1 : 2;
-  const stageAspect = resultAspect;
+  // The incoming original is framed at its own ratio (no crop) until the user generates or picks another ratio.
+  const stageAspect = incomingSize ? { id: "original", w: incomingSize.w, h: incomingSize.h } : resultAspect;
   const isLandscape = Boolean(stageAspect && stageAspect.w > stageAspect.h);
   const hasResults = images.length > 0;
 
@@ -615,7 +698,7 @@ export default function AIImagesStudio() {
               <span>{loc({ en: "Change ratio", ar: "غيّر النسبة" })}</span>
               <div role="radiogroup" aria-label={loc({ en: "Change ratio", ar: "غيّر النسبة" })}>
                 {ASPECTS.map((item) => (
-                  <button key={item.id} type="button" role="radio" aria-checked={stageAspect?.id === item.id} className={stageAspect?.id === item.id ? "is-active" : ""} onClick={() => setDisplayAspectId(item.id)}>
+                  <button key={item.id} type="button" role="radio" aria-checked={stageAspect?.id === item.id} className={stageAspect?.id === item.id ? "is-active" : ""} onClick={() => { incomingActiveRef.current = false; setIncomingSize(null); setDisplayAspectId(item.id); }}>
                     <i className="aiw-ratio" style={{ "--rw": item.w, "--rh": item.h }} />{item.id}
                   </button>
                 ))}

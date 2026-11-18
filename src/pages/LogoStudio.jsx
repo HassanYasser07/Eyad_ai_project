@@ -520,6 +520,29 @@ export default function LogoStudio() {
     </div>
   ) : null;
 
+  // "Generate again" never restarts generation on its own. It returns to the choices
+  // screen (colors, style, type and the brand name) with the current values kept, so the
+  // user can adjust them and start the design again deliberately.
+  const pageTopRef = React.useRef(null);
+  const regenerate = () => {
+    if (loading) return;
+    setError("");
+    setImages([]);
+    setSelectedIndex(null);
+    setApproved(false);
+    setDownloadMenuOpen(false);
+    setLogoActionError("");
+    setPreviewImage(null);
+    setMobileTab("colors");
+    setStep("choices");
+    window.setTimeout(() => {
+      // Desktop shows the form above the results; mobile shows the choices screen on its own.
+      const desktopForm = document.querySelector(".logo-desktop-prompt");
+      const target = desktopForm && desktopForm.offsetParent !== null ? desktopForm : pageTopRef.current;
+      target?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 60);
+  };
+
   const back = () => {
     if (step === "results" || step === "generating") {
       setImages([]);
@@ -562,12 +585,13 @@ export default function LogoStudio() {
         previewImage={previewImage}
         setPreviewImage={setPreviewImage}
         back={back}
+        onRegenerate={regenerate}
         onOpenSvgEditor={() => setSvgEditorOpen(true)}
         approvedActions={approvedActions}
         logoStyleRef={logoStyleRef}
         setLogoStyleRef={setLogoStyleRef}
       />
-      <div className="logo-lab-page min-h-[calc(100dvh-8rem)] flex flex-col gap-5" data-step={step}>
+      <div ref={pageTopRef} className="logo-lab-page min-h-[calc(100dvh-8rem)] flex flex-col gap-5" data-step={step}>
       <header className="flex items-center justify-between gap-3">
         <button type="button" onClick={back} className="inline-flex items-center gap-2 text-sm font-bold text-slate-600 hover:text-slate-900">
           <ArrowLeft className="w-4 h-4" />
@@ -680,8 +704,8 @@ export default function LogoStudio() {
             </div>
             {!approved && (
               <div className="grid grid-cols-2 gap-3">
-                <button type="button" disabled={loading} onClick={() => generate()} className="h-13 rounded-2xl border-2 border-primary bg-white text-primary font-extrabold disabled:opacity-40 flex items-center justify-center gap-2">
-                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                <button type="button" disabled={loading} onClick={regenerate} className="h-13 rounded-2xl border-2 border-primary bg-white text-primary font-extrabold disabled:opacity-40 flex items-center justify-center gap-2">
+                  <Sparkles className="w-4 h-4" />
                   {ar ? "توليد مرة أخرى" : "Generate again"}
                 </button>
                 <button disabled={!selectedImage || loading} onClick={approve} className="h-14 min-h-[56px] rounded-2xl bg-gradient-to-r from-violet-600 via-fuchsia-500 to-orange-400 text-white font-extrabold shadow-lg shadow-fuchsia-500/20 disabled:opacity-40">
